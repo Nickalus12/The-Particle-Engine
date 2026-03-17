@@ -130,6 +130,22 @@ class PixelRenderer {
     return (top + ((bot - top) * fy) ~/ 256).clamp(0, 255);
   }
 
+  /// Check if a cell is "underground" -- has solid/terrain above it somewhere
+  /// within a short scan. Returns true if surrounded by terrain.
+  @pragma('vm:prefer-inline')
+  bool _isUnderground(int x, int y, int w, Uint8List grid) {
+    // Scan upward for terrain surface (max 30 rows)
+    final scanLimit = y < 30 ? y : 30;
+    for (int dy = 1; dy <= scanLimit; dy++) {
+      final above = grid[(y - dy) * w + x];
+      if (above == El.empty) return false;
+      if (above == El.stone || above == El.dirt || above == El.sand) {
+        return true;
+      }
+    }
+    return y > 10; // deep cells with no empty above are underground
+  }
+
   double dayNightT = 0.0;
 
   void renderPixels() {
@@ -139,10 +155,7 @@ class PixelRenderer {
     final g = engine.grid;
     final t = engine.isNight ? dayNightT : 0.0;
     final fc = engine.frameCount;
-
-    final baseBgR = (12 - t * 6).round().clamp(0, 255);
-    final baseBgG = (12 - t * 6).round().clamp(0, 255);
-    final baseBgB = (28 - t * 10).round().clamp(0, 255);
+    final temp = engine.temperature;
 
     final glowMul = 1.0 + t * 2.0;
 
@@ -282,10 +295,32 @@ class PixelRenderer {
             final pi4 = i * 4;
 
             if (el == El.empty) {
-              final gradientShift = (4 - (y * 6) ~/ h).clamp(0, 6);
-              int emptyR = (baseBgR + gradientShift).clamp(0, 30);
-              int emptyG = (baseBgG + gradientShift).clamp(0, 30);
-              int emptyB = (baseBgB + gradientShift + 2).clamp(0, 40);
+              // Check if this empty cell is underground (cave atmosphere)
+              final underground = _isUnderground(x, y, w, g);
+
+              int emptyR, emptyG, emptyB;
+              if (underground) {
+                // Dark stone-tinted cave background
+                final depthTint = _spatialBlend(x, y, 8);
+                final stoneVar = (depthTint * 8) ~/ 256;
+                emptyR = (18 + stoneVar).clamp(12, 30);
+                emptyG = (16 + stoneVar).clamp(10, 28);
+                emptyB = (20 + stoneVar).clamp(14, 32);
+              } else {
+                // Day sky: beautiful blue gradient from light top to deeper blue
+                final skyFrac = y / h; // 0 at top, 1 at bottom
+                // Top of sky: light azure, bottom: deeper blue
+                emptyR = (135 - (skyFrac * 100).round()).clamp(25, 140);
+                emptyG = (195 - (skyFrac * 100).round()).clamp(80, 200);
+                emptyB = (255 - (skyFrac * 40).round()).clamp(200, 255);
+
+                // Night dimming
+                if (t > 0.0) {
+                  emptyR = (emptyR * (1.0 - t * 0.9)).round().clamp(0, 255);
+                  emptyG = (emptyG * (1.0 - t * 0.9)).round().clamp(0, 255);
+                  emptyB = (emptyB * (1.0 - t * 0.85)).round().clamp(0, 255);
+                }
+              }
 
               if (_glowBuffersValid) {
                 final gr = glowR8[i];
@@ -296,6 +331,18 @@ class PixelRenderer {
                   emptyG = (emptyG + gg).clamp(0, 255);
                   emptyB = (emptyB + gb).clamp(0, 255);
                 }
+              }
+
+              // Temperature tinting on empty cells
+              final cellTemp = temp[i];
+              if (cellTemp > 148) {
+                // Hot: reddish tint
+                final heatAmount = ((cellTemp - 148) * 3 ~/ 10).clamp(0, 30);
+                emptyR = (emptyR + heatAmount).clamp(0, 255);
+              } else if (cellTemp < 108) {
+                // Cold: bluish tint
+                final coldAmount = ((108 - cellTemp) * 3 ~/ 10).clamp(0, 25);
+                emptyB = (emptyB + coldAmount).clamp(0, 255);
               }
 
               final foodP = pheroFood[i];
@@ -320,29 +367,20 @@ class PixelRenderer {
                 }
               }
 
+              // Sky cells are always visible (opaque) for the gradient
+              // Underground cells too (cave atmosphere)
+              // Glow cells use proportional alpha
               final hasGlow = _glowBuffersValid &&
                   (glowR8[i] > 0 || glowG8[i] > 0 || glowB8[i] > 0);
-              final hasPheromone = pheroFood[i] > 8 || pheroHome[i] > 8;
-              final hasStar = starSet.contains(i);
-              if (hasGlow || hasPheromone || hasStar) {
-                pxBuf[pi4] = emptyR;
-                pxBuf[pi4 + 1] = emptyG;
-                pxBuf[pi4 + 2] = emptyB;
-                // Use alpha proportional to glow intensity so glow
-                // blends with the sky instead of painting opaque black.
-                if (hasGlow) {
-                  final glowMax = glowR8[i] > glowG8[i]
-                      ? (glowR8[i] > glowB8[i] ? glowR8[i] : glowB8[i])
-                      : (glowG8[i] > glowB8[i] ? glowG8[i] : glowB8[i]);
-                  pxBuf[pi4 + 3] = glowMax < 5 ? 0 : glowMax.clamp(0, 200);
-                } else {
-                  pxBuf[pi4 + 3] = 255;
-                }
+              pxBuf[pi4] = emptyR;
+              pxBuf[pi4 + 1] = emptyG;
+              pxBuf[pi4 + 2] = emptyB;
+              if (underground || hasGlow || starSet.contains(i) ||
+                  pheroFood[i] > 8 || pheroHome[i] > 8) {
+                pxBuf[pi4 + 3] = 255;
               } else {
-                pxBuf[pi4] = 0;
-                pxBuf[pi4 + 1] = 0;
-                pxBuf[pi4 + 2] = 0;
-                pxBuf[pi4 + 3] = 0;
+                // Sky: fully opaque so the gradient shows
+                pxBuf[pi4 + 3] = 255;
               }
               continue;
             }
@@ -419,11 +457,24 @@ class PixelRenderer {
 
             int r, g2, b, a = 255;
             _writeElementColor(
-                el, i, x, y, w, h, g, life, velX, velY, fc, rng);
+                el, i, x, y, w, h, g, life, velX, velY, fc, rng, temp);
             r = _inlineR;
             g2 = _inlineG;
             b = _inlineB;
             a = _inlineA;
+
+            // Atmospheric depth darkening for underground elements
+            if (y > 10) {
+              final undergroundCheck = _isUnderground(x, y, w, g);
+              if (undergroundCheck) {
+                // Subtle darkening based on depth
+                final depthFactor = (y * 256 ~/ h).clamp(0, 255);
+                final darken = (depthFactor * 15) ~/ 256; // max ~15 units darker
+                r = (r - darken).clamp(0, 255);
+                g2 = (g2 - darken).clamp(0, 255);
+                b = (b - darken).clamp(0, 255);
+              }
+            }
 
             if (nightBoost > 0) {
               if (el == El.fire || el == El.lava) {
@@ -507,7 +558,8 @@ class PixelRenderer {
       Int8List velX,
       Int8List velY,
       int frameCount,
-      math.Random rng) {
+      math.Random rng,
+      Uint8List temp) {
     switch (el) {
       case El.fire:
         final fireLife = life[idx];
@@ -517,34 +569,51 @@ class PixelRenderer {
         final flickerSum = (slow1 < 3 ? 18 : 0) +
             (slow2 < 4 ? 14 : 0) +
             (slow3 < 7 ? 10 : 0);
-        if (fireLife < 8) {
+
+        // Smooth gradient: white-hot core -> orange -> red tips -> smoke edges
+        if (fireLife < 6) {
+          // White-hot center
           _inlineR = 255;
-          _inlineG = (245 - flickerSum ~/ 3).clamp(228, 255);
-          _inlineB = (200 - flickerSum ~/ 2).clamp(150, 220);
+          _inlineG = (250 - flickerSum ~/ 4).clamp(235, 255);
+          _inlineB = (220 - flickerSum ~/ 3).clamp(180, 235);
           _inlineA = 255;
-        } else if (fireLife < 18) {
-          final t2 = ((fireLife - 8) * 255 ~/ 10).clamp(0, 255);
+        } else if (fireLife < 14) {
+          // Bright yellow-orange
+          final t2 = ((fireLife - 6) * 255 ~/ 8).clamp(0, 255);
           _inlineR = 255;
-          _inlineG = _lerpC(235, 150, t2) + flickerSum ~/ 3;
-          _inlineB = _lerpC(180, 15, t2) + flickerSum ~/ 4;
-          _inlineG = _inlineG.clamp(120, 255);
-          _inlineB = _inlineB.clamp(0, 200);
+          _inlineG = _lerpC(245, 180, t2) + flickerSum ~/ 4;
+          _inlineB = _lerpC(200, 30, t2) + flickerSum ~/ 5;
+          _inlineG = _inlineG.clamp(150, 255);
+          _inlineB = _inlineB.clamp(0, 210);
           _inlineA = 255;
-        } else if (fireLife < 32) {
-          final t2 = ((fireLife - 18) * 255 ~/ 14).clamp(0, 255);
-          _inlineR = _lerpC(255, 230, t2);
-          _inlineG = _lerpC(150, 45, t2) + flickerSum ~/ 4;
-          _inlineB = (flickerSum ~/ 5).clamp(0, 15);
-          _inlineG = _inlineG.clamp(20, 180);
+        } else if (fireLife < 26) {
+          // Orange body
+          final t2 = ((fireLife - 14) * 255 ~/ 12).clamp(0, 255);
+          _inlineR = 255;
+          _inlineG = _lerpC(180, 80, t2) + flickerSum ~/ 4;
+          _inlineB = _lerpC(30, 5, t2);
+          _inlineG = _inlineG.clamp(50, 200);
+          _inlineB = _inlineB.clamp(0, 40);
+          _inlineA = 255;
+        } else if (fireLife < 40) {
+          // Red tips
+          final t2 = ((fireLife - 26) * 255 ~/ 14).clamp(0, 255);
+          _inlineR = _lerpC(255, 200, t2);
+          _inlineG = _lerpC(80, 25, t2) + flickerSum ~/ 5;
+          _inlineB = (flickerSum ~/ 8).clamp(0, 10);
+          _inlineG = _inlineG.clamp(10, 100);
           _inlineA = 255;
         } else {
-          final remaining = (80 - fireLife).clamp(1, 48);
-          final fade = (remaining * 255 ~/ 48).clamp(0, 255);
+          // Smoke edges: fading dark red to grey
+          final remaining = (80 - fireLife).clamp(1, 40);
+          final fade = (remaining * 255 ~/ 40).clamp(0, 255);
           _inlineA = (remaining * 5 + 60).clamp(60, 255);
-          _inlineR = _lerpC(80, 200, fade) + flickerSum ~/ 4;
-          _inlineG = _lerpC(10, 40, fade);
-          _inlineB = (flickerSum ~/ 8).clamp(0, 8);
-          _inlineR = _inlineR.clamp(60, 240);
+          _inlineR = _lerpC(90, 160, fade) + flickerSum ~/ 5;
+          _inlineG = _lerpC(30, 60, fade) + flickerSum ~/ 8;
+          _inlineB = _lerpC(25, 50, fade);
+          _inlineR = _inlineR.clamp(60, 200);
+          _inlineG = _inlineG.clamp(20, 80);
+          _inlineB = _inlineB.clamp(15, 60);
         }
 
       case El.lightning:
@@ -622,20 +691,39 @@ class PixelRenderer {
               grid[(y - 1) * w + x] != El.water &&
               grid[(y - 1) * w + x] != El.oil;
 
-          if (isTop) {
-            final wave = math.sin((frameCount * 0.15 + x * 0.8)) * 0.5 + 0.5;
-            final wave2 = math.sin((frameCount * 0.09 + x * 1.3 + 2.0)) * 0.5 + 0.5;
-            final shimmer = ((wave * 30 + wave2 * 20)).round();
+          // Determine if this water is underground
+          final isUndergroundWater = _isUnderground(x, y, w, grid);
 
+          if (isTop) {
+            // Surface shimmer with gentle wave animation
+            final wave = math.sin((frameCount * 0.12 + x * 0.6)) * 0.5 + 0.5;
+            final wave2 = math.sin((frameCount * 0.07 + x * 1.1 + 1.8)) * 0.5 + 0.5;
+            final shimmer = ((wave * 25 + wave2 * 15)).round();
+
+            // Foam/highlight where water meets solid elements
             final belowIdx = y < h - 1 ? (y + 1) * w + x : -1;
             final isSolid = belowIdx >= 0 && grid[belowIdx] != El.water &&
                 grid[belowIdx] != El.empty && grid[belowIdx] != El.oil;
 
-            if (isSolid) {
-              _inlineR = (85 + shimmer).clamp(60, 140);
-              _inlineG = (210 + shimmer).clamp(190, 255);
+            // Check left/right for solid contact (foam)
+            final leftSolid = x > 0 && grid[y * w + x - 1] != El.water &&
+                grid[y * w + x - 1] != El.empty && grid[y * w + x - 1] != El.oil;
+            final rightSolid = x < w - 1 && grid[y * w + x + 1] != El.water &&
+                grid[y * w + x + 1] != El.empty && grid[y * w + x + 1] != El.oil;
+            final hasFoam = isSolid || leftSolid || rightSolid;
+
+            if (hasFoam) {
+              // White-ish foam highlight
+              _inlineR = (100 + shimmer * 2).clamp(80, 180);
+              _inlineG = (220 + shimmer).clamp(200, 255);
               _inlineB = 255;
-              _inlineA = 210;
+              _inlineA = 230;
+            } else if (isUndergroundWater) {
+              // Underground surface water: darker, more muted
+              _inlineR = (30 + shimmer ~/ 2).clamp(20, 60);
+              _inlineG = (120 + shimmer ~/ 2).clamp(100, 160);
+              _inlineB = (200 + shimmer ~/ 3).clamp(180, 230);
+              _inlineA = 235;
             } else {
               _inlineR = (55 + shimmer).clamp(35, 120);
               _inlineG = (185 + shimmer).clamp(165, 240);
@@ -643,8 +731,9 @@ class PixelRenderer {
               _inlineA = 220;
             }
           } else {
+            // Depth calculation
             int depth = 0;
-            for (int cy = y - 1; cy >= 0 && depth < 20; cy--) {
+            for (int cy = y - 1; cy >= 0 && depth < 25; cy--) {
               if (grid[cy * w + x] == El.water) {
                 depth++;
               } else {
@@ -652,20 +741,34 @@ class PixelRenderer {
               }
             }
 
-            final depthFrac = (depth * 255 ~/ 20).clamp(0, 255);
-            final baseR = _lerpC(50, 8, depthFrac);
-            final baseG = _lerpC(160, 45, depthFrac);
-            final baseB = _lerpC(255, 180, depthFrac);
-            final baseA = _lerpC(225, 250, depthFrac);
+            // Smooth depth darkening with no visible steps
+            final depthFrac = (depth * 256 ~/ 25).clamp(0, 255);
 
-            int caustic = 0;
-            if (depth < 8) {
-              final cx1 = math.sin((frameCount * 0.12 + x * 0.7 + y * 0.4)) * 0.5 + 0.5;
-              final cx2 = math.sin((frameCount * 0.08 + x * 1.1 + y * 0.6 + 1.7)) * 0.5 + 0.5;
-              final causticStrength = (1.0 - depth / 8.0);
-              caustic = ((cx1 * 12 + cx2 * 8) * causticStrength).round();
+            int baseR, baseG, baseB, baseA;
+            if (isUndergroundWater) {
+              // Underground water: much darker and murkier
+              baseR = _lerpC(25, 3, depthFrac);
+              baseG = _lerpC(90, 25, depthFrac);
+              baseB = _lerpC(160, 80, depthFrac);
+              baseA = _lerpC(230, 250, depthFrac);
+            } else {
+              // Surface water: clear blue gradient
+              baseR = _lerpC(45, 5, depthFrac);
+              baseG = _lerpC(155, 35, depthFrac);
+              baseB = _lerpC(255, 160, depthFrac);
+              baseA = _lerpC(220, 250, depthFrac);
             }
 
+            // Caustics for shallow water
+            int caustic = 0;
+            if (depth < 10) {
+              final cx1 = math.sin((frameCount * 0.10 + x * 0.6 + y * 0.35)) * 0.5 + 0.5;
+              final cx2 = math.sin((frameCount * 0.07 + x * 0.9 + y * 0.5 + 1.7)) * 0.5 + 0.5;
+              final causticStrength = (1.0 - depth / 10.0);
+              caustic = ((cx1 * 10 + cx2 * 6) * causticStrength).round();
+            }
+
+            // Foam/highlight at water-solid edges
             bool nearEdge = false;
             if (x > 0 && grid[y * w + x - 1] != El.water &&
                 grid[y * w + x - 1] != El.empty) {
@@ -674,24 +777,36 @@ class PixelRenderer {
                 grid[y * w + x + 1] != El.empty) {
               nearEdge = true;
             }
-            final edgeShift = nearEdge ? 12 : 0;
+            // Also check above/below for foam
+            if (y > 0 && grid[(y - 1) * w + x] != El.water &&
+                grid[(y - 1) * w + x] != El.empty &&
+                grid[(y - 1) * w + x] != El.oil) {
+              nearEdge = true;
+            }
+            if (y < h - 1 && grid[(y + 1) * w + x] != El.water &&
+                grid[(y + 1) * w + x] != El.empty) {
+              nearEdge = true;
+            }
+            final edgeHighlight = nearEdge ? 18 : 0;
 
-            _inlineR = (baseR + caustic + edgeShift).clamp(0, 80);
-            _inlineG = (baseG + caustic + edgeShift).clamp(30, 200);
-            _inlineB = (baseB + caustic ~/ 2).clamp(160, 255);
+            _inlineR = (baseR + caustic + edgeHighlight).clamp(0, 100);
+            _inlineG = (baseG + caustic + edgeHighlight).clamp(20, 220);
+            _inlineB = (baseB + caustic ~/ 2).clamp(80, 255);
             _inlineA = baseA;
           }
         }
 
       case El.sand:
         _inlineA = 255;
-        final spatial = _spatialBlend(x, y, 5);
-        final variation = (spatial * 30) ~/ 256 - 15;
-        final coarse = _smoothHash(x, y) % 256;
-        final grain = (coarse * 6) ~/ 256 - 3;
-        _inlineR = (210 + variation + grain).clamp(185, 238);
-        _inlineG = (192 + variation + grain).clamp(168, 218);
-        _inlineB = (138 + (variation * 2 ~/ 3) + grain).clamp(112, 165);
+        // Smooth spatial gradient for warm golden tones
+        final spatial = _spatialBlend(x, y, 6);
+        final variation = (spatial * 22) ~/ 256 - 11;
+        // Gentle tonal banding
+        final band = _spatialBlend(x + 200, y * 2, 10);
+        final bandShift = (band * 10) ~/ 256 - 5;
+        _inlineR = (215 + variation + bandShift).clamp(190, 240);
+        _inlineG = (195 + variation + bandShift).clamp(172, 222);
+        _inlineB = (130 + (variation * 2 ~/ 3) + bandShift ~/ 2).clamp(105, 158);
 
       case El.tnt:
         _inlineA = 255;
@@ -756,22 +871,22 @@ class PixelRenderer {
         final moisture = life[idx].clamp(0, 5);
         final mFrac = moisture / 5.0;
         final compaction = velY[idx].clamp(0, 5);
-        final compactDarken = (compaction * 6).round(); // compacted = darker
-        final spatial = _spatialBlend(x, y, 4);
-        final variation = (spatial * 24) ~/ 256 - 12;
-        final fine = _smoothHash(x, y) % 256;
-        final grain = (fine * 4) ~/ 256 - 2;
-        final warmth = _spatialBlend(x + 100, y + 100, 7);
-        final warmShift = (warmth * 10) ~/ 256 - 5;
-        final baseR = 135 + variation + warmShift - compactDarken;
-        final baseG = 90 + variation ~/ 2 - compactDarken;
-        final baseB = 35 + variation ~/ 3 - compactDarken ~/ 2;
+        final compactDarken = (compaction * 6).round();
+        // Smooth spatial blending for earthy tones
+        final spatial = _spatialBlend(x, y, 5);
+        final variation = (spatial * 20) ~/ 256 - 10;
+        final warmth = _spatialBlend(x + 100, y + 100, 8);
+        final warmShift = (warmth * 8) ~/ 256 - 4;
+        final baseR = 140 + variation + warmShift - compactDarken;
+        final baseG = 95 + variation ~/ 2 - compactDarken;
+        final baseB = 40 + variation ~/ 3 - compactDarken ~/ 2;
+        // Darker when moist (driven by life value)
         _inlineR =
-            (baseR + grain - mFrac * 55).round().clamp(45, 160);
+            (baseR - mFrac * 60).round().clamp(40, 165);
         _inlineG =
-            (baseG + grain - mFrac * 45).round().clamp(25, 115);
+            (baseG - mFrac * 50).round().clamp(22, 120);
         _inlineB =
-            (baseB + grain - mFrac * 8).round().clamp(8, 55);
+            (baseB - mFrac * 12).round().clamp(6, 55);
         _inlineA = 255;
 
       case El.plant:
@@ -784,18 +899,32 @@ class PixelRenderer {
           _inlineB = 20;
           _inlineA = 255;
         } else if (pStage == kStWilting) {
-          _inlineR = (120 + variation).clamp(100, 150);
-          _inlineG = (130 + variation).clamp(110, 160);
-          _inlineB = (40 + variation).clamp(20, 60);
+          // Yellow-green wilting
+          _inlineR = (140 + variation).clamp(120, 170);
+          _inlineG = (145 + variation).clamp(120, 175);
+          _inlineB = (30 + variation).clamp(15, 50);
           _inlineA = 255;
         } else {
-          final shade = ((idx % 5) * 8 + variation).clamp(0, 50);
           _inlineA = 255;
           switch (pType) {
             case kPlantGrass:
-              _inlineR = 30 + shade;
-              _inlineG = 170 + shade ~/ 2;
-              _inlineB = 30 + shade;
+              // Growth stage affects brightness
+              if (pStage == kStSprout) {
+                // Bright lime green sprout
+                _inlineR = (80 + variation).clamp(60, 110);
+                _inlineG = (210 + variation).clamp(190, 240);
+                _inlineB = (50 + variation).clamp(30, 75);
+              } else if (pStage == kStMature) {
+                // Deep rich green
+                _inlineR = (25 + variation).clamp(10, 45);
+                _inlineG = (155 + variation).clamp(130, 180);
+                _inlineB = (25 + variation).clamp(10, 45);
+              } else {
+                // Growing: mid green
+                _inlineR = (40 + variation).clamp(20, 65);
+                _inlineG = (180 + variation).clamp(155, 210);
+                _inlineB = (35 + variation).clamp(15, 55);
+              }
             case kPlantFlower:
               if (pStage == kStMature) {
                 final hue2 = ((idx * 37) % 5);
@@ -821,20 +950,33 @@ class PixelRenderer {
                     _inlineG = 136;
                     _inlineB = 255;
                 }
+              } else if (pStage == kStSprout) {
+                _inlineR = (60 + variation).clamp(40, 85);
+                _inlineG = (200 + variation).clamp(180, 230);
+                _inlineB = (45 + variation).clamp(25, 70);
               } else {
-                _inlineR = 20 + shade;
-                _inlineG = 160 + shade;
-                _inlineB = 20 + shade;
+                _inlineR = (30 + variation).clamp(15, 50);
+                _inlineG = (170 + variation).clamp(145, 200);
+                _inlineB = (30 + variation).clamp(15, 50);
               }
             case kPlantTree:
               if (pStage == kStGrowing) {
-                _inlineR = (100 + variation).clamp(80, 120);
-                _inlineG = (60 + variation).clamp(40, 80);
-                _inlineB = (25 + variation).clamp(10, 40);
+                // Warm brown trunk with vertical grain
+                final grainY = _spatialBlend(x, y * 4, 3);
+                final grainShift = (grainY * 14) ~/ 256 - 7;
+                _inlineR = (105 + variation + grainShift).clamp(80, 130);
+                _inlineG = (65 + variation ~/ 2 + grainShift ~/ 2).clamp(40, 90);
+                _inlineB = (30 + variation ~/ 3).clamp(12, 48);
+              } else if (pStage == kStSprout) {
+                // Bright green sapling
+                _inlineR = (55 + variation).clamp(35, 80);
+                _inlineG = (195 + variation).clamp(170, 225);
+                _inlineB = (40 + variation).clamp(20, 65);
               } else {
-                _inlineR = 15 + shade ~/ 2;
-                _inlineG = 120 + shade;
-                _inlineB = 15 + shade ~/ 2;
+                // Mature: deep rich green canopy
+                _inlineR = (15 + variation).clamp(5, 35);
+                _inlineG = (130 + variation).clamp(105, 160);
+                _inlineB = (18 + variation).clamp(5, 38);
               }
             case kPlantMushroom:
               if (pStage == kStMature) {
@@ -856,18 +998,24 @@ class PixelRenderer {
             case kPlantVine:
               final isLeaf = velY[idx] % 4 == 0;
               if (isLeaf) {
-                _inlineR = 10 + shade;
-                _inlineG = 180 + shade ~/ 2;
-                _inlineB = 10 + shade;
+                _inlineR = (15 + variation).clamp(5, 30);
+                _inlineG = (185 + variation).clamp(160, 215);
+                _inlineB = (15 + variation).clamp(5, 30);
               } else {
-                _inlineR = 30 + shade;
-                _inlineG = 140 + shade;
-                _inlineB = 30 + shade;
+                _inlineR = (35 + variation).clamp(15, 55);
+                _inlineG = (145 + variation).clamp(120, 175);
+                _inlineB = (30 + variation).clamp(12, 50);
               }
             default:
-              _inlineR = 20 + shade;
-              _inlineG = 160 + shade;
-              _inlineB = 20 + shade;
+              if (pStage == kStSprout) {
+                _inlineR = (60 + variation).clamp(40, 85);
+                _inlineG = (200 + variation).clamp(175, 230);
+                _inlineB = (45 + variation).clamp(25, 70);
+              } else {
+                _inlineR = (25 + variation).clamp(10, 45);
+                _inlineG = (160 + variation).clamp(135, 190);
+                _inlineB = (25 + variation).clamp(10, 45);
+              }
           }
         }
 
@@ -898,16 +1046,19 @@ class PixelRenderer {
         _inlineA = 255;
         final stoneHeat = velX[idx].clamp(0, 5);
         final stoneDepth = life[idx].clamp(0, 20);
-        final depthDarken = (stoneDepth * 1.8).round(); // deeper = darker
+        final depthDarken = (stoneDepth * 2.0).round(); // deeper = darker
+        // Smooth layered look with spatial gradients
         final spatial = _spatialBlend(x, y, 6);
-        final layer = (spatial * 20) ~/ 256 - 10;
-        final fine = _smoothHash(x * 3, y * 3) % 256;
-        final grain = (fine * 6) ~/ 256 - 3;
-        final sediment = _spatialBlend(x + 50, y * 2, 8);
-        final sedimentShift = (sediment * 8) ~/ 256 - 4;
-        _inlineR = (125 + layer + grain - depthDarken).clamp(68, 162);
-        _inlineG = (123 + layer + grain + sedimentShift - depthDarken).clamp(66, 160);
-        _inlineB = (135 + layer + grain - sedimentShift - depthDarken ~/ 2).clamp(80, 175);
+        final layer = (spatial * 16) ~/ 256 - 8;
+        // Subtle horizontal sediment banding
+        final sediment = _spatialBlend(x + 50, y * 2, 10);
+        final sedimentShift = (sediment * 10) ~/ 256 - 5;
+        // Horizontal band emphasis for sedimentary look
+        final hBand = _spatialBlend(x * 3, y, 12);
+        final hBandShift = (hBand * 6) ~/ 256 - 3;
+        _inlineR = (128 + layer + hBandShift - depthDarken).clamp(65, 165);
+        _inlineG = (126 + layer + sedimentShift + hBandShift - depthDarken).clamp(63, 163);
+        _inlineB = (138 + layer - sedimentShift + hBandShift - depthDarken ~/ 2).clamp(78, 178);
         if (stoneHeat > 0) {
           final heatFrac = stoneHeat / 5.0;
           final pulse = math.sin(frameCount * 0.3 + idx * 0.1) * 0.3 + 0.7;
@@ -968,53 +1119,65 @@ class PixelRenderer {
 
       case El.lava:
         final lavaLife = life[idx];
-        final pulse1 = math.sin(frameCount * 0.08 + idx * 0.2) * 0.5 + 0.5;
-        final pulse2 = math.sin(frameCount * 0.12 + idx * 0.35 + 1.5) * 0.5 + 0.5;
-        final lavaFlicker = ((pulse1 * 25 + pulse2 * 18)).round();
+        final pulse1 = math.sin(frameCount * 0.06 + idx * 0.15) * 0.5 + 0.5;
+        final pulse2 = math.sin(frameCount * 0.10 + idx * 0.28 + 1.5) * 0.5 + 0.5;
+        final lavaFlicker = ((pulse1 * 20 + pulse2 * 15)).round();
         final isLavaSurf = y > 0 && grid[(y - 1) * w + x] == El.empty;
-        final isBrightSpot = (idx * 17 + frameCount) % 25 == 0;
-        final isSuperBright = (idx * 31 + frameCount * 2) % 60 == 0;
-        if ((isBrightSpot || isSuperBright) && lavaLife < 150) {
-          final spotB = isSuperBright ? 230 : 180;
+
+        // Deep glowing red-orange with pulsing glow
+        if (lavaLife < 30) {
+          // Fresh, bright lava: orange-white glow
+          final surfBoost = isLavaSurf ? 20 : 0;
           _inlineR = 255;
-          _inlineG = 250 + lavaFlicker ~/ 6;
-          _inlineG = _inlineG.clamp(245, 255);
-          _inlineB = spotB;
+          _inlineG = (225 + lavaFlicker ~/ 2 + surfBoost).clamp(205, 255);
+          _inlineB = (110 + lavaFlicker + surfBoost).clamp(90, 190);
           _inlineA = 255;
-        } else if (lavaLife < 40) {
-          final surfBoost = isLavaSurf ? 15 : 0;
-          _inlineR = 255;
-          _inlineG = (220 + lavaFlicker ~/ 2 + surfBoost).clamp(200, 255);
-          _inlineB = (100 + lavaFlicker + surfBoost).clamp(80, 180);
-          _inlineA = 255;
-        } else if (lavaLife < 120) {
-          final t2 = ((lavaLife - 40) * 255 ~/ 80).clamp(0, 255);
+        } else if (lavaLife < 80) {
+          // Cooling: deep red-orange with dark crust veins
+          final t2 = ((lavaLife - 30) * 255 ~/ 50).clamp(0, 255);
           final crustHash = _smoothHash(x, y);
-          final isCrustVein = lavaLife > 60 && (crustHash % 8 == 0);
+          final isCrustVein = lavaLife > 45 && (crustHash % 6 == 0);
           if (isCrustVein) {
-            _inlineR = (160 + lavaFlicker ~/ 2).clamp(140, 200);
-            _inlineG = (25 + lavaFlicker ~/ 5).clamp(12, 50);
-            _inlineB = (lavaFlicker ~/ 8).clamp(0, 10);
+            // Dark cooling crust veins
+            _inlineR = (130 + lavaFlicker ~/ 3).clamp(100, 170);
+            _inlineG = (18 + lavaFlicker ~/ 6).clamp(8, 35);
+            _inlineB = (lavaFlicker ~/ 10).clamp(0, 8);
           } else {
             _inlineR = 255;
-            _inlineG = (_lerpC(200, 50, t2) + lavaFlicker ~/ 2)
-                .clamp(0, 255);
-            _inlineB = (lavaFlicker ~/ 3).clamp(0, 40);
+            _inlineG = (_lerpC(210, 55, t2) + lavaFlicker ~/ 2).clamp(0, 255);
+            _inlineB = (lavaFlicker ~/ 3).clamp(0, 35);
+          }
+          _inlineA = 255;
+        } else if (lavaLife < 140) {
+          // Mostly cooled: dark red with glowing cracks
+          final t2 = ((lavaLife - 80) * 255 ~/ 60).clamp(0, 255);
+          final crustHash = _smoothHash(x, y);
+          final isGlowingCrack = crustHash % 7 == 0;
+          if (isGlowingCrack) {
+            // Glowing crack in dark crust
+            final crackPulse = math.sin(frameCount * 0.15 + idx * 0.4) * 0.5 + 0.5;
+            _inlineR = (220 + (crackPulse * 35).round()).clamp(200, 255);
+            _inlineG = (60 + (crackPulse * 30).round()).clamp(40, 100);
+            _inlineB = (10 + (crackPulse * 10).round()).clamp(5, 25);
+          } else {
+            _inlineR = _lerpC(230, 100, t2);
+            _inlineG = (_lerpC(40, 12, t2) + lavaFlicker ~/ 5).clamp(0, 50);
+            _inlineB = (lavaFlicker ~/ 8).clamp(0, 8);
           }
           _inlineA = 255;
         } else {
-          final t2 = ((lavaLife - 120) * 255 ~/ 80).clamp(0, 255);
+          // Solidifying: very dark with occasional faint glow
+          final t2 = ((lavaLife - 140) * 255 ~/ 60).clamp(0, 255);
           final crustHash = _smoothHash(x, y);
-          final isDarkPatch = crustHash % 5 < 2;
+          final isDarkPatch = crustHash % 4 < 2;
           if (isDarkPatch) {
-            _inlineR = (_lerpC(190, 90, t2)).clamp(0, 255);
-            _inlineG = (_lerpC(25, 8, t2) + lavaFlicker ~/ 6).clamp(0, 40);
+            _inlineR = (_lerpC(140, 70, t2)).clamp(0, 255);
+            _inlineG = (_lerpC(15, 5, t2) + lavaFlicker ~/ 8).clamp(0, 25);
             _inlineB = 0;
           } else {
-            _inlineR = _lerpC(250, 140, t2);
-            _inlineG =
-                (_lerpC(50, 20, t2) + lavaFlicker ~/ 4).clamp(0, 80);
-            _inlineB = (lavaFlicker ~/ 6).clamp(0, 10);
+            _inlineR = _lerpC(200, 110, t2);
+            _inlineG = (_lerpC(35, 12, t2) + lavaFlicker ~/ 5).clamp(0, 50);
+            _inlineB = (lavaFlicker ~/ 8).clamp(0, 8);
           }
           _inlineA = 255;
         }
@@ -1038,20 +1201,22 @@ class PixelRenderer {
           _inlineG = (80 + bright - life[idx]).clamp(20, 120);
           _inlineB = 10;
         } else {
-          final grainHash = _smoothHash(x, y * 3);
-          final grainVal = (grainHash % 20) - 10;
+          // Warm brown with visible vertical grain pattern
+          final vertGrain = _spatialBlend(x, y * 4, 3);
+          final grainVal = (vertGrain * 18) ~/ 256 - 9;
           final isKnot = _smoothHash(x * 11, y * 7) % 19 == 0;
           final waterlog = velY[idx].clamp(0, 3) * 20;
           if (isKnot) {
-            _inlineR = (110 - waterlog + grainVal).clamp(50, 135);
-            _inlineG = (55 - waterlog + grainVal ~/ 2).clamp(25, 78);
-            _inlineB = (30 - waterlog + grainVal ~/ 3).clamp(10, 50);
+            _inlineR = (115 - waterlog + grainVal).clamp(50, 140);
+            _inlineG = (60 - waterlog + grainVal ~/ 2).clamp(25, 82);
+            _inlineB = (32 - waterlog + grainVal ~/ 3).clamp(10, 52);
           } else {
-            final band = _spatialBlend(x, y * 3, 3);
-            final bandShift = (band * 18) ~/ 256 - 9;
-            _inlineR = (158 - waterlog + variation + bandShift).clamp(65, 185);
-            _inlineG = (82 - waterlog + variation ~/ 2 + bandShift ~/ 2).clamp(32, 110);
-            _inlineB = (44 - waterlog + variation ~/ 3 + bandShift ~/ 3).clamp(12, 68);
+            // Vertical grain emphasis with warm tones
+            final band = _spatialBlend(x, y * 5, 3);
+            final bandShift = (band * 20) ~/ 256 - 10;
+            _inlineR = (160 - waterlog + variation + bandShift).clamp(65, 190);
+            _inlineG = (85 - waterlog + variation ~/ 2 + bandShift ~/ 2).clamp(32, 115);
+            _inlineB = (46 - waterlog + variation ~/ 3 + bandShift ~/ 3).clamp(12, 70);
           }
         }
 
