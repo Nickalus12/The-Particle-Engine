@@ -52,57 +52,58 @@ class WorldConfig {
         width: width,
         height: height,
         seed: seed,
-        terrainScale: 0.5,
-        waterLevel: 0.45,
-        caveDensity: 0.10,
-        vegetation: 0.85,
+        terrainScale: 0.6,
+        waterLevel: 0.50,
+        caveDensity: 0.05,
+        vegetation: 0.92,
       );
 
-  /// Deep valley with steep cliff walls and river at bottom.
+  /// Deep V-shaped canyon with steep cliff walls and river at bottom.
   ///
   /// Very high terrain scale for dramatic elevation. Water collects
-  /// in the canyon floor. Snow caps on the highest peaks. Moderate
-  /// cave networks in the cliff walls. Sparse vegetation.
+  /// in the canyon floor with waterfalls from cliff ledges. Exposed
+  /// stone layers, small cliff-face caves. Sandy bottom near river.
   factory WorldConfig.canyon({int seed = 42, int width = 320, int height = 180}) =>
       WorldConfig(
         width: width,
         height: height,
         seed: seed,
-        terrainScale: 2.2,
-        waterLevel: 0.40,
-        caveDensity: 0.45,
-        vegetation: 0.20,
+        terrainScale: 2.5,
+        waterLevel: 0.35,
+        caveDensity: 0.50,
+        vegetation: 0.12,
       );
 
-  /// Central landmass surrounded by water on all sides.
+  /// Tropical island rising from deep ocean.
   ///
-  /// Island rises from sea with radial heightmap falloff. Sandy beaches
-  /// at water edges. Moderate vegetation on the plateau. Small caves.
+  /// Central landmass with radial heightmap falloff into deep ocean.
+  /// Sandy beaches at waterline, lush vegetation, small caves in
+  /// the island's stone core. Ocean at least 30% of grid height.
   factory WorldConfig.island({int seed = 42, int width = 320, int height = 180}) =>
       WorldConfig(
         width: width,
         height: height,
         seed: seed,
-        terrainScale: 1.2,
-        waterLevel: 0.65,
-        caveDensity: 0.15,
-        vegetation: 0.55,
+        terrainScale: 1.3,
+        waterLevel: 0.70,
+        caveDensity: 0.20,
+        vegetation: 0.75,
       );
 
-  /// Minimal sky, extensive cave networks, underground world.
+  /// Cave explorer's dream — massive underground cave system.
   ///
-  /// Surface is very high (small sky). Dense cave systems fill the
-  /// underground. Underground water pools, lava pockets deep below.
-  /// Almost no surface vegetation.
+  /// Only 5-10% sky. 4-7 large cavern chambers with stalactites/
+  /// stalagmites, underground lava lake, underground rivers, crystal
+  /// formations, mushroom growths. Dense ore veins.
   factory WorldConfig.underground({int seed = 42, int width = 320, int height = 180}) =>
       WorldConfig(
         width: width,
         height: height,
         seed: seed,
-        terrainScale: 0.4,
-        waterLevel: 0.20,
-        caveDensity: 0.75,
-        vegetation: 0.03,
+        terrainScale: 0.3,
+        waterLevel: 0.25,
+        caveDensity: 0.80,
+        vegetation: 0.02,
       );
 
   /// Randomized parameters for maximum variety.

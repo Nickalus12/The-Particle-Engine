@@ -88,53 +88,67 @@ class FeaturePlacer {
   }
 
   /// Carve large dramatic cavern chambers for the underground preset.
-  /// Creates 3-6 large rooms connected by the existing tunnel network.
+  /// Creates 4-7 large rooms with stalactites, stalagmites, lava lake,
+  /// underground rivers, crystal formations, and mushroom growths.
   static void _carveUndergroundCaverns(
     GridData data,
     WorldConfig config,
     List<int> heightmap,
   ) {
     final rng = Random(config.seed + 1200);
-    final cavernCount = 3 + rng.nextInt(4); // 3-6 caverns
+    final cavernCount = 4 + rng.nextInt(4); // 4-7 caverns
 
+    // Track cavern centers for connecting with underground rivers.
+    final cavernCenters = <(int, int)>[];
+
+    // Distribute caverns at multiple depth layers.
     for (var c = 0; c < cavernCount; c++) {
-      // Pick a random position in the stone area (below surface, above bedrock).
-      final cx = (config.width * 0.1 + rng.nextDouble() * config.width * 0.8).round();
-      final minY = (heightmap[cx.clamp(0, config.width - 1)] + 15).clamp(0, config.height);
-      final maxY = config.height - 15;
+      final cx = (config.width * 0.08 + rng.nextDouble() * config.width * 0.84).round();
+      final surfY = heightmap[cx.clamp(0, config.width - 1)];
+
+      // Layer distribution: shallow (20-40%), mid (40-65%), deep (65-85%).
+      double minFrac, maxFrac;
+      if (c < 2) {
+        minFrac = 0.20; maxFrac = 0.40; // shallow
+      } else if (c < 5) {
+        minFrac = 0.40; maxFrac = 0.65; // mid
+      } else {
+        minFrac = 0.65; maxFrac = 0.85; // deep
+      }
+      final minY = (surfY + (config.height - surfY) * minFrac).round().clamp(surfY + 10, config.height - 15);
+      final maxY = (surfY + (config.height - surfY) * maxFrac).round().clamp(minY + 5, config.height - 12);
       if (minY >= maxY) continue;
       final cy = minY + rng.nextInt(maxY - minY);
 
-      // Cavern size — elliptical chamber.
-      final radiusX = 8 + rng.nextInt(12); // 8-19 cells wide
-      final radiusY = 5 + rng.nextInt(8);  // 5-12 cells tall
+      // Larger caverns than before.
+      final radiusX = 12 + rng.nextInt(16); // 12-27 cells wide
+      final radiusY = 6 + rng.nextInt(10);  // 6-15 cells tall
 
-      // Carve the ellipse.
+      cavernCenters.add((cx, cy));
+
+      // Carve the ellipse with noisy edges.
       for (var dy = -radiusY; dy <= radiusY; dy++) {
         for (var dx = -radiusX; dx <= radiusX; dx++) {
           final nx = cx + dx;
           final ny = cy + dy;
           if (!data.inBounds(nx, ny)) continue;
-          if (ny >= config.height - 5) continue; // Don't break bedrock.
-          if (ny <= heightmap[nx.clamp(0, config.width - 1)] + 3) continue; // Don't break surface.
+          if (ny >= config.height - 5) continue;
+          if (ny <= heightmap[nx.clamp(0, config.width - 1)] + 3) continue;
 
-          // Ellipse check with slight noise for organic shape.
           final ex = dx.toDouble() / radiusX;
           final ey = dy.toDouble() / radiusY;
           final dist = ex * ex + ey * ey;
-
-          // Noisy edge for organic cavern walls.
-          final edgeNoise = ((nx * 7 + ny * 13) % 5) * 0.04;
+          final edgeNoise = ((nx * 7 + ny * 13) % 7) * 0.03;
           if (dist < 0.85 + edgeNoise) {
             data.set(nx, ny, El.empty);
           }
         }
       }
 
-      // Add stalactites hanging from the ceiling.
-      for (var sx = cx - radiusX + 2; sx < cx + radiusX - 2; sx += 2 + rng.nextInt(3)) {
+      // Stalactites — denser, longer.
+      for (var sx = cx - radiusX + 2; sx < cx + radiusX - 2; sx += 1 + rng.nextInt(3)) {
         if (!data.inBounds(sx, cy - radiusY)) continue;
-        final stalLen = 2 + rng.nextInt(4);
+        final stalLen = 3 + rng.nextInt(5);
         for (var sy = 0; sy < stalLen; sy++) {
           final ty = cy - radiusY + sy + 1;
           if (data.inBounds(sx, ty) && data.get(sx, ty) == El.empty) {
@@ -143,10 +157,10 @@ class FeaturePlacer {
         }
       }
 
-      // Add stalagmites rising from the floor.
-      for (var sx = cx - radiusX + 3; sx < cx + radiusX - 3; sx += 3 + rng.nextInt(3)) {
+      // Stalagmites — taller, denser.
+      for (var sx = cx - radiusX + 2; sx < cx + radiusX - 2; sx += 2 + rng.nextInt(3)) {
         if (!data.inBounds(sx, cy + radiusY)) continue;
-        final stagLen = 1 + rng.nextInt(3);
+        final stagLen = 2 + rng.nextInt(4);
         for (var sy = 0; sy < stagLen; sy++) {
           final ty = cy + radiusY - sy - 1;
           if (data.inBounds(sx, ty) && data.get(sx, ty) == El.empty) {
@@ -155,17 +169,126 @@ class FeaturePlacer {
         }
       }
 
-      // Small water pool at cavern floor.
-      if (rng.nextDouble() < 0.6) {
-        final poolWidth = 3 + rng.nextInt(radiusX ~/ 2);
-        for (var px = -poolWidth; px <= poolWidth; px++) {
-          final wx = cx + px;
-          final floorY = cy + radiusY - 1;
-          if (data.inBounds(wx, floorY) && data.get(wx, floorY) == El.empty) {
-            data.set(wx, floorY, El.water);
+      // Mushroom growths on cave floors.
+      for (var mx = cx - radiusX + 3; mx < cx + radiusX - 3; mx += 4 + rng.nextInt(5)) {
+        final floorY = cy + radiusY - 1;
+        if (data.inBounds(mx, floorY) && data.get(mx, floorY) == El.empty) {
+          // Place mushroom plant on cave floor.
+          data.setPlant(mx, floorY, kPlantMushroom, kStMature);
+          // Occasionally a second mushroom adjacent.
+          if (rng.nextBool() && data.inBounds(mx + 1, floorY) &&
+              data.get(mx + 1, floorY) == El.empty) {
+            data.setPlant(mx + 1, floorY, kPlantMushroom, kStMature);
           }
-          if (data.inBounds(wx, floorY - 1) && data.get(wx, floorY - 1) == El.empty && px.abs() < poolWidth - 1) {
-            data.set(wx, floorY - 1, El.water);
+        }
+      }
+
+      // Water pool at cavern floor (most caverns).
+      if (rng.nextDouble() < 0.7) {
+        final poolWidth = 4 + rng.nextInt(radiusX ~/ 2);
+        final poolDepth = 2 + rng.nextInt(2);
+        for (var px = -poolWidth; px <= poolWidth; px++) {
+          for (var pd = 0; pd < poolDepth; pd++) {
+            final wx = cx + px;
+            final floorY = cy + radiusY - 1 - pd;
+            if (data.inBounds(wx, floorY) && data.get(wx, floorY) == El.empty) {
+              data.set(wx, floorY, El.water);
+            }
+          }
+        }
+      }
+    }
+
+    // --- Lava lake in the deepest cavern ---
+    // Find the deepest cavern and place a large lava pool.
+    if (cavernCenters.isNotEmpty) {
+      var deepestIdx = 0;
+      for (var i = 1; i < cavernCenters.length; i++) {
+        if (cavernCenters[i].$2 > cavernCenters[deepestIdx].$2) {
+          deepestIdx = i;
+        }
+      }
+      final (lavaCX, lavaCY) = cavernCenters[deepestIdx];
+      // Lava lake: 15+ cells wide at the floor of the deepest cavern.
+      final lavaWidth = 15 + rng.nextInt(10);
+      final lavaDepth = 3 + rng.nextInt(3);
+      for (var px = -lavaWidth ~/ 2; px <= lavaWidth ~/ 2; px++) {
+        for (var pd = 0; pd < lavaDepth; pd++) {
+          final lx = lavaCX + px;
+          // Place lava below the cavern center.
+          final ly = lavaCY + 3 + pd;
+          if (data.inBounds(lx, ly)) {
+            final el = data.get(lx, ly);
+            if (el == El.empty || el == El.water) {
+              data.set(lx, ly, El.lava);
+              data.setTemp(lx, ly, 250);
+            }
+          }
+        }
+      }
+    }
+
+    // --- Underground river connecting 2-3 chambers ---
+    if (cavernCenters.length >= 2) {
+      // Sort by x position and connect adjacent caverns.
+      final sorted = List<(int, int)>.from(cavernCenters)
+        ..sort((a, b) => a.$1.compareTo(b.$1));
+      final connectCount = min(3, sorted.length - 1);
+      for (var i = 0; i < connectCount; i++) {
+        final (x1, y1) = sorted[i];
+        final (x2, y2) = sorted[i + 1];
+        // Carve a horizontal tunnel between them, filled with water.
+        final steps = (x2 - x1).abs() + (y2 - y1).abs();
+        if (steps == 0) continue;
+        for (var t = 0; t <= steps; t++) {
+          final frac = t / steps;
+          final rx = (x1 + (x2 - x1) * frac).round();
+          final ry = (y1 + (y2 - y1) * frac).round();
+          // Carve 3 cells tall tunnel and fill with water.
+          for (var dy = -1; dy <= 1; dy++) {
+            for (var dx = -1; dx <= 1; dx++) {
+              final nx = rx + dx;
+              final ny = ry + dy;
+              if (!data.inBounds(nx, ny)) continue;
+              if (ny >= config.height - 5) continue;
+              if (ny <= heightmap[nx.clamp(0, config.width - 1)] + 3) continue;
+              final el = data.get(nx, ny);
+              if (el == El.stone || el == El.dirt) {
+                data.set(nx, ny, dy == 1 ? El.water : El.empty);
+              }
+            }
+          }
+          // Water at the bottom of the tunnel.
+          if (data.inBounds(rx, ry + 1) && data.get(rx, ry + 1) == El.empty) {
+            data.set(rx, ry + 1, El.water);
+          }
+          if (data.inBounds(rx, ry) && data.get(rx, ry) == El.empty) {
+            data.set(rx, ry, El.water);
+          }
+        }
+      }
+    }
+
+    // --- Crystal formations in deep stone (below 70% depth) ---
+    final crystalMinY = (config.height * 0.70).round();
+    final crystalNoise = SimplexNoise(config.seed + 1300);
+    for (var y = crystalMinY; y < config.height - 5; y++) {
+      for (var x = 0; x < config.width; x++) {
+        if (data.get(x, y) != El.stone) continue;
+        // Check if adjacent to a cave.
+        bool nearCave = false;
+        for (var dy = -1; dy <= 1 && !nearCave; dy++) {
+          for (var dx = -1; dx <= 1 && !nearCave; dx++) {
+            if (data.get(x + dx, y + dy) == El.empty) nearCave = true;
+          }
+        }
+        if (!nearCave) continue;
+        final n = crystalNoise.noise2D(x / 6.0, y / 6.0);
+        if (n > 0.55 && rng.nextDouble() < 0.3) {
+          // Alternate between glass (crystal) and ice formations.
+          data.set(x, y, rng.nextBool() ? El.glass : El.ice);
+          if (data.get(x, y) == El.ice) {
+            data.setTemp(x, y, 20);
           }
         }
       }
@@ -230,6 +353,7 @@ class FeaturePlacer {
   ///
   /// Surface water is placed by finding local valleys/depressions in the
   /// heightmap rather than using a flat global water line.
+  /// Meadow preset also gets thin streams connecting ponds.
   static void placeWater(
     GridData data,
     WorldConfig config,
@@ -238,8 +362,12 @@ class FeaturePlacer {
     if (config.waterLevel <= 0) return;
 
     // --- Surface water: fill depressions ---
-    // Find local minima and fill up to the lowest neighboring ridge.
     _fillDepressions(data, config, heightmap);
+
+    // --- Meadow: thin streams connecting low points ---
+    if (config.vegetation >= 0.8 && config.terrainScale < 1.0) {
+      _placeMeadowStreams(data, config, heightmap);
+    }
 
     // --- Underground pools: small pools at cave floors ---
     final rng = Random(config.seed + 2000);
@@ -351,18 +479,54 @@ class FeaturePlacer {
     }
   }
 
+  /// Place thin streams connecting low terrain points for meadow.
+  static void _placeMeadowStreams(
+    GridData data,
+    WorldConfig config,
+    List<int> heightmap,
+  ) {
+    final rng = Random(config.seed + 2500);
+    // Find 2-3 low points to connect with streams.
+    final lowPoints = <int>[];
+    for (var x = 10; x < config.width - 10; x += 20) {
+      int lowestX = x;
+      for (var dx = -10; dx <= 10; dx++) {
+        final cx = x + dx;
+        if (cx >= 0 && cx < config.width && heightmap[cx] > heightmap[lowestX]) {
+          lowestX = cx;
+        }
+      }
+      lowPoints.add(lowestX);
+    }
+
+    // Connect pairs of low points with thin water streams.
+    for (var i = 0; i < lowPoints.length - 1 && i < 3; i++) {
+      if (rng.nextDouble() > 0.5) continue;
+      final x1 = lowPoints[i];
+      final x2 = lowPoints[i + 1];
+      for (var x = min(x1, x2); x <= max(x1, x2); x++) {
+        final surfY = heightmap[x];
+        // Place 1 cell of water just at the surface in low spots.
+        if (data.get(x, surfY - 1) == El.empty &&
+            data.get(x, surfY) == El.dirt) {
+          data.set(x, surfY, El.water);
+        }
+      }
+    }
+  }
+
   // --------------------------------------------------------------------------
   // Island ocean fill
   // --------------------------------------------------------------------------
 
   /// Fill the ocean around an island landmass.
-  /// Creates water at a fixed water line, adds sand beaches at the shoreline.
+  /// Creates deep water, sand beaches (3-5 cells), underwater sand/dirt floor.
   static void fillIslandOcean(
     GridData data,
     WorldConfig config,
     List<int> heightmap,
   ) {
-    final waterLine = (config.height * 0.65).round();
+    final waterLine = (config.height * 0.55).round();
 
     for (var x = 0; x < config.width; x++) {
       final surface = heightmap[x];
@@ -383,15 +547,135 @@ class FeaturePlacer {
         }
       }
 
-      // Beach sand: where terrain meets the water line, replace dirt with sand.
-      if (surface >= waterLine - 4 && surface <= waterLine + 2) {
-        // This is the shoreline — make it sandy.
-        for (var dy = -2; dy <= 3; dy++) {
+      // Beach sand: where terrain meets the water line, 3-5 cells deep.
+      if (surface >= waterLine - 6 && surface <= waterLine + 3) {
+        // This is the shoreline — make it sandy (3-5 cells).
+        for (var dy = -3; dy <= 5; dy++) {
           final by = surface + dy;
           if (data.inBounds(x, by) && data.get(x, by) == El.dirt) {
             data.set(x, by, El.sand);
           }
         }
+      }
+
+      // Underwater ocean floor: sand layer on top of dirt/stone.
+      if (surface > waterLine + 3) {
+        // Replace top 2-3 cells of underwater terrain with sand.
+        for (var dy = 0; dy < 3; dy++) {
+          if (data.inBounds(x, surface + dy) &&
+              data.get(x, surface + dy) == El.dirt) {
+            data.set(x, surface + dy, El.sand);
+          }
+        }
+      }
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Canyon features
+  // --------------------------------------------------------------------------
+
+  /// Place canyon-specific features: river at floor, cliff-face caves,
+  /// exposed stone layers, and sandy bottom near the river.
+  static void placeCanyonFeatures(
+    GridData data,
+    WorldConfig config,
+    List<int> heightmap,
+  ) {
+    final rng = Random(config.seed + 9000);
+    final center = config.width ~/ 2;
+    final canyonWidth = (config.width * 0.30).round();
+
+    // --- Find the canyon floor (deepest point) ---
+    int floorY = 0;
+    for (var x = center - canyonWidth; x < center + canyonWidth; x++) {
+      if (x >= 0 && x < config.width && heightmap[x] > floorY) {
+        floorY = heightmap[x];
+      }
+    }
+
+    // --- River at canyon bottom ---
+    for (var x = center - canyonWidth + 5; x < center + canyonWidth - 5; x++) {
+      if (x < 0 || x >= config.width) continue;
+      final h = heightmap[x];
+      // River where terrain is in the bottom 20% of the canyon.
+      if (h > floorY - (config.height * 0.08).round()) {
+        // Fill 2-4 cells of water above the canyon floor.
+        for (var dy = 0; dy < 3; dy++) {
+          final wy = h - 1 - dy;
+          if (wy > 0 && data.get(x, wy) == El.empty) {
+            data.set(x, wy, El.water);
+          }
+        }
+        // Sandy bottom near river.
+        for (var sd = 0; sd < 3; sd++) {
+          if (data.inBounds(x, h + sd) && data.get(x, h + sd) == El.dirt) {
+            data.set(x, h + sd, El.sand);
+          }
+        }
+      }
+    }
+
+    // --- Cliff-face caves (small alcoves in the walls) ---
+    for (var attempt = 0; attempt < 6; attempt++) {
+      // Pick a spot on one of the cliff walls.
+      final side = rng.nextBool() ? -1 : 1;
+      final wallX = center + side * (canyonWidth ~/ 2 + rng.nextInt(canyonWidth ~/ 3));
+      if (wallX < 3 || wallX >= config.width - 3) continue;
+
+      final surfY = heightmap[wallX.clamp(0, config.width - 1)];
+      final caveY = surfY + 5 + rng.nextInt(15);
+      if (caveY >= config.height - 10) continue;
+
+      // Carve a small cave (4-8 wide, 3-5 tall).
+      final caveW = 4 + rng.nextInt(5);
+      final caveH = 3 + rng.nextInt(3);
+      for (var dy = -caveH ~/ 2; dy <= caveH ~/ 2; dy++) {
+        for (var dx = 0; dx < caveW; dx++) {
+          final nx = wallX + dx * -side; // Carve into the wall.
+          final ny = caveY + dy;
+          if (data.inBounds(nx, ny) && data.get(nx, ny) == El.stone) {
+            data.set(nx, ny, El.empty);
+          }
+        }
+      }
+    }
+
+    // --- Expose stone at cliff surfaces (thin dirt on walls) ---
+    for (var x = center - canyonWidth; x < center + canyonWidth; x++) {
+      if (x < 0 || x >= config.width) continue;
+      final surfY = heightmap[x];
+      // Where terrain is steep (big height differences), expose stone.
+      if (x > 0 && x < config.width - 1) {
+        final slopeL = (heightmap[x] - heightmap[x - 1]).abs();
+        final slopeR = (heightmap[x] - heightmap[(x + 1).clamp(0, config.width - 1)]).abs();
+        if (slopeL > 2 || slopeR > 2) {
+          // Replace top dirt cells with stone for exposed cliff face.
+          for (var dy = 0; dy < 3; dy++) {
+            if (data.inBounds(x, surfY + dy) && data.get(x, surfY + dy) == El.dirt) {
+              data.set(x, surfY + dy, El.stone);
+            }
+          }
+        }
+      }
+    }
+
+    // --- 1-2 waterfalls from cliff ledges ---
+    int waterfallsPlaced = 0;
+    for (var x = center - canyonWidth; x < center + canyonWidth && waterfallsPlaced < 2; x++) {
+      if (x < 2 || x >= config.width - 2) continue;
+      final h = heightmap[x];
+      final nextH = heightmap[(x + 1).clamp(0, config.width - 1)];
+      if ((nextH - h).abs() > 8 && rng.nextDouble() < 0.3) {
+        // Place water source at the cliff edge.
+        for (var dy = 0; dy < 4; dy++) {
+          final wy = h - 1 - dy;
+          if (wy > 0 && data.get(x, wy) == El.empty) {
+            data.set(x, wy, El.water);
+          }
+        }
+        waterfallsPlaced++;
+        x += 15;
       }
     }
   }
@@ -443,13 +727,15 @@ class FeaturePlacer {
   // --------------------------------------------------------------------------
 
   /// Place snow on the highest peaks (top 10% of terrain).
+  /// Skips meadow (warm) and underground presets.
   static void placeSnow(
     GridData data,
     WorldConfig config,
     List<int> heightmap,
   ) {
-    // Snow on any world with significant terrain, not just terrainScale > 1.5.
+    // No snow on gentle terrain, meadow (warm), or underground.
     if (config.terrainScale <= 1.0) return;
+    if (config.vegetation >= 0.8) return; // Meadow — warm feel.
 
     // Find elevation range.
     int minH = config.height;
@@ -484,11 +770,15 @@ class FeaturePlacer {
   // --------------------------------------------------------------------------
 
   /// Place lava pockets deep underground.
+  /// Meadow gets none. Underground gets larger pools handled separately.
   static void placeLava(
     GridData data,
     WorldConfig config,
     List<int> heightmap,
   ) {
+    // Meadow — warm and safe, no lava.
+    if (config.vegetation >= 0.8 && config.terrainScale < 1.0) return;
+
     final rng = Random(config.seed + 7000);
     final lavaNoise = SimplexNoise(config.seed + 7000);
 
@@ -506,6 +796,7 @@ class FeaturePlacer {
 
         if (n > 0.65 && rng.nextDouble() < 0.5) {
           data.set(x, y, El.lava);
+          data.setTemp(x, y, 250);
         }
       }
     }
@@ -516,6 +807,7 @@ class FeaturePlacer {
   // --------------------------------------------------------------------------
 
   /// Place metal ore deposits as clustered pockets in stone layers.
+  /// Underground preset gets denser ore veins.
   static void placeOre(
     GridData data,
     WorldConfig config,
@@ -524,10 +816,16 @@ class FeaturePlacer {
     final rng = Random(config.seed + 3000);
     final oreNoise = SimplexNoise(config.seed + 3000);
 
+    // Underground preset gets more ore.
+    final isUnderground = config.caveDensity >= 0.6 && config.vegetation <= 0.1;
+    final oreThreshold = isUnderground ? 0.55 : 0.70;
+    final oreProbability = isUnderground ? 0.75 : 0.60;
+    final minDepthBelow = isUnderground ? 10 : 20;
+
     for (var y = 0; y < config.height; y++) {
       for (var x = 0; x < config.width; x++) {
         if (data.get(x, y) != El.stone) continue;
-        if (y < heightmap[x] + 20) continue;
+        if (y < heightmap[x] + minDepthBelow) continue;
 
         final n = oreNoise.octaveNoise2D(
           x / (config.width * 0.05),
@@ -535,7 +833,7 @@ class FeaturePlacer {
           octaves: 2,
         );
 
-        if (n > 0.7 && rng.nextDouble() < 0.6) {
+        if (n > oreThreshold && rng.nextDouble() < oreProbability) {
           data.set(x, y, El.metal);
         }
       }
@@ -598,8 +896,9 @@ class FeaturePlacer {
 
       // --- Grass on most dirt surfaces ---
       if (data.get(x, surfaceY - 1) == El.empty) {
-        // High probability of grass on exposed dirt.
-        if (rng.nextDouble() < 0.75) {
+        // Higher probability for meadow-like configs (vegetation >= 0.8).
+        final grassChance = config.vegetation >= 0.8 ? 0.92 : 0.75;
+        if (rng.nextDouble() < grassChance) {
           data.setPlant(x, surfaceY - 1, kPlantGrass, kStMature);
         }
       }
@@ -612,8 +911,8 @@ class FeaturePlacer {
 
   /// Place seeds and pre-grown trees using noise-based clustering.
   ///
-  /// Trees cluster together in groves rather than being randomly scattered.
-  /// No plants in caves or underwater.
+  /// Trees cluster together in groves (5-8 trees) rather than being
+  /// randomly scattered. Meadow gets flowers. No plants in caves or underwater.
   static void placeVegetation(
     GridData data,
     WorldConfig config,
@@ -623,6 +922,10 @@ class FeaturePlacer {
 
     final rng = Random(config.seed + 4000);
     final clusterNoise = SimplexNoise(config.seed + 4100);
+    final flowerNoise = SimplexNoise(config.seed + 4200);
+
+    // Meadow detection: high vegetation, low terrain scale.
+    final isMeadow = config.vegetation >= 0.8 && config.terrainScale < 1.0;
 
     for (var x = 2; x < config.width - 2; x++) {
       final surfaceY = heightmap[x];
@@ -636,8 +939,7 @@ class FeaturePlacer {
       if (data.get(x, surfaceY - 1) != El.empty) continue;
 
       // --- Cluster density from noise ---
-      final density = clusterNoise.noise2D(x / 20.0, 0.0);
-      // density in [-1, 1]; map to [0, 1] for probability scaling.
+      final density = clusterNoise.noise2D(x / 15.0, 0.0);
       final clusterFactor = ((density + 1.0) * 0.5).clamp(0.0, 1.0);
 
       // Check moisture: water within 8 cells.
@@ -652,16 +954,33 @@ class FeaturePlacer {
 
       // Base chance depends on vegetation config + cluster density.
       final baseChance = config.vegetation * clusterFactor;
-      final chance = moist ? baseChance * 0.7 : baseChance * 0.25;
+      final chance = moist ? baseChance * 0.7 : baseChance * 0.30;
 
       if (rng.nextDouble() < chance) {
-        // 35% chance of a pre-grown tree in dense clusters, otherwise a seed.
-        if (clusterFactor > 0.5 && rng.nextDouble() < 0.35) {
-          _placeTree(data, x, surfaceY, rng);
-          x += 2; // Trees need spacing.
+        // In high-density clusters, place tree groves (5-8 trees).
+        if (clusterFactor > 0.45 && rng.nextDouble() < 0.45) {
+          // Place a grove: multiple trees in sequence.
+          final groveSize = isMeadow ? (5 + rng.nextInt(4)) : (2 + rng.nextInt(3));
+          for (var t = 0; t < groveSize; t++) {
+            final tx = x + t * 3;
+            if (tx >= config.width - 2) break;
+            final tSurface = heightmap[tx];
+            if (data.get(tx, tSurface) == El.dirt &&
+                data.get(tx, tSurface - 1) == El.empty) {
+              _placeTree(data, tx, tSurface, rng);
+            }
+          }
+          x += groveSize * 3;
         } else {
-          // Place seed, more seeds near water.
           data.set(x, surfaceY - 1, El.seed);
+        }
+      }
+
+      // Meadow flowers: occasional flower seeds between trees.
+      if (isMeadow && data.get(x, surfaceY - 1) == El.empty) {
+        final fn = flowerNoise.noise2D(x / 10.0, 0.5);
+        if (fn > 0.3 && rng.nextDouble() < 0.15) {
+          data.setPlant(x, surfaceY - 1, kPlantFlower, kStMature);
         }
       }
     }

@@ -91,79 +91,100 @@ class TerrainGenerator {
 
   /// Detect island-style config.
   static bool _isIslandConfig(WorldConfig config) =>
-      config.waterLevel >= 0.55 &&
+      config.waterLevel >= 0.60 &&
       config.terrainScale >= 1.0 &&
       config.terrainScale <= 1.5;
 
   /// Detect canyon-style config (high terrain scale, moderate cave density).
   static bool _isCanyonConfig(WorldConfig config) =>
-      config.terrainScale >= 1.8 && config.caveDensity >= 0.4;
+      config.terrainScale >= 1.8 && config.caveDensity >= 0.4 &&
+      config.waterLevel < 0.55;
 
   /// Detect underground-style config (high caves, low vegetation).
   static bool _isUndergroundConfig(WorldConfig config) =>
-      config.caveDensity >= 0.6 && config.vegetation <= 0.1;
+      config.caveDensity >= 0.6 && config.vegetation <= 0.1 &&
+      config.terrainScale < 1.0;
 
   /// Push edges of the heightmap down to create an island shape.
-  /// Creates a central landmass with beaches tapering into ocean.
+  /// Creates a central landmass rising to a peak, with deep ocean at edges.
   static void _applyIslandFalloff(List<int> heightmap, WorldConfig config) {
     final center = config.width / 2.0;
     final maxDist = config.width / 2.0;
-    // Water line — where the ocean sits.
-    final waterLine = (config.height * 0.65).round();
+    // Water line — where the ocean surface sits.
+    final waterLine = (config.height * 0.55).round();
 
     for (var x = 0; x < config.width; x++) {
       final dist = (x - center).abs() / maxDist;
-      if (dist > 0.25) {
-        // Steep falloff at island edges — pushes terrain below water line.
-        final falloff = ((dist - 0.25) / 0.75);
-        final push = (falloff * falloff * falloff * config.height * 0.7).round();
-        heightmap[x] = (heightmap[x] + push).clamp(0, config.height - 10);
+
+      // Raise the center into a peak.
+      if (dist < 0.15) {
+        final peakFactor = 1.0 - (dist / 0.15);
+        final raise = (peakFactor * config.height * 0.08).round();
+        heightmap[x] = (heightmap[x] - raise).clamp(5, config.height - 10);
       }
-      // Flatten the ocean floor at the edges.
-      if (dist > 0.6) {
-        heightmap[x] = heightmap[x].clamp(waterLine - 5, config.height - 10);
+
+      if (dist > 0.20) {
+        // Steep falloff at island edges — pushes terrain below water line.
+        final falloff = ((dist - 0.20) / 0.80);
+        final push = (falloff * falloff * falloff * config.height * 0.8).round();
+        heightmap[x] = (heightmap[x] + push).clamp(0, config.height - 8);
+      }
+      // Deep ocean floor at far edges.
+      if (dist > 0.55) {
+        final deepPush = ((dist - 0.55) / 0.45) * config.height * 0.15;
+        heightmap[x] = (heightmap[x] + deepPush.round())
+            .clamp(waterLine + 5, config.height - 8);
       }
     }
   }
 
-  /// Create a deep valley in the center for canyon preset.
+  /// Create a deep V-shaped valley in the center for canyon preset.
+  /// Canyon is 40-60% of grid height deep with steep cliff walls.
   static void _applyCanyonShape(List<int> heightmap, WorldConfig config) {
     final center = config.width / 2.0;
-    final canyonWidth = config.width * 0.35;
+    final canyonWidth = config.width * 0.30;
+    final canyonNoise = SimplexNoise(config.seed + 600);
 
     for (var x = 0; x < config.width; x++) {
       final dist = (x - center).abs();
+
       if (dist < canyonWidth) {
-        // Valley: push terrain down in center.
+        // V-shape: linear depth increase toward center.
         final depth = 1.0 - (dist / canyonWidth);
-        final valleyDepth = (depth * depth * config.height * 0.25).round();
-        heightmap[x] = (heightmap[x] - valleyDepth).clamp(5, config.height - 20);
+        // Canyon cuts 40-55% of grid height deep.
+        final valleyDepth = (depth * config.height * 0.50).round();
+        // Add small noise for cliff texture.
+        final noise = canyonNoise.noise2D(x / 8.0, 0.0) * 3;
+        heightmap[x] = (heightmap[x] + valleyDepth + noise.round())
+            .clamp(5, config.height - 15);
       }
-      // Raise walls at canyon edges for dramatic cliffs.
-      if (dist > canyonWidth * 0.8 && dist < canyonWidth * 1.3) {
-        final wallFactor = 1.0 - ((dist - canyonWidth * 0.8) / (canyonWidth * 0.5)).abs();
-        final raise = (wallFactor * config.height * 0.12).round();
-        heightmap[x] = (heightmap[x] - raise).clamp(5, config.height - 20);
+
+      // Raise cliff walls dramatically at canyon edges.
+      if (dist > canyonWidth * 0.7 && dist < canyonWidth * 1.4) {
+        final wallFactor =
+            1.0 - ((dist - canyonWidth * 0.7) / (canyonWidth * 0.7)).abs();
+        final raise = (wallFactor * config.height * 0.18).round();
+        heightmap[x] = (heightmap[x] - raise).clamp(5, config.height - 15);
       }
     }
   }
 
-  /// Push terrain very high (minimal sky) for underground preset.
-  /// Leaves slight surface variation for cave entrances.
+  /// Push terrain very high (5-10% sky) for underground preset.
+  /// Leaves slight surface variation for 1-2 cave entrances.
   static void _applyUndergroundShape(List<int> heightmap, WorldConfig config) {
     final entranceNoise = SimplexNoise(config.seed + 500);
     for (var x = 0; x < config.width; x++) {
-      // Base surface at ~8% from top.
-      var surface = (config.height * 0.08).round();
+      // Base surface at ~6% from top (very little sky).
+      var surface = (config.height * 0.06).round();
       // Slight variation for natural ceiling + occasional cave entrances.
-      final variation = entranceNoise.noise2D(x / 15.0, 0.0);
-      if (variation > 0.5) {
+      final variation = entranceNoise.noise2D(x / 12.0, 0.0);
+      if (variation > 0.6) {
         // Cave entrance dip — sky reaches deeper here.
-        surface += ((variation - 0.5) * config.height * 0.15).round();
+        surface += ((variation - 0.6) * config.height * 0.10).round();
       } else {
-        surface += (variation * 3).round().abs();
+        surface += (variation * 2).round().abs();
       }
-      heightmap[x] = surface.clamp(3, config.height ~/ 3);
+      heightmap[x] = surface.clamp(3, (config.height * 0.12).round());
     }
   }
 
@@ -206,10 +227,20 @@ class TerrainGenerator {
   }
 
   /// Variable dirt depth per column using noise for organic variation.
-  /// Returns 8-25 cells of dirt.
+  /// Meadow-like configs get richer dirt (15-25), canyon gets thin (4-10).
   static int _dirtDepth(int x, WorldConfig config, SimplexNoise noise) {
     final n = noise.noise2D(x / 20.0, config.seed * 0.01);
-    // Map noise [-1,1] to [8,25].
-    return (8 + ((n + 1.0) * 0.5) * 17).round();
+    final normalized = (n + 1.0) * 0.5; // 0..1
+
+    // Canyon: thin dirt on cliff faces (exposed stone).
+    if (_isCanyonConfig(config)) {
+      return (4 + normalized * 6).round();
+    }
+    // Meadow: rich deep dirt.
+    if (config.vegetation >= 0.8 && config.terrainScale < 1.0) {
+      return (15 + normalized * 10).round();
+    }
+    // Default.
+    return (8 + normalized * 17).round();
   }
 }

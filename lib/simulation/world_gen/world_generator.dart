@@ -24,14 +24,16 @@ class WorldGenerator {
   /// 1. Generate heightmap via multi-octave noise
   /// 2. Fill terrain layers (sky, dirt, stone, deep stone)
   /// 3. Carve caves using layered noise + cellular automata
-  /// 4. Place water in depressions and underground pools
-  /// 5. Place waterfalls at elevation drops
-  /// 6. Place snow on highest peaks (top 10%)
-  /// 7. Place lava pockets deep underground
-  /// 8. Place metal ore deposits in stone
-  /// 9. Place surface detail (sand beaches, boulders, grass)
-  /// 10. Plant seeds and pre-grown trees in clusters
-  /// 11. Optionally place ant colony starters
+  /// 4. Place water in depressions, underground pools, meadow streams
+  /// 5. Canyon features (river, cliff caves, sandy bottom)
+  /// 6. Place waterfalls at elevation drops
+  /// 7. Place snow on highest peaks (top 10%, skips meadow)
+  /// 8. Place lava pockets deep underground (skips meadow)
+  /// 9. Place metal ore deposits in stone (enhanced for underground)
+  /// 10. Place surface detail (sand beaches, boulders, grass)
+  /// 11. Plant seeds and pre-grown trees in groves + flowers
+  /// 12. Optionally place ant colony starters
+  /// 13. Initialize temperatures
   static GridData generate(WorldConfig config) {
     // 1. Heightmap.
     final heightmap = TerrainGenerator.generateHeightmap(config);
@@ -44,33 +46,39 @@ class WorldGenerator {
 
     // 4. Water + island ocean fill.
     FeaturePlacer.placeWater(data, config, heightmap);
-    if (config.waterLevel >= 0.55 && config.terrainScale >= 1.0 && config.terrainScale <= 1.5) {
+    if (config.waterLevel >= 0.60 && config.terrainScale >= 1.0 && config.terrainScale <= 1.5) {
       FeaturePlacer.fillIslandOcean(data, config, heightmap);
     }
 
-    // 5. Waterfalls.
+    // 5. Canyon-specific features (river, cliff caves, sandy bottom).
+    if (config.terrainScale >= 1.8 && config.caveDensity >= 0.4 &&
+        config.waterLevel < 0.55) {
+      FeaturePlacer.placeCanyonFeatures(data, config, heightmap);
+    }
+
+    // 6. Waterfalls.
     FeaturePlacer.placeWaterfalls(data, config, heightmap);
 
-    // 6. Snow.
+    // 7. Snow.
     FeaturePlacer.placeSnow(data, config, heightmap);
 
-    // 7. Lava.
+    // 8. Lava.
     FeaturePlacer.placeLava(data, config, heightmap);
 
-    // 8. Ore deposits.
+    // 9. Ore deposits.
     FeaturePlacer.placeOre(data, config, heightmap);
 
-    // 9. Surface detail (sand, boulders, grass).
+    // 10. Surface detail (sand, boulders, grass).
     FeaturePlacer.placeSurfaceDetail(data, config, heightmap);
 
-    // 10. Vegetation & trees.
+    // 11. Vegetation & trees.
     FeaturePlacer.placeVegetation(data, config, heightmap);
 
-    // 11. Ant colonies.
+    // 12. Ant colonies.
     final colonies = FeaturePlacer.placeAntColonies(data, config, heightmap);
     data.colonyPositions.addAll(colonies);
 
-    // 12. Initialize temperatures based on element properties.
+    // 13. Initialize temperatures based on element properties.
     _initializeTemperatures(data, config);
 
     return data;
