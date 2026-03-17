@@ -123,6 +123,13 @@ class SimulationEngine {
 
   bool isNight = false;
 
+  // -- Creature callback (for NEAT ant AI integration) ----------------------
+
+  /// Optional callback for element behaviors to query creature AI decisions.
+  /// Signature: (int x, int y) -> map of neural outputs, or null if no colony.
+  /// Used by simAnt() to get neural-driven decisions from the NEAT system.
+  Map<String, double> Function(int x, int y)? creatureCallback;
+
   // =========================================================================
   // Construction / initialization
   // =========================================================================

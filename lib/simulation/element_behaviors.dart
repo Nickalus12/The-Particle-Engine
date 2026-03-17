@@ -96,6 +96,27 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
+    // Surface evaporation (water cycle): surface water slowly evaporates
+    // Surface = no water directly above, sky/empty above.
+    {
+      final aboveY = y - g;
+      final isSurface = !inBoundsY(aboveY) ||
+          (grid[aboveY * gridW + x] != El.water);
+      if (isSurface) {
+        // Check temperature for accelerated evaporation
+        final temp = temperature[idx];
+        final evapRate = temp > 150
+            ? 60   // Near fire/lava: fast evaporation
+            : (isNight ? 400 : 200); // Normal: slow, slower at night
+        if (rng.nextInt(evapRate) == 0) {
+          grid[idx] = El.steam;
+          life[idx] = 0;
+          markProcessed(idx);
+          return;
+        }
+      }
+    }
+
     // Density-based displacement: water sinks through lighter liquids (oil)
     if (tryDensityDisplace(x, y, idx, El.water)) return;
 
@@ -811,7 +832,8 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
-    // Ash fertilizer
+    // Ash fertilizer: dirt absorbs adjacent ash, gaining +2 moisture.
+    // This completes the cycle: plant dies → ash → dirt absorbs → moisture → new plant.
     if (rng.nextInt(10) == 0) {
       for (int dy2 = -1; dy2 <= 1; dy2++) {
         for (int dx2 = -1; dx2 <= 1; dx2++) {
@@ -823,7 +845,7 @@ extension ElementBehaviors on SimulationEngine {
             grid[ni] = El.empty;
             life[ni] = 0;
             markProcessed(ni);
-            life[idx] = (life[idx] + 1).clamp(0, 5);
+            life[idx] = (life[idx] + 2).clamp(0, 5);
             break;
           }
         }
@@ -909,7 +931,8 @@ extension ElementBehaviors on SimulationEngine {
     if (pStage == kStDead) {
       velY[idx] = (velY[idx] + 1).clamp(0, 127).toInt();
       if (velY[idx] > 120) {
-        grid[idx] = El.dirt; life[idx] = 0; velX[idx] = 0; velY[idx] = 0;
+        // Dead plants become ash (fertilization loop) instead of dirt.
+        grid[idx] = El.ash; life[idx] = 0; velX[idx] = 0; velY[idx] = 0;
         markProcessed(idx);
       }
       return;
@@ -955,6 +978,12 @@ extension ElementBehaviors on SimulationEngine {
     final curSize = velY[idx].clamp(0, 127).toInt();
     if (curSize >= maxH) {
       if (pStage != kStMature) setPlantData(idx, pType, kStMature);
+
+      // Mature plants drop seeds (1 in 500 chance per frame).
+      if (rng.nextInt(500) == 0) {
+        _plantDropSeed(x, y, idx);
+      }
+
       return;
     }
 
@@ -1176,6 +1205,35 @@ extension ElementBehaviors on SimulationEngine {
         setPlantData(ni, kPlantVine, kStGrowing);
         velY[ni] = (curSize + 1); markProcessed(ni);
         velY[idx] = (curSize + 1);
+      }
+    }
+  }
+
+  /// Drop a seed from a mature plant into the nearest empty adjacent cell.
+  void _plantDropSeed(int x, int y, int idx) {
+    for (int dy2 = -1; dy2 <= 1; dy2++) {
+      for (int dx2 = -1; dx2 <= 1; dx2++) {
+        if (dx2 == 0 && dy2 == 0) continue;
+        final sx = wrapX(x + dx2);
+        final sy = y + dy2;
+        if (!inBoundsY(sy)) continue;
+        final si = sy * gridW + sx;
+        if (grid[si] == El.empty) {
+          // Wind-assisted seed spread.
+          final seedX = windForce != 0 && rng.nextBool()
+              ? wrapX(sx + windForce.sign) : sx;
+          final seedIdx = sy * gridW + seedX;
+          if (grid[seedIdx] == El.empty) {
+            grid[seedIdx] = El.seed;
+            life[seedIdx] = 0;
+            markDirty(seedX, sy);
+          } else {
+            grid[si] = El.seed;
+            life[si] = 0;
+            markDirty(sx, sy);
+          }
+          return;
+        }
       }
     }
   }
@@ -1898,6 +1956,17 @@ extension ElementBehaviors on SimulationEngine {
       grid[idx] = El.empty; life[idx] = 0; markProcessed(idx); return;
     }
 
+    // Condensation at altitude (water cycle): steam in top 10% of grid
+    // has a chance to condense into water droplets (rain).
+    final topThreshold = gravityDir == 1 ? gridH ~/ 10 : gridH - (gridH ~/ 10);
+    final isAtAltitude = gravityDir == 1 ? y < topThreshold : y > topThreshold;
+    if (isAtAltitude && rng.nextInt(isNight ? 80 : 150) == 0) {
+      grid[idx] = El.water;
+      life[idx] = 100;
+      markProcessed(idx);
+      return;
+    }
+
     final condenseChance = isNight ? 15 : 30;
     if (rng.nextInt(condenseChance) == 0 && checkAdjacent(x, y, El.water)) {
       grid[idx] = El.water; life[idx] = 100; markProcessed(idx); return;
@@ -2464,6 +2533,96 @@ extension ElementBehaviors on SimulationEngine {
 
     // Gravity
     if (inBoundsY(by) && grid[by * w + x] == El.empty) { swap(idx, by * w + x); return; }
+
+    // -- NEAT neural integration: if a colony manages this ant, use brain ---
+    if (creatureCallback != null && frameCount % 3 == 0) {
+      final decision = creatureCallback!(x, y);
+      if (decision.isNotEmpty) {
+        final ndx = (decision['dx'] ?? 0.0).toInt().clamp(-1, 1);
+        final ndy = (decision['dy'] ?? 0.0).toInt().clamp(-1, 1);
+        final wantsPickup = (decision['pickup'] ?? 0.0) > 0.5;
+        final wantsDrop = (decision['drop'] ?? 0.0) > 0.5;
+        final pheromone = decision['pheromone'] ?? 0.0;
+
+        // Neural-driven movement
+        if (ndx != 0 || ndy != 0) {
+          final nx = wrapX(x + ndx);
+          final ny = y + ndy;
+          if (inBoundsY(ny)) {
+            final targetEl = grid[ny * w + nx];
+            if (targetEl == El.empty) {
+              velX[idx] = ndx;
+              swap(idx, ny * w + nx);
+            } else if (targetEl == El.dirt && rng.nextInt(3) == 0) {
+              // Neural-driven digging
+              grid[ny * w + nx] = El.empty;
+              life[ny * w + nx] = 0;
+              markDirty(nx, ny);
+              swap(idx, ny * w + nx);
+              velY[idx] = antCarrierState;
+            } else if (ndx != 0 && grid[y * w + nx] == El.empty) {
+              velX[idx] = ndx;
+              swap(idx, y * w + nx);
+            }
+          }
+        }
+
+        // Neural-driven food pickup
+        if (wantsPickup && state != antCarrierState) {
+          for (int dy2 = -1; dy2 <= 1; dy2++) {
+            for (int dx2 = -1; dx2 <= 1; dx2++) {
+              if (dx2 == 0 && dy2 == 0) continue;
+              final fx = wrapX(x + dx2);
+              final fy = y + dy2;
+              if (!inBoundsY(fy)) continue;
+              final fi = fy * w + fx;
+              final fe = grid[fi];
+              if (fe == El.seed || fe == El.plant) {
+                grid[fi] = El.empty; life[fi] = 0; markDirty(fx, fy);
+                velY[idx] = antCarrierState;
+                pheroFood[idx] = 200;
+                break;
+              }
+            }
+            if (velY[idx] == antCarrierState) break;
+          }
+        }
+
+        // Neural-driven drop
+        if (wantsDrop && state == antCarrierState) {
+          for (int dy2 = -1; dy2 <= 1; dy2++) {
+            for (int dx2 = -1; dx2 <= 1; dx2++) {
+              if (dx2 == 0 && dy2 == 0) continue;
+              final dx3 = wrapX(x + dx2);
+              final dy3 = y + dy2;
+              if (!inBoundsY(dy3)) continue;
+              if (grid[dy3 * w + dx3] == El.empty) {
+                grid[dy3 * w + dx3] = El.dirt;
+                life[dy3 * w + dx3] = 0;
+                markDirty(dx3, dy3);
+                velY[idx] = antExplorerState;
+                break;
+              }
+            }
+            if (velY[idx] == antExplorerState) break;
+          }
+        }
+
+        // Neural-driven pheromone deposit
+        if (pheromone > 0.1) {
+          final strength = (pheromone * 200).clamp(0, 250).toInt();
+          if (state == antCarrierState || state == antReturningState) {
+            if (pheroFood[idx] < strength) pheroFood[idx] = strength;
+          } else {
+            if (pheroHome[idx] < strength) pheroHome[idx] = strength;
+          }
+        }
+
+        return; // Neural decision handled — skip hardcoded state machine.
+      }
+    }
+
+    // -- Fallback: hardcoded state machine (when no colony manages this ant) --
 
     // Pheromone deposit
     if (state == antExplorerState || state == antForagerState) {

@@ -62,6 +62,11 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
     ElementRegistry.init();
     ReactionRegistry.init();
 
+    // Wire creature callback so cell-based ants can query NEAT brains.
+    simulation.creatureCallback = (int x, int y) {
+      return creatures.queryAntDecision(simulation, x, y) ?? {};
+    };
+
     // Populate the world based on game configuration.
     if (game.loadState != null) {
       // Restore from saved state.

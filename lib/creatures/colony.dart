@@ -112,7 +112,7 @@ class Colony {
     _maybeSpawnAnts(sim);
     _reinforceNestPheromone();
     _tickAnts(sim, allColonies);
-    _processDeadAnts();
+    _processDeadAnts(sim);
 
     foodPheromones.decay();
     homePheromones.decay();
@@ -322,10 +322,24 @@ class Colony {
   // Dead ant processing
   // ---------------------------------------------------------------------------
 
-  void _processDeadAnts() {
+  void _processDeadAnts([SimulationEngine? sim]) {
     for (final dead in _deadAntsQueue) {
       evolution.reportFitness(dead.genomeIndex, dead.fitness.score);
       totalDied++;
+
+      // Dead ant decomposes into dirt (ecosystem nutrient cycle).
+      if (sim != null) {
+        final ax = sim.wrapX(dead.x);
+        final ay = dead.y;
+        if (sim.inBoundsY(ay)) {
+          final di = ay * sim.gridW + ax;
+          if (sim.grid[di] == El.empty) {
+            sim.grid[di] = El.dirt;
+            sim.life[di] = 2; // Pre-moistened from decomposition.
+            sim.markDirty(ax, ay);
+          }
+        }
+      }
     }
     _deadAntsQueue.clear();
   }

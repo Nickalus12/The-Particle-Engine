@@ -1,7 +1,10 @@
+import 'dart:math';
+
 import '../simulation/element_registry.dart';
 import '../simulation/simulation_engine.dart';
 import 'ant.dart';
 import 'colony.dart';
+import 'neat/ant_brain.dart';
 
 /// High-level AI director for a single ant colony.
 ///
@@ -12,6 +15,7 @@ class AntColonyAI {
   AntColonyAI({required this.colony});
 
   final Colony colony;
+  final Random _rng = Random();
 
   /// Run one tick of colony-level decision-making.
   void tick(SimulationEngine sim, List<Colony> allColonies) {
@@ -62,6 +66,57 @@ class AntColonyAI {
         }
       }
     }
+  }
+
+  /// Query neural decision for a cell-based ant at (x, y).
+  ///
+  /// Returns a map of output signals if the ant is within colony range,
+  /// or null if no colony manages this position. Used by the cell-based
+  /// simAnt() to get NEAT-driven decisions that override hardcoded behavior.
+  Map<String, double>? getAntDecision(SimulationEngine sim, int x, int y) {
+    // Only manage ants within reasonable range of colony nest.
+    final dist = (x - colony.originX).abs() + (y - colony.originY).abs();
+    if (dist > 80) return null;
+
+    // Energy approximation from cell life value (higher = healthier).
+    final cellIdx = y * sim.gridW + x;
+    final lifeVal = sim.life[cellIdx];
+    final energy = lifeVal > 0 ? (lifeVal / 255.0).clamp(0.0, 1.0) : 0.5;
+
+    // Check if carrying (carrier state).
+    final carrying = sim.velY[cellIdx] == antCarrierState;
+
+    // Count nearby ants to estimate enemies.
+    final nearbyAnts = sim.countNearby(x, y, 5, El.ant);
+
+    // Pick a representative genome to run the brain.
+    if (colony.evolution.population.genomes.isEmpty) return null;
+    final genomeIdx = colony.evolution.selectGenomeForSpawn(_rng);
+    final genome = colony.evolution.population.genomes[genomeIdx];
+    final brain = AntBrain(genome: genome);
+
+    final action = brain.think(
+      sim: sim,
+      antX: x,
+      antY: y,
+      nestX: colony.originX,
+      nestY: colony.originY,
+      energy: energy,
+      carryingFood: carrying,
+      foodPheromones: colony.foodPheromones,
+      homePheromones: colony.homePheromones,
+      dangerPheromones: colony.dangerPheromones,
+      nearbyEnemyCount: nearbyAnts > 3 ? nearbyAnts - 3 : 0,
+    );
+
+    return {
+      'dx': action.dx.toDouble(),
+      'dy': action.dy.toDouble(),
+      'pheromone': action.pheromoneStrength,
+      'pickup': action.wantsPickUp ? 1.0 : 0.0,
+      'drop': action.wantsDrop ? 1.0 : 0.0,
+      'attack': action.wantsAttack ? 1.0 : 0.0,
+    };
   }
 
   void _detectEmergencies(SimulationEngine sim) {

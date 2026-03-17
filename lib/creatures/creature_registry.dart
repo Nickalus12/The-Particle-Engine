@@ -1,5 +1,6 @@
 import '../simulation/simulation_engine.dart';
 import 'ant.dart';
+import 'ant_colony_ai.dart';
 import 'colony.dart';
 
 /// Tracks all living creature colonies and ticks them each frame.
@@ -19,6 +20,7 @@ import 'colony.dart';
 /// evenly across frames to avoid spikes.
 class CreatureRegistry {
   final List<Colony> _colonies = [];
+  final Map<int, AntColonyAI> _colonyAIs = {};
   int _nextColonyId = 0;
 
   /// All currently active colonies.
@@ -47,6 +49,7 @@ class CreatureRegistry {
       seed: seed,
     );
     _colonies.add(colony);
+    _colonyAIs[colony.id] = AntColonyAI(colony: colony);
     return colony;
   }
 
@@ -58,7 +61,35 @@ class CreatureRegistry {
     }
 
     // Prune dead colonies.
-    _colonies.removeWhere((c) => !c.isAlive);
+    _colonies.removeWhere((c) {
+      if (!c.isAlive) {
+        _colonyAIs.remove(c.id);
+        return true;
+      }
+      return false;
+    });
+  }
+
+  /// Query neural decision for a cell-based ant at grid position (x, y).
+  ///
+  /// Finds the nearest colony and asks its AI director for a NEAT-driven
+  /// decision. Returns null if no colony is in range.
+  Map<String, double>? queryAntDecision(SimulationEngine sim, int x, int y) {
+    // Find closest colony to this ant.
+    Colony? best;
+    int bestDist = 999999;
+    for (final colony in _colonies) {
+      final dist =
+          (x - colony.originX).abs() + (y - colony.originY).abs();
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = colony;
+      }
+    }
+    if (best == null || bestDist > 80) return null;
+    final ai = _colonyAIs[best.id];
+    if (ai == null) return null;
+    return ai.getAntDecision(sim, x, y);
   }
 
   /// Find all ants from all colonies near a given position.
@@ -100,6 +131,7 @@ class CreatureRegistry {
     if (colony != null) {
       colony.exterminate();
       _colonies.remove(colony);
+      _colonyAIs.remove(colonyId);
     }
   }
 
@@ -109,6 +141,7 @@ class CreatureRegistry {
       colony.exterminate();
     }
     _colonies.clear();
+    _colonyAIs.clear();
   }
 
   /// Get all living ants across all colonies (for rendering).
