@@ -16,11 +16,14 @@ class GridData {
     required this.flags,
     required this.velX,
     required this.velY,
+    required this.temperature,
   });
 
-  /// Create an empty grid with all arrays zeroed.
+  /// Create an empty grid with all arrays zeroed (temperature at neutral 128).
   factory GridData.empty(int width, int height) {
     final size = width * height;
+    final temp = Uint8List(size);
+    temp.fillRange(0, size, 128);
     return GridData(
       width: width,
       height: height,
@@ -29,6 +32,7 @@ class GridData {
       flags: Uint8List(size),
       velX: Int8List(size),
       velY: Int8List(size),
+      temperature: temp,
     );
   }
 
@@ -49,6 +53,9 @@ class GridData {
 
   /// Per-cell vertical velocity.
   final Int8List velY;
+
+  /// Per-cell temperature (0-255, 128=neutral).
+  final Uint8List temperature;
 
   /// Convert (x, y) to flat index.
   int toIndex(int x, int y) => y * width + x;
@@ -85,6 +92,12 @@ class GridData {
     velX[idx] = ((plantStage & 0xF) << 4) | (plantType & 0xF);
   }
 
+  /// Set temperature at (x, y).
+  void setTemp(int x, int y, int temp) {
+    if (!inBounds(x, y)) return;
+    temperature[toIndex(x, y)] = temp;
+  }
+
   /// Colony positions placed during generation.
   ///
   /// The first colony (if any) is set as the engine's primary colony.
@@ -101,6 +114,7 @@ class GridData {
     engine.flags.setAll(0, flags);
     engine.velX.setAll(0, velX);
     engine.velY.setAll(0, velY);
+    engine.temperature.setAll(0, temperature);
 
     // Set primary colony position for pheromone system.
     if (colonyPositions.isNotEmpty) {

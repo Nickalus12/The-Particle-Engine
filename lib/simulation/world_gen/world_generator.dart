@@ -67,24 +67,55 @@ class WorldGenerator {
     final colonies = FeaturePlacer.placeAntColonies(data, config, heightmap);
     data.colonyPositions.addAll(colonies);
 
+    // 12. Initialize temperatures based on element properties.
+    _initializeTemperatures(data, config);
+
     return data;
   }
 
-  /// Generate a blank world with only indestructible stone boundaries.
+  /// Set initial temperatures based on element base temperatures.
+  ///
+  /// Lava starts hot, ice/snow start cold, everything else neutral.
+  /// Also warms stone near lava for a natural heat gradient.
+  static void _initializeTemperatures(GridData data, WorldConfig config) {
+    for (var y = 0; y < config.height; y++) {
+      for (var x = 0; x < config.width; x++) {
+        final el = data.get(x, y);
+        final baseTemp = elementBaseTemp[el];
+        if (baseTemp != 128) {
+          data.setTemp(x, y, baseTemp);
+          // Warm/cool neighbors for natural gradient.
+          for (var dy = -2; dy <= 2; dy++) {
+            for (var dx = -2; dx <= 2; dx++) {
+              if (dx == 0 && dy == 0) continue;
+              final nx = x + dx;
+              final ny = y + dy;
+              if (!data.inBounds(nx, ny)) continue;
+              final dist = dx.abs() + dy.abs();
+              final neighborEl = data.get(nx, ny);
+              if (neighborEl == El.empty) continue;
+              // Blend toward the heat source/sink based on distance.
+              final blend = dist <= 1 ? 0.6 : 0.3;
+              final currentTemp = data.temperature[data.toIndex(nx, ny)];
+              final newTemp = (currentTemp + (baseTemp - currentTemp) * blend).round().clamp(0, 255);
+              data.setTemp(nx, ny, newTemp);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /// Generate a blank world with only a bottom boundary.
+  /// No side walls — the world wraps horizontally.
   static GridData generateBlank(int width, int height) {
     final data = GridData.empty(width, height);
 
-    // Bottom boundary — 5 rows of stone.
-    for (var y = height - 5; y < height; y++) {
+    // Bottom boundary — 3 rows of stone (bedrock).
+    for (var y = height - 3; y < height; y++) {
       for (var x = 0; x < width; x++) {
         data.set(x, y, El.stone);
       }
-    }
-
-    // Side walls — 1 column each.
-    for (var y = 0; y < height; y++) {
-      data.set(0, y, El.stone);
-      data.set(width - 1, y, El.stone);
     }
 
     return data;
