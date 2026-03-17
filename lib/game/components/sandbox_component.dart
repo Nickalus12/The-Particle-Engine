@@ -157,9 +157,7 @@ class SandboxComponent extends PositionComponent
             life[idx] = 0;
             velX[idx] = 0;
             velY[idx] = 0;
-            // Set clock bit to OPPOSITE of current simClock so the cell
-            // is guaranteed to be processed this frame (the step() loop
-            // skips cells whose clock bit matches currentClockBit).
+            simulation.temperature[idx] = 128; // neutral temp
             flags[idx] = simulation.simClock ? 0 : 0x80;
             simulation.markDirty(nx, ny);
             simulation.unsettleNeighbors(nx, ny);
