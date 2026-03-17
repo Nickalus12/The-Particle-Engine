@@ -37,6 +37,13 @@ extension ElementBehaviors on SimulationEngine {
       markProcessed(idx);
       return;
     }
+    // Porosity-based moisture absorption: sand near water darkens slightly
+    final sandPorosity = elementPorosity[El.sand];
+    if (sandPorosity > 0 && checkAdjacent(x, y, El.water)) {
+      if (rng.nextInt(255) < sandPorosity ~/ 4) {
+        life[idx] = (life[idx] + 1).clamp(0, 3); // slight moisture
+      }
+    }
     fallGranular(x, y, idx, El.sand);
     if (grid[idx] == El.sand && rng.nextInt(3) == 0) {
       _avalancheGranular(x, y, idx);
@@ -126,15 +133,8 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
-    // Pressure calculation
-    int pressure = 0;
-    for (int cy = y + g, depth = 0; depth < 8 && inBoundsY(cy); cy += g, depth++) {
-      if (grid[cy * gridW + x] == El.water) {
-        pressure += 10;
-      } else {
-        break;
-      }
-    }
+    // Use pressure grid (updated every 4 frames)
+    final cellPressure = pressure[idx];
     int colAbove = 0;
     for (int cy = y - g; inBoundsY(cy) && colAbove < 12; cy -= g) {
       final c = grid[cy * gridW + x];
@@ -144,11 +144,11 @@ extension ElementBehaviors on SimulationEngine {
         break;
       }
     }
-    final totalCol = (pressure ~/ 10) + 1 + colAbove;
+    final totalCol = cellPressure + colAbove;
 
     // Pressure-based mass compression
     if (!isSpecialState) {
-      final targetMass = (100 + (pressure * 0.5).round()).clamp(20, 139);
+      final targetMass = (100 + (cellPressure * 2).clamp(0, 39)).clamp(20, 139);
       if (mass < targetMass) {
         mass = (mass + 3).clamp(20, 139);
       } else if (mass > targetMass) {
@@ -203,10 +203,25 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
-    // Fall
+    // Fall with momentum
     if (inBoundsY(by) && grid[by * gridW + x] == El.empty) {
-      velY[idx] = (velY[idx] + 1).clamp(0, 10).toInt();
-      swap(idx, by * gridW + x);
+      final maxVel = elementMaxVelocity[El.water];
+      final curVel = velY[idx];
+      final newVel = (curVel + 1).clamp(0, maxVel);
+      velY[idx] = newVel;
+      // Multi-cell fall when velocity > 1
+      if (newVel > 1) {
+        int finalY = by;
+        for (int d = 2; d <= newVel; d++) {
+          final testY = y + g * d;
+          if (!inBoundsY(testY)) break;
+          if (grid[testY * gridW + x] != El.empty) break;
+          finalY = testY;
+        }
+        swap(idx, finalY * gridW + x);
+      } else {
+        swap(idx, by * gridW + x);
+      }
       return;
     }
 
@@ -249,8 +264,28 @@ extension ElementBehaviors on SimulationEngine {
       return;
     }
 
-    // Pressure-driven lateral flow
-    final flowDist = 2 + (pressure ~/ 15).clamp(0, 5);
+    // Surface tension: isolated droplets resist lateral spread
+    final st = elementSurfaceTension[El.water];
+    if (st > 3) {
+      int sameNeighbors = 0;
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = wrapX(x + dx);
+          final ny = y + dy;
+          if (inBoundsY(ny) && grid[ny * gridW + nx] == El.water) {
+            sameNeighbors++;
+          }
+        }
+      }
+      // Isolated (0-1 same-type neighbors): 50% chance to resist spread
+      if (sameNeighbors <= 1 && rng.nextBool()) {
+        return; // Hold droplet shape
+      }
+    }
+
+    // Pressure-driven lateral flow (uses pressure grid for radius)
+    final flowDist = pressureFlowRadius(idx) + 1;
 
     if (!isSpecialState) {
       for (final dir in dl ? [1, -1] : [-1, 1]) {
@@ -391,6 +426,23 @@ extension ElementBehaviors on SimulationEngine {
               markProcessed(belowI);
               return;
             }
+          }
+        }
+      }
+    }
+
+    // Pressure equalization: highly pressurized water pushes upward against gravity
+    if (!isSpecialState && cellPressure >= 6 && frameCount % 3 == 0) {
+      for (final dir in [1, -1]) {
+        for (int d = 1; d <= pressureFlowRadius(idx); d++) {
+          final nx = wrapX(x + dir * d);
+          final pe = grid[y * gridW + nx];
+          if (pe != El.water && pe != El.empty) break;
+          final aboveY = y - g;
+          if (inBoundsY(aboveY) && grid[aboveY * gridW + nx] == El.empty) {
+            velX[idx] = dir;
+            swap(idx, aboveY * gridW + nx);
+            return;
           }
         }
       }
@@ -618,16 +670,15 @@ extension ElementBehaviors on SimulationEngine {
           life[ni] = 150;
           markProcessed(ni);
         }
-        if (neighbor == El.water) {
-          electrifyWater(nx, ny);
+        // Conduct electricity through any conductive material
+        final neighborCond = neighbor < maxElements ? elementConductivity[neighbor] : 0;
+        if (neighborCond > 0) {
+          conductElectricity(nx, ny);
         }
         if (neighbor == El.sand) {
           grid[ni] = El.glass;
           life[ni] = 0;
           markProcessed(ni);
-        }
-        if (neighbor == El.metal) {
-          conductMetal(nx, ny);
         }
       }
     }
@@ -692,9 +743,14 @@ extension ElementBehaviors on SimulationEngine {
   // =========================================================================
 
   void simDirt(int x, int y, int idx) {
-    // Moisture gain from adjacent water
-    if (frameCount % 5 == 0 && life[idx] < 5 && checkAdjacent(x, y, El.water)) {
-      life[idx]++;
+    // Porosity-driven moisture absorption from adjacent water
+    // Absorption rate = porosity * 0.1 per frame (replaces hardcoded frameCount % 5)
+    final dirtPorosity = elementPorosity[El.dirt];
+    if (dirtPorosity > 0 && life[idx] < 5 && checkAdjacent(x, y, El.water)) {
+      // Higher porosity = more frequent absorption (porosity 153/255 ~= 0.6 -> ~6% per frame)
+      if (rng.nextInt(255) < dirtPorosity ~/ 4) {
+        life[idx]++;
+      }
     }
 
     // Moisture propagation
@@ -1183,8 +1239,10 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
-    // Eruption pressure
-    if (rng.nextInt(60) == 0) {
+    // Eruption pressure (enhanced by pressure grid)
+    final lavaPressure = pressure[idx];
+    final eruptionChance = lavaPressure > 20 ? 30 : 60;
+    if (rng.nextInt(eruptionChance) == 0) {
       int capDepth = 0;
       for (int cy = y - g; inBoundsY(cy) && capDepth < 6; cy -= g) {
         if (grid[cy * gridW + x] == El.stone) {
@@ -1201,7 +1259,9 @@ extension ElementBehaviors on SimulationEngine {
           break;
         }
       }
-      if (capDepth >= 2 && lavaBelow >= 3 && rng.nextInt(20) == 0) {
+      // High pressure makes eruption more likely
+      final eruptThresh = lavaPressure > 20 ? 10 : 20;
+      if (capDepth >= 2 && lavaBelow >= 3 && rng.nextInt(eruptThresh) == 0) {
         final blastY = y - g * capDepth;
         if (inBoundsY(blastY)) {
           final blastIdx = blastY * gridW + x;
@@ -1355,6 +1415,21 @@ extension ElementBehaviors on SimulationEngine {
     final lx2 = wrapX(dl ? x + 1 : x - 1);
     if (inBoundsY(by) && grid[by * gridW + lx1] == El.empty) { swap(idx, by * gridW + lx1); return; }
     if (inBoundsY(by) && grid[by * gridW + lx2] == El.empty) { swap(idx, by * gridW + lx2); return; }
+
+    // Surface tension: isolated lava resists lateral flow
+    final lavaSt = elementSurfaceTension[El.lava];
+    if (lavaSt > 3) {
+      int lavaN = 0;
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = wrapX(x + dx);
+          final ny = y + dy;
+          if (inBoundsY(ny) && grid[ny * gridW + nx] == El.lava) lavaN++;
+        }
+      }
+      if (lavaN <= 1 && rng.nextBool()) return;
+    }
 
     // Very slow lateral flow
     if (frameCount % (visc + 1) == 0) {
@@ -1926,6 +2001,21 @@ extension ElementBehaviors on SimulationEngine {
     if (inBoundsY(by) && grid[by * gridW + ox1] == El.empty) { swap(idx, by * gridW + ox1); return; }
     if (inBoundsY(by) && grid[by * gridW + ox2] == El.empty) { swap(idx, by * gridW + ox2); return; }
 
+    // Surface tension: isolated oil droplets resist lateral spread
+    final oilSt = elementSurfaceTension[El.oil];
+    if (oilSt > 0) {
+      int oilNeighbors = 0;
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = wrapX(x + dx);
+          final ny = y + dy;
+          if (inBoundsY(ny) && grid[ny * gridW + nx] == El.oil) oilNeighbors++;
+        }
+      }
+      if (oilNeighbors <= 1 && oilSt > 3 && rng.nextBool()) return;
+    }
+
     // Lateral spread — viscosity-throttled (oil viscosity = 2)
     if (frameCount % elementViscosity[El.oil] == 0) {
       if (grid[y * gridW + ox1] == El.empty) { swap(idx, y * gridW + ox1); return; }
@@ -1953,32 +2043,17 @@ extension ElementBehaviors on SimulationEngine {
         final ni = ny * gridW + nx;
         final neighbor = grid[ni];
 
-        if (neighbor == El.stone) {
-          // Deep stone (high life value) is harder to dissolve
-          final stoneDepth = life[ni].clamp(0, 20);
-          final dissolveChance = 15 + stoneDepth * 2; // 15 at surface, up to 55 deep
-          if (rng.nextInt(dissolveChance) == 0) {
+        // Hardness-driven acid dissolving: probability = (255 - hardness) / 255 * baseChance
+        final neighborHardness = neighbor < maxElements ? elementHardness[neighbor] : 0;
+        if (neighborHardness > 0 && neighbor != El.empty && neighbor != El.water &&
+            neighbor != El.fire && neighbor != El.acid && neighbor != El.lava) {
+          final dissolveProb = ((255 - neighborHardness) * 10) ~/ 255 + 3; // 3-13 range
+          if (rng.nextInt(dissolveProb * 3) == 0) {
             grid[ni] = El.empty; life[ni] = 0; markProcessed(ni);
             grid[idx] = El.empty; life[idx] = 0;
-            queueReactionFlash(nx, ny, 50, 255, 50, 5);
+            queueReactionFlash(nx, ny, 60, 230, 60, 4);
             return;
           }
-        }
-        if (neighbor == El.glass && rng.nextInt(10) == 0) {
-          grid[ni] = El.empty; life[ni] = 0; markProcessed(ni);
-          grid[idx] = El.empty; life[idx] = 0;
-          queueReactionFlash(nx, ny, 100, 255, 100, 4);
-          return;
-        }
-        if (neighbor == El.metal && rng.nextInt(20) == 0) {
-          life[ni] = (life[ni] + 15).clamp(0, 255);
-          if (life[ni] > 120) {
-            grid[ni] = El.empty; life[ni] = 0; markProcessed(ni);
-            grid[idx] = El.empty; life[idx] = 0;
-            queueReactionFlash(nx, ny, 80, 200, 80, 6);
-            return;
-          }
-          queueReactionFlash(nx, ny, 60, 230, 60, 2);
         }
         if (neighbor == El.ant) {
           grid[ni] = El.empty; life[ni] = 0; markProcessed(ni);

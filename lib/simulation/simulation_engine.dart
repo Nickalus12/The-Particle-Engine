@@ -69,6 +69,11 @@ class SimulationEngine {
   /// Per-cell temperature (0-255). 128 = neutral, >128 = hot, <128 = cold.
   late Uint8List temperature;
 
+  // -- Pressure grid (for liquid physics) ------------------------------------
+
+  /// Per-cell pressure (0-255). Computed from liquid column height above.
+  late Uint8List pressure;
+
   // -- Pheromone grids (dual pheromone system for ant AI) --------------------
 
   late Uint8List pheroFood;
@@ -140,6 +145,8 @@ class SimulationEngine {
     temperature = Uint8List(totalCells);
     temperature.fillRange(0, totalCells, 128); // neutral
 
+    pressure = Uint8List(totalCells);
+
     chunkCols = (gridW + 15) ~/ 16;
     chunkRows = (gridH + 15) ~/ 16;
     final totalChunks = chunkCols * chunkRows;
@@ -168,6 +175,7 @@ class SimulationEngine {
     velX.fillRange(0, velX.length, 0);
     velY.fillRange(0, velY.length, 0);
     temperature.fillRange(0, temperature.length, 128);
+    pressure.fillRange(0, pressure.length, 0);
     pheroFood.fillRange(0, pheroFood.length, 0);
     pheroHome.fillRange(0, pheroHome.length, 0);
     colonyX = -1;
@@ -189,6 +197,7 @@ class SimulationEngine {
       'velX': Int8List.fromList(velX),
       'velY': Int8List.fromList(velY),
       'temperature': Uint8List.fromList(temperature),
+      'pressure': Uint8List.fromList(pressure),
       'frameCount': frameCount,
       'gravityDir': gravityDir,
       'windForce': windForce,
@@ -210,6 +219,12 @@ class SimulationEngine {
       temperature.setAll(0, savedTemp);
     } else {
       temperature.fillRange(0, temperature.length, 128);
+    }
+    final savedPressure = snapshot['pressure'];
+    if (savedPressure is Uint8List) {
+      pressure.setAll(0, savedPressure);
+    } else {
+      pressure.fillRange(0, pressure.length, 0);
     }
     final savedVelX = snapshot['velX'];
     final savedVelY = snapshot['velY'];
@@ -417,7 +432,11 @@ class SimulationEngine {
           if (!inBoundsY(ny)) continue;
           final ni = ny * gridW + nx;
           final el = grid[ni];
-          if (el == El.stone || el == El.glass || el == El.metal) continue;
+          // Hardness-based explosion resistance: only destroy cells where hardness < explosionForce
+          final cellHardness = el < maxElements ? elementHardness[el] : 0;
+          final distFraction = dist2 / (r * r);
+          final explosionForce = ((1.0 - distFraction) * 255).round();
+          if (cellHardness >= explosionForce) continue;
 
           if (el != El.empty && el != El.tnt && dist2 > (r * r * 0.3).round()) {
             final flingDist = r + 2 + rng.nextInt(r);
@@ -477,15 +496,51 @@ class SimulationEngine {
 
   /// Standard granular fall (sand, TNT). Wraps horizontally.
   void fallGranular(int x, int y, int idx, int elType) {
-    final by = y + gravityDir;
+    final g = gravityDir;
+    final maxVel = elementMaxVelocity[elType];
+    final by = y + g;
     if (inBoundsY(by)) {
       final below = by * gridW + x;
       final belowEl = grid[below];
       if (belowEl == El.empty) {
-        swap(idx, below);
+        // Accelerate: increment velY
+        final curVel = velY[idx];
+        final newVel = (curVel + 1).clamp(0, maxVel);
+        velY[idx] = newVel;
+
+        // Multi-cell fall: when velY > 1, try to skip intermediate empty cells
+        if (newVel > 1) {
+          int finalY = by;
+          for (int d = 2; d <= newVel; d++) {
+            final testY = y + g * d;
+            if (!inBoundsY(testY)) break;
+            final testEl = grid[testY * gridW + x];
+            if (testEl != El.empty) break;
+            finalY = testY;
+          }
+          swap(idx, finalY * gridW + x);
+        } else {
+          swap(idx, below);
+        }
         return;
       }
       if ((elType == El.sand || elType == El.dirt || elType == El.seed) && belowEl == El.water) {
+        // Impact splash: sand hitting water from height
+        final impactVel = velY[idx];
+        if (impactVel > 2) {
+          // Splash effect: spawn water droplets upward
+          for (int i = 0; i < (impactVel ~/ 2).clamp(1, 3); i++) {
+            final sx = wrapX(x + (rng.nextBool() ? 1 : -1) * (1 + rng.nextInt(2)));
+            final sy = y - g * (1 + rng.nextInt(2));
+            if (inBoundsY(sy) && grid[sy * gridW + sx] == El.empty) {
+              grid[sy * gridW + sx] = El.water;
+              life[sy * gridW + sx] = 80;
+              markProcessed(sy * gridW + sx);
+            }
+          }
+          queueReactionFlash(x, y, 100, 180, 255, (impactVel ~/ 2).clamp(2, 4));
+        }
+        velY[idx] = 0;
         final sinkWaterMass = life[below];
         grid[idx] = El.water;
         life[idx] = sinkWaterMass < 20 ? 100 : sinkWaterMass;
@@ -494,6 +549,12 @@ class SimulationEngine {
         markProcessed(below);
         return;
       }
+
+      // Impact on solid: reset velocity, flash on high impact
+      if (velY[idx] > 2) {
+        queueReactionFlash(x, y, 200, 200, 180, 2);
+      }
+      velY[idx] = 0;
 
       final goLeft = rng.nextBool();
       final wx1 = wrapX(goLeft ? x - 1 : x + 1);
@@ -634,10 +695,6 @@ class SimulationEngine {
     final w = gridW;
     final g = grid;
 
-    final ashThresh = (absWind * 25).clamp(0, 100);
-    final lightThresh = (absWind * 10).clamp(0, 100);
-    final heavyThresh = (absWind * 3).clamp(0, 100);
-
     for (int y = 0; y < gridH; y++) {
       final startX = dir > 0 ? w - 1 : 0;
       final endX = dir > 0 ? -1 : w;
@@ -646,14 +703,27 @@ class SimulationEngine {
       for (int x = startX; x != endX; x += step) {
         final el = g[rowOff + x];
         if (el == El.empty) continue;
-        final sens = el < maxElements ? windSensitivity[el] : 0;
-        if (sens == 0) continue;
+        final resistance = el < maxElements ? elementWindResistance[el] : 255;
+        if (resistance >= 255) continue; // immovable
 
-        final thresh = sens == 3 ? ashThresh : (sens == 2 ? lightThresh : heavyThresh);
+        // windEffect = windForce * (1.0 - windResistance)
+        final effect = (absWind * (255 - resistance)) ~/ 255;
+        if (effect <= 0) continue;
+
+        // Higher effect = more likely to move, can move multiple cells
+        final thresh = (effect * 8).clamp(0, 100);
         if (rng.nextInt(100) < thresh) {
-          final nx = wrapX(x + dir);
-          if (g[rowOff + nx] == El.empty) {
-            swap(rowOff + x, rowOff + nx);
+          // Try to move 1-2 cells based on effect strength
+          final maxMove = effect >= 6 ? 2 : 1;
+          int cx = x;
+          for (int m = 0; m < maxMove; m++) {
+            final nx = wrapX(cx + dir);
+            if (g[rowOff + nx] == El.empty) {
+              swap(rowOff + cx, rowOff + nx);
+              cx = nx;
+            } else {
+              break;
+            }
           }
         }
       }
@@ -730,66 +800,40 @@ class SimulationEngine {
   // Electrical conduction
   // =========================================================================
 
-  /// Flood-fill connected water body and electrify all cells.
-  void electrifyWater(int startX, int startY) {
+  /// Generic conductivity-based electrical propagation.
+  /// Lightning hits any cell -> if conductivity > 0, propagate to neighbors.
+  /// Propagation strength decays by (1 - conductivity) per hop.
+  void conductElectricity(int startX, int startY) {
     final visited = <int>{};
     final queue = <int>[startY * gridW + startX];
+    final strengths = <int, int>{startY * gridW + startX: 255};
     int count = 0;
-    while (queue.isNotEmpty && count < 200) {
-      final curIdx = queue.removeLast();
+    while (queue.isNotEmpty && count < 300) {
+      final curIdx = queue.removeAt(0);
       if (visited.contains(curIdx)) continue;
       visited.add(curIdx);
-      if (grid[curIdx] != El.water) continue;
+      final el = grid[curIdx];
+      final cond = el < maxElements ? elementConductivity[el] : 0;
+      if (cond == 0) continue;
+
+      // Mark as electrified
       life[curIdx] = 200;
       markProcessed(curIdx);
       count++;
-      final cx = curIdx % gridW;
-      final cy = curIdx ~/ gridW;
-      for (int dy = -1; dy <= 1; dy++) {
-        for (int dx = -1; dx <= 1; dx++) {
-          if (dx == 0 && dy == 0) continue;
-          final nx = wrapX(cx + dx);
-          final ny = cy + dy;
-          if (!inBoundsY(ny)) continue;
-          final ni = ny * gridW + nx;
-          if (grid[ni] == El.water && !visited.contains(ni)) {
-            queue.add(ni);
-          } else if (grid[ni] == El.ant || grid[ni] == El.plant || grid[ni] == El.seed) {
-            grid[ni] = El.empty;
-            life[ni] = 0;
-            markProcessed(ni);
-          } else if (grid[ni] == El.oil) {
-            grid[ni] = El.fire;
-            life[ni] = 0;
-            markProcessed(ni);
-          }
-        }
-      }
-      if (count % 15 == 0) {
-        queueReactionFlash(cx, cy, 255, 255, 100, 3);
-      }
-    }
-    lightningFlashFrames = 8;
-  }
 
-  /// Flood-fill connected metal and electrify neighbors.
-  void conductMetal(int startX, int startY) {
-    final visited = <int>{};
-    final queue = <int>[startY * gridW + startX];
-    int sparks = 0;
-    int metalCount = 0;
-    while (queue.isNotEmpty && sparks < 60) {
-      final curIdx = queue.removeLast();
-      if (visited.contains(curIdx)) continue;
-      visited.add(curIdx);
-      if (grid[curIdx] != El.metal) continue;
-      life[curIdx] = 200;
-      metalCount++;
       final cx = curIdx % gridW;
       final cy = curIdx ~/ gridW;
-      if (metalCount % 5 == 0) {
-        queueReactionFlash(cx, cy, 255, 255, 150, 2);
+      final strength = strengths[curIdx] ?? 255;
+
+      // Visual sparks
+      if (count % 10 == 0) {
+        queueReactionFlash(cx, cy, 255, 255, 120, 3);
       }
+
+      // Propagation strength decays by (1 - conductivity) per hop
+      final newStrength = (strength * cond) ~/ 255;
+      if (newStrength < 20) continue; // too weak to propagate
+
       for (int dy = -1; dy <= 1; dy++) {
         for (int dx = -1; dx <= 1; dx++) {
           if (dx == 0 && dy == 0) continue;
@@ -797,38 +841,43 @@ class SimulationEngine {
           final ny = cy + dy;
           if (!inBoundsY(ny)) continue;
           final ni = ny * gridW + nx;
-          if (grid[ni] == El.metal && !visited.contains(ni)) {
-            queue.add(ni);
-          } else if (grid[ni] == El.water) {
-            life[ni] = 200;
-            markProcessed(ni);
-            sparks++;
-          } else if (grid[ni] == El.tnt) {
+          if (visited.contains(ni)) continue;
+          final neighborEl = grid[ni];
+          final neighborCond = neighborEl < maxElements ? elementConductivity[neighborEl] : 0;
+
+          if (neighborCond > 0) {
+            // Conductive neighbor: propagate
+            if (!strengths.containsKey(ni) || strengths[ni]! < newStrength) {
+              strengths[ni] = newStrength;
+              if (!queue.contains(ni)) queue.add(ni);
+            }
+          } else if (neighborEl == El.tnt) {
             pendingExplosions.add(Explosion(nx, ny, calculateTNTRadius(nx, ny)));
-            sparks++;
           } else if (rng.nextInt(100) < 30) {
-            if (grid[ni] == El.sand) {
+            // Non-conductive neighbor reactions
+            if (neighborEl == El.sand) {
               grid[ni] = El.glass;
               life[ni] = 0;
               markProcessed(ni);
-              sparks++;
-            } else if (grid[ni] == El.ice) {
+            } else if (neighborEl == El.ice) {
               grid[ni] = El.water;
               life[ni] = 150;
               markProcessed(ni);
-              sparks++;
-            } else if (grid[ni] == El.plant || grid[ni] == El.seed ||
-                grid[ni] == El.oil || grid[ni] == El.wood) {
+            } else if (neighborEl == El.plant || neighborEl == El.seed ||
+                neighborEl == El.oil || neighborEl == El.wood) {
               grid[ni] = El.fire;
               life[ni] = 0;
               markProcessed(ni);
-              sparks++;
+            } else if (neighborEl == El.ant) {
+              grid[ni] = El.empty;
+              life[ni] = 0;
+              markProcessed(ni);
             }
           }
         }
       }
     }
-    lightningFlashFrames = metalCount > 10 ? 6 : 3;
+    lightningFlashFrames = 8;
   }
 
   // =========================================================================
@@ -1078,6 +1127,61 @@ class SimulationEngine {
     }
   }
 
+  // =========================================================================
+  // Pressure system
+  // =========================================================================
+
+  /// Update pressure grid for liquid cells.
+  /// Scans columns top-to-bottom, accumulating liquid depth.
+  /// Only runs on dirty chunks for performance.
+  void updatePressure() {
+    final w = gridW;
+    final h = gridH;
+    final g = grid;
+    final p = pressure;
+    final dc = dirtyChunks;
+    final cols = chunkCols;
+    final gDir = gravityDir;
+
+    for (int x = 0; x < w; x++) {
+      final chunkX = x >> 4;
+      // Check if any chunk in this column is dirty
+      bool columnDirty = false;
+      for (int cy = 0; cy < chunkRows; cy++) {
+        if (dc[cy * cols + chunkX] != 0) { columnDirty = true; break; }
+      }
+      if (!columnDirty) continue;
+
+      // Scan from top (opposite gravity direction) accumulating pressure
+      int liquidDepth = 0;
+      final yStart = gDir == 1 ? 0 : h - 1;
+      final yEnd = gDir == 1 ? h : -1;
+      final yStep = gDir == 1 ? 1 : -1;
+
+      for (int y = yStart; y != yEnd; y += yStep) {
+        final idx = y * w + x;
+        final el = g[idx];
+        final state = el < maxElements ? elementPhysicsState[el] : 0;
+        if (state == PhysicsState.liquid.index) {
+          liquidDepth++;
+          p[idx] = liquidDepth.clamp(0, 255);
+        } else {
+          liquidDepth = 0;
+          p[idx] = 0;
+        }
+      }
+    }
+  }
+
+  /// Get pressure-based lateral search radius for liquid flow.
+  @pragma('vm:prefer-inline')
+  int pressureFlowRadius(int idx) {
+    final p = pressure[idx];
+    if (p >= 16) return 6;
+    if (p >= 6) return 3;
+    return 1;
+  }
+
   /// Check temperature-driven state changes for a cell.
   /// Returns true if the element was transformed.
   @pragma('vm:prefer-inline')
@@ -1207,6 +1311,11 @@ class SimulationEngine {
     // Update temperature system every 3 frames for performance
     if (frameCount % 3 == 0) {
       updateTemperature();
+    }
+
+    // Update pressure system every 4 frames for performance
+    if (frameCount % 4 == 0) {
+      updatePressure();
     }
 
     rainbowHue = (rainbowHue + 3) % 360;
