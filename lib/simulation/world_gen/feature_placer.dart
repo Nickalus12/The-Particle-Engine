@@ -80,6 +80,96 @@ class FeaturePlacer {
     for (var pass = 0; pass < 3; pass++) {
       _smoothCaves(data, config, heightmap);
     }
+
+    // For underground preset: carve dramatic cavern chambers.
+    if (config.caveDensity >= 0.6 && config.vegetation <= 0.1) {
+      _carveUndergroundCaverns(data, config, heightmap);
+    }
+  }
+
+  /// Carve large dramatic cavern chambers for the underground preset.
+  /// Creates 3-6 large rooms connected by the existing tunnel network.
+  static void _carveUndergroundCaverns(
+    GridData data,
+    WorldConfig config,
+    List<int> heightmap,
+  ) {
+    final rng = Random(config.seed + 1200);
+    final cavernCount = 3 + rng.nextInt(4); // 3-6 caverns
+
+    for (var c = 0; c < cavernCount; c++) {
+      // Pick a random position in the stone area (below surface, above bedrock).
+      final cx = (config.width * 0.1 + rng.nextDouble() * config.width * 0.8).round();
+      final minY = (heightmap[cx.clamp(0, config.width - 1)] + 15).clamp(0, config.height);
+      final maxY = config.height - 15;
+      if (minY >= maxY) continue;
+      final cy = minY + rng.nextInt(maxY - minY);
+
+      // Cavern size — elliptical chamber.
+      final radiusX = 8 + rng.nextInt(12); // 8-19 cells wide
+      final radiusY = 5 + rng.nextInt(8);  // 5-12 cells tall
+
+      // Carve the ellipse.
+      for (var dy = -radiusY; dy <= radiusY; dy++) {
+        for (var dx = -radiusX; dx <= radiusX; dx++) {
+          final nx = cx + dx;
+          final ny = cy + dy;
+          if (!data.inBounds(nx, ny)) continue;
+          if (ny >= config.height - 5) continue; // Don't break bedrock.
+          if (ny <= heightmap[nx.clamp(0, config.width - 1)] + 3) continue; // Don't break surface.
+
+          // Ellipse check with slight noise for organic shape.
+          final ex = dx.toDouble() / radiusX;
+          final ey = dy.toDouble() / radiusY;
+          final dist = ex * ex + ey * ey;
+
+          // Noisy edge for organic cavern walls.
+          final edgeNoise = ((nx * 7 + ny * 13) % 5) * 0.04;
+          if (dist < 0.85 + edgeNoise) {
+            data.set(nx, ny, El.empty);
+          }
+        }
+      }
+
+      // Add stalactites hanging from the ceiling.
+      for (var sx = cx - radiusX + 2; sx < cx + radiusX - 2; sx += 2 + rng.nextInt(3)) {
+        if (!data.inBounds(sx, cy - radiusY)) continue;
+        final stalLen = 2 + rng.nextInt(4);
+        for (var sy = 0; sy < stalLen; sy++) {
+          final ty = cy - radiusY + sy + 1;
+          if (data.inBounds(sx, ty) && data.get(sx, ty) == El.empty) {
+            data.set(sx, ty, El.stone);
+          }
+        }
+      }
+
+      // Add stalagmites rising from the floor.
+      for (var sx = cx - radiusX + 3; sx < cx + radiusX - 3; sx += 3 + rng.nextInt(3)) {
+        if (!data.inBounds(sx, cy + radiusY)) continue;
+        final stagLen = 1 + rng.nextInt(3);
+        for (var sy = 0; sy < stagLen; sy++) {
+          final ty = cy + radiusY - sy - 1;
+          if (data.inBounds(sx, ty) && data.get(sx, ty) == El.empty) {
+            data.set(sx, ty, El.stone);
+          }
+        }
+      }
+
+      // Small water pool at cavern floor.
+      if (rng.nextDouble() < 0.6) {
+        final poolWidth = 3 + rng.nextInt(radiusX ~/ 2);
+        for (var px = -poolWidth; px <= poolWidth; px++) {
+          final wx = cx + px;
+          final floorY = cy + radiusY - 1;
+          if (data.inBounds(wx, floorY) && data.get(wx, floorY) == El.empty) {
+            data.set(wx, floorY, El.water);
+          }
+          if (data.inBounds(wx, floorY - 1) && data.get(wx, floorY - 1) == El.empty && px.abs() < poolWidth - 1) {
+            data.set(wx, floorY - 1, El.water);
+          }
+        }
+      }
+    }
   }
 
   /// Count empty neighbors (8-connected).
@@ -255,6 +345,51 @@ class FeaturePlacer {
           if (y >= heightmap[x]) break;
           if (data.get(x, y) == El.empty) {
             data.set(x, y, El.water);
+          }
+        }
+      }
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Island ocean fill
+  // --------------------------------------------------------------------------
+
+  /// Fill the ocean around an island landmass.
+  /// Creates water at a fixed water line, adds sand beaches at the shoreline.
+  static void fillIslandOcean(
+    GridData data,
+    WorldConfig config,
+    List<int> heightmap,
+  ) {
+    final waterLine = (config.height * 0.65).round();
+
+    for (var x = 0; x < config.width; x++) {
+      final surface = heightmap[x];
+
+      // Fill empty space below water line with water (ocean).
+      for (var y = waterLine; y < config.height - 5; y++) {
+        if (data.get(x, y) == El.empty) {
+          data.set(x, y, El.water);
+        }
+      }
+
+      // Also fill sky gaps between surface and water line at island edges.
+      if (surface > waterLine) {
+        for (var y = waterLine; y < surface; y++) {
+          if (data.get(x, y) == El.empty) {
+            data.set(x, y, El.water);
+          }
+        }
+      }
+
+      // Beach sand: where terrain meets the water line, replace dirt with sand.
+      if (surface >= waterLine - 4 && surface <= waterLine + 2) {
+        // This is the shoreline — make it sandy.
+        for (var dy = -2; dy <= 3; dy++) {
+          final by = surface + dy;
+          if (data.inBounds(x, by) && data.get(x, by) == El.dirt) {
+            data.set(x, by, El.sand);
           }
         }
       }

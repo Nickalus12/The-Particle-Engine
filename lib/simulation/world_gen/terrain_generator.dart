@@ -104,16 +104,24 @@ class TerrainGenerator {
       config.caveDensity >= 0.6 && config.vegetation <= 0.1;
 
   /// Push edges of the heightmap down to create an island shape.
+  /// Creates a central landmass with beaches tapering into ocean.
   static void _applyIslandFalloff(List<int> heightmap, WorldConfig config) {
     final center = config.width / 2.0;
     final maxDist = config.width / 2.0;
+    // Water line — where the ocean sits.
+    final waterLine = (config.height * 0.65).round();
 
     for (var x = 0; x < config.width; x++) {
       final dist = (x - center).abs() / maxDist;
-      if (dist > 0.35) {
-        final falloff = ((dist - 0.35) / 0.65);
-        final push = (falloff * falloff * config.height * 0.5).round();
+      if (dist > 0.25) {
+        // Steep falloff at island edges — pushes terrain below water line.
+        final falloff = ((dist - 0.25) / 0.75);
+        final push = (falloff * falloff * falloff * config.height * 0.7).round();
         heightmap[x] = (heightmap[x] + push).clamp(0, config.height - 10);
+      }
+      // Flatten the ocean floor at the edges.
+      if (dist > 0.6) {
+        heightmap[x] = heightmap[x].clamp(waterLine - 5, config.height - 10);
       }
     }
   }
@@ -140,13 +148,22 @@ class TerrainGenerator {
     }
   }
 
-  /// Push terrain very high (low sky) for underground preset.
+  /// Push terrain very high (minimal sky) for underground preset.
+  /// Leaves slight surface variation for cave entrances.
   static void _applyUndergroundShape(List<int> heightmap, WorldConfig config) {
+    final entranceNoise = SimplexNoise(config.seed + 500);
     for (var x = 0; x < config.width; x++) {
-      // Surface is very high — only ~12% sky.
-      heightmap[x] = (config.height * 0.12).round() +
-          (heightmap[x] * 0.05).round();
-      heightmap[x] = heightmap[x].clamp(5, config.height ~/ 4);
+      // Base surface at ~8% from top.
+      var surface = (config.height * 0.08).round();
+      // Slight variation for natural ceiling + occasional cave entrances.
+      final variation = entranceNoise.noise2D(x / 15.0, 0.0);
+      if (variation > 0.5) {
+        // Cave entrance dip — sky reaches deeper here.
+        surface += ((variation - 0.5) * config.height * 0.15).round();
+      } else {
+        surface += (variation * 3).round().abs();
+      }
+      heightmap[x] = surface.clamp(3, config.height ~/ 3);
     }
   }
 

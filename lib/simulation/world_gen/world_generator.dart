@@ -42,8 +42,11 @@ class WorldGenerator {
     // 3. Caves.
     FeaturePlacer.carveCaves(data, config, heightmap);
 
-    // 4. Water.
+    // 4. Water + island ocean fill.
     FeaturePlacer.placeWater(data, config, heightmap);
+    if (config.waterLevel >= 0.55 && config.terrainScale >= 1.0 && config.terrainScale <= 1.5) {
+      FeaturePlacer.fillIslandOcean(data, config, heightmap);
+    }
 
     // 5. Waterfalls.
     FeaturePlacer.placeWaterfalls(data, config, heightmap);
