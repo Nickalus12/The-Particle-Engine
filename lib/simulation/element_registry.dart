@@ -268,6 +268,52 @@ class ElementProperties {
   /// Fire=230, Lava=250, Ice=20, Snow=40, neutral=128.
   final int baseTemperature;
 
+  /// Corrosion resistance (0-255). Higher = harder for acid to dissolve.
+  /// Wood=30, Ice=40, Glass=50, Stone=60, Metal=90, empty/liquids=0.
+  final int corrosionResistance;
+
+  /// Light emission intensity (0-255). 0 = no glow.
+  /// Fire=180, Lava=220, Lightning=255, Rainbow=100.
+  final int lightEmission;
+
+  /// Light emission color (RGB components, 0-255).
+  final int lightR;
+  final int lightG;
+  final int lightB;
+
+  /// Decay rate: 0 = eternal, 1-10 = frames per life increment.
+  /// Fire=3, Smoke=2, Steam=1, Rainbow=1.
+  final int decayRate;
+
+  /// Element this becomes when life expires from decay. 0 = empty.
+  /// Fire→smoke(22), Smoke→empty(0), Steam→water(2).
+  final int decaysInto;
+
+  /// Surface tension (0-10). Higher values make isolated droplets cohesive.
+  /// Water=5, Oil=3, Acid=2, Lava=8, Mud=6.
+  final int surfaceTension;
+
+  /// Maximum fall velocity for momentum system.
+  /// Sand=3, Water=2, Lava=1.
+  final int maxVelocity;
+
+
+  /// Porosity (0.0-1.0). How easily this element absorbs water.
+  /// Dirt=0.6, sand=0.3, wood=0.2, mud=0.4, stone=0.0, metal=0.0.
+  final double porosity;
+
+  /// Hardness (0-255). Resistance to destruction by explosions and acid.
+  /// Empty=0, water=0, fire=5, metal=95, stone=80.
+  final int hardness;
+
+  /// Electrical conductivity (0.0-1.0). How well this element conducts electricity.
+  /// Metal=0.95, water=0.6, acid=0.4, lava=0.3, everything else=0.0.
+  final double conductivity;
+
+  /// Wind resistance (0.0-1.0). How much this element resists wind displacement.
+  /// Ash=0.1, smoke=0.15, stone/metal=1.0, water=0.9.
+  final double windResistance;
+
   const ElementProperties({
     this.density = 0,
     this.viscosity = 1,
@@ -282,6 +328,19 @@ class ElementProperties {
     this.boilsInto = 0,
     this.freezesInto = 0,
     this.baseTemperature = 128,
+    this.corrosionResistance = 0,
+    this.lightEmission = 0,
+    this.lightR = 0,
+    this.lightG = 0,
+    this.lightB = 0,
+    this.decayRate = 0,
+    this.decaysInto = 0,
+    this.surfaceTension = 0,
+    this.maxVelocity = 2,
+    this.porosity = 0.0,
+    this.hardness = 0,
+    this.conductivity = 0.0,
+    this.windResistance = 1.0,
   });
 }
 
@@ -299,136 +358,202 @@ void _initElementProperties() {
   elementProperties[El.empty] = const ElementProperties(
     density: 0, gravity: 0, state: PhysicsState.special,
     heatConductivity: 0.02, baseTemperature: 128,
+  
+    porosity: 0.0, hardness: 0, conductivity: 0.0, windResistance: 0.0,
   );
   // Sand
   elementProperties[El.sand] = const ElementProperties(
     density: 150, gravity: 2, state: PhysicsState.granular,
     heatConductivity: 0.3, meltPoint: 220, meltsInto: El.glass,
-    baseTemperature: 128,
+    baseTemperature: 128, maxVelocity: 3,
+  
+    porosity: 0.3, hardness: 10, conductivity: 0.0, windResistance: 0.4,
   );
   // Water
   elementProperties[El.water] = const ElementProperties(
     density: 100, viscosity: 1, gravity: 1, state: PhysicsState.liquid,
     heatConductivity: 0.4, boilPoint: 180, freezePoint: 30,
     boilsInto: El.steam, freezesInto: El.ice, baseTemperature: 128,
+    surfaceTension: 5, maxVelocity: 2,
+  
+    conductivity: 0.6, windResistance: 0.9,
   );
   // Fire
   elementProperties[El.fire] = const ElementProperties(
     density: 5, gravity: -1, state: PhysicsState.gas,
     heatConductivity: 0.8, baseTemperature: 230,
+    lightEmission: 180, lightR: 255, lightG: 120, lightB: 20,
+    decayRate: 3, decaysInto: El.smoke,
+  
+    hardness: 5, windResistance: 0.2,
   );
   // Ice
   elementProperties[El.ice] = const ElementProperties(
     density: 90, gravity: 0, state: PhysicsState.solid,
     heatConductivity: 0.6, meltPoint: 40, meltsInto: El.water,
-    baseTemperature: 20,
+    baseTemperature: 20, corrosionResistance: 40,
+  
+    hardness: 40, windResistance: 1.0,
   );
   // Lightning
   elementProperties[El.lightning] = const ElementProperties(
     density: 0, gravity: 1, state: PhysicsState.special,
     heatConductivity: 1.0, baseTemperature: 250,
+    lightEmission: 255, lightR: 255, lightG: 255, lightB: 180,
+  
+    windResistance: 1.0,
   );
   // Seed
   elementProperties[El.seed] = const ElementProperties(
     density: 130, gravity: 1, state: PhysicsState.special,
     flammable: true, heatConductivity: 0.1, baseTemperature: 128,
+  
+    hardness: 5, windResistance: 0.4,
   );
   // Stone
   elementProperties[El.stone] = const ElementProperties(
     density: 255, gravity: 0, state: PhysicsState.solid,
     heatConductivity: 0.5, meltPoint: 220, meltsInto: El.lava,
-    baseTemperature: 128,
+    baseTemperature: 128, corrosionResistance: 60,
+  
+    hardness: 80, windResistance: 1.0,
   );
   // TNT
   elementProperties[El.tnt] = const ElementProperties(
     density: 140, gravity: 2, state: PhysicsState.granular,
     flammable: true, heatConductivity: 0.2, baseTemperature: 128,
+  
+    hardness: 15, windResistance: 0.7,
   );
   // Rainbow
   elementProperties[El.rainbow] = const ElementProperties(
     density: 8, gravity: -1, state: PhysicsState.gas,
     heatConductivity: 0.0, baseTemperature: 128,
+    lightEmission: 100, lightR: 200, lightG: 100, lightB: 255,
+    decayRate: 1, decaysInto: El.empty,
+  
+    windResistance: 0.1,
   );
   // Mud
   elementProperties[El.mud] = const ElementProperties(
     density: 120, viscosity: 3, gravity: 1, state: PhysicsState.liquid,
     heatConductivity: 0.25, baseTemperature: 128,
+    surfaceTension: 6, maxVelocity: 1,
+  
+    porosity: 0.4, hardness: 15, windResistance: 0.85,
   );
   // Steam
   elementProperties[El.steam] = const ElementProperties(
     density: 3, gravity: -1, state: PhysicsState.gas,
     heatConductivity: 0.3, freezePoint: 60, freezesInto: El.water,
     baseTemperature: 160,
+    decayRate: 1, decaysInto: El.water,
+  
+    hardness: 2, windResistance: 0.2,
   );
   // Ant
   elementProperties[El.ant] = const ElementProperties(
     density: 80, gravity: 1, state: PhysicsState.special,
     flammable: true, heatConductivity: 0.1, baseTemperature: 128,
+  
+    hardness: 5, windResistance: 0.5,
   );
   // Oil
   elementProperties[El.oil] = const ElementProperties(
     density: 80, viscosity: 2, gravity: 1, state: PhysicsState.liquid,
     flammable: true, heatConductivity: 0.15, boilPoint: 160,
     boilsInto: El.smoke, baseTemperature: 128,
+    surfaceTension: 3, maxVelocity: 2,
+  
+    hardness: 5, windResistance: 0.85,
   );
   // Acid
   elementProperties[El.acid] = const ElementProperties(
     density: 110, viscosity: 1, gravity: 1, state: PhysicsState.liquid,
     heatConductivity: 0.35, baseTemperature: 128,
+    lightEmission: 30, lightR: 20, lightG: 255, lightB: 20,
+    surfaceTension: 2, maxVelocity: 2,
+  
+    conductivity: 0.4, windResistance: 0.85,
   );
   // Glass
   elementProperties[El.glass] = const ElementProperties(
     density: 220, gravity: 0, state: PhysicsState.solid,
     heatConductivity: 0.4, meltPoint: 200, meltsInto: El.sand,
-    baseTemperature: 128,
+    baseTemperature: 128, corrosionResistance: 50,
+  
+    hardness: 70, windResistance: 1.0,
   );
   // Dirt
   elementProperties[El.dirt] = const ElementProperties(
     density: 145, gravity: 1, state: PhysicsState.granular,
     heatConductivity: 0.2, baseTemperature: 128,
+    maxVelocity: 3,
+  
+    porosity: 0.6, hardness: 30, windResistance: 0.7,
   );
   // Plant
   elementProperties[El.plant] = const ElementProperties(
     density: 60, gravity: 0, state: PhysicsState.special,
     flammable: true, heatConductivity: 0.1, baseTemperature: 128,
+  
+    porosity: 0.15, hardness: 20, windResistance: 1.0,
   );
   // Lava
   elementProperties[El.lava] = const ElementProperties(
     density: 200, viscosity: 4, gravity: 1, state: PhysicsState.liquid,
     heatConductivity: 0.9, freezePoint: 60, freezesInto: El.stone,
     baseTemperature: 250,
+    lightEmission: 220, lightR: 255, lightG: 80, lightB: 10,
+    surfaceTension: 8, maxVelocity: 1,
+  
+    hardness: 0, conductivity: 0.3, windResistance: 0.95,
   );
   // Snow
   elementProperties[El.snow] = const ElementProperties(
     density: 50, gravity: 1, state: PhysicsState.powder,
     heatConductivity: 0.15, meltPoint: 50, meltsInto: El.water,
     baseTemperature: 35,
+  
+    hardness: 8, windResistance: 0.3,
   );
   // Wood
   elementProperties[El.wood] = const ElementProperties(
     density: 85, gravity: 0, state: PhysicsState.solid,
     flammable: true, heatConductivity: 0.1, baseTemperature: 128,
+    corrosionResistance: 30,
+  
+    porosity: 0.2, hardness: 50, windResistance: 1.0,
   );
   // Metal
   elementProperties[El.metal] = const ElementProperties(
     density: 240, gravity: 0, state: PhysicsState.solid,
     heatConductivity: 0.9, meltPoint: 240, meltsInto: El.lava,
-    baseTemperature: 128,
+    baseTemperature: 128, corrosionResistance: 90,
+  
+    hardness: 95, conductivity: 0.95, windResistance: 1.0,
   );
   // Smoke
   elementProperties[El.smoke] = const ElementProperties(
     density: 4, gravity: -1, state: PhysicsState.gas,
     heatConductivity: 0.05, baseTemperature: 145,
+    decayRate: 2, decaysInto: El.empty,
+  
+    hardness: 2, windResistance: 0.15,
   );
   // Bubble
   elementProperties[El.bubble] = const ElementProperties(
     density: 2, gravity: -1, state: PhysicsState.special,
     heatConductivity: 0.01, baseTemperature: 128,
+  
+    windResistance: 0.15,
   );
   // Ash
   elementProperties[El.ash] = const ElementProperties(
     density: 30, gravity: 1, state: PhysicsState.powder,
     heatConductivity: 0.1, baseTemperature: 135,
+  
+    hardness: 3, windResistance: 0.1,
   );
 
   // Rebuild all fast-access lookup tables
@@ -456,6 +581,46 @@ final Uint8List elementHeatCond = Uint8List(maxElements);
 /// Pre-computed flammable lookup table.
 final Uint8List elementFlammable = Uint8List(maxElements);
 
+/// Pre-computed corrosion resistance lookup table.
+final Uint8List elementCorrosionResistance = Uint8List(maxElements);
+
+/// Pre-computed light emission intensity lookup table.
+final Uint8List elementLightEmission = Uint8List(maxElements);
+
+/// Pre-computed light emission color (R) lookup table.
+final Uint8List elementLightR = Uint8List(maxElements);
+
+/// Pre-computed light emission color (G) lookup table.
+final Uint8List elementLightG = Uint8List(maxElements);
+
+/// Pre-computed light emission color (B) lookup table.
+final Uint8List elementLightB = Uint8List(maxElements);
+
+/// Pre-computed decay rate lookup table.
+final Uint8List elementDecayRate = Uint8List(maxElements);
+
+/// Pre-computed decays-into element lookup table.
+final Uint8List elementDecaysInto = Uint8List(maxElements);
+
+/// Pre-computed surface tension lookup table.
+final Uint8List elementSurfaceTension = Uint8List(maxElements);
+
+/// Pre-computed max velocity lookup table.
+final Uint8List elementMaxVelocity = Uint8List(maxElements);
+
+
+/// Pre-computed porosity lookup table (scaled 0-255).
+final Uint8List elementPorosity = Uint8List(maxElements);
+
+/// Pre-computed hardness lookup table.
+final Uint8List elementHardness = Uint8List(maxElements);
+
+/// Pre-computed electrical conductivity lookup table (scaled 0-255).
+final Uint8List elementConductivity = Uint8List(maxElements);
+
+/// Pre-computed wind resistance lookup table (scaled 0-255).
+final Uint8List elementWindResistance = Uint8List(maxElements);
+
 /// Rebuild all lookup tables from [elementProperties].
 /// Called by [_initElementProperties] after property values are set.
 void _rebuildPropertyLookups() {
@@ -468,6 +633,19 @@ void _rebuildPropertyLookups() {
     elementBaseTemp[i] = p.baseTemperature;
     elementHeatCond[i] = (p.heatConductivity * 255).round().clamp(0, 255);
     elementFlammable[i] = p.flammable ? 1 : 0;
+    elementCorrosionResistance[i] = p.corrosionResistance;
+    elementLightEmission[i] = p.lightEmission;
+    elementLightR[i] = p.lightR;
+    elementLightG[i] = p.lightG;
+    elementLightB[i] = p.lightB;
+    elementDecayRate[i] = p.decayRate;
+    elementDecaysInto[i] = p.decaysInto;
+    elementPorosity[i] = (p.porosity * 255).round().clamp(0, 255);
+    elementHardness[i] = p.hardness.clamp(0, 255);
+    elementConductivity[i] = (p.conductivity * 255).round().clamp(0, 255);
+    elementWindResistance[i] = (p.windResistance * 255).round().clamp(0, 255);
+    elementSurfaceTension[i] = p.surfaceTension;
+    elementMaxVelocity[i] = p.maxVelocity;
   }
 }
 

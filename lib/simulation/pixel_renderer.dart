@@ -145,13 +145,6 @@ class PixelRenderer {
     final baseBgB = (28 - t * 10).round().clamp(0, 255);
 
     final glowMul = 1.0 + t * 2.0;
-    final glow1R = (28 * glowMul).round();
-    final glow1G = (12 * glowMul).round();
-    final glow2R = (16 * glowMul).round();
-    final glow2G = (5 * glowMul).round();
-    final lGlow1 = (40 * glowMul).round();
-    final lGlow2 = (25 * glowMul).round();
-    final lGlow3 = (12 * glowMul).round();
 
     final starSet = t > 0.05 ? _starSet : const <int>{};
 
@@ -181,114 +174,72 @@ class PixelRenderer {
       bool hasEmissive = false;
       for (int i = 0; i < total; i++) {
         final el = g[i];
+
+        // Data-driven emissive check via lookup table
+        int emission = elementLightEmission[el];
+        int emR = elementLightR[el];
+        int emG = elementLightG[el];
+        int emB = elementLightB[el];
+        int glowRadius = 3;
+
+        // Special case: heated stone emits light dynamically
         final isHeatedStone = el == El.stone && engine.velX[i] > 2;
-        final isAcid = el == El.acid;
-        if (el != El.fire && el != El.lava && el != El.lightning &&
-            !isHeatedStone && !isAcid) {
-          continue;
+        if (isHeatedStone) {
+          final stoneHeatLevel = engine.velX[i].clamp(0, 5);
+          emission = (stoneHeatLevel * 40).clamp(0, 200);
+          emR = 255;
+          emG = 80;
+          emB = 0;
+          glowRadius = 3;
         }
+
+        if (emission == 0) continue;
         hasEmissive = true;
+
         final ex = i % w;
         final ey = i ~/ w;
-        if (el == El.lightning) {
-          for (int dy = -4; dy <= 4; dy++) {
-            final ny = ey + dy;
-            if (ny < 0 || ny >= h) continue;
-            for (int dx = -4; dx <= 4; dx++) {
-              final nx = ex + dx;
-              if (nx < 0 || nx >= w) continue;
-              final dist = dx.abs() + dy.abs();
-              if (dist == 0) continue;
-              final ni = ny * w + nx;
-              if (g[ni] != El.empty) continue;
-              int intensity;
-              if (dist <= 1) {
-                intensity = lGlow1;
-              } else if (dist <= 2) {
-                intensity = lGlow2;
-              } else if (dist <= 3) {
-                intensity = lGlow3;
-              } else {
-                intensity = lGlow3 ~/ 2;
-              }
-              glowR8[ni] = (glowR8[ni] + intensity).clamp(0, 255);
-              glowG8[ni] = (glowG8[ni] + intensity).clamp(0, 255);
-              glowB8[ni] =
-                  (glowB8[ni] + (intensity * 2 ~/ 3)).clamp(0, 255);
+
+        // Scale glow intensities by emission level and night multiplier
+        final scaledR = (emR * emission * glowMul / 255.0).round();
+        final scaledG = (emG * emission * glowMul / 255.0).round();
+        final scaledB = (emB * emission * glowMul / 255.0).round();
+
+        // High-emission elements (lightning) get larger radius
+        if (emission > 200) glowRadius = 4;
+
+        for (int dy = -glowRadius; dy <= glowRadius; dy++) {
+          final ny = ey + dy;
+          if (ny < 0 || ny >= h) continue;
+          for (int dx = -glowRadius; dx <= glowRadius; dx++) {
+            final nx = ex + dx;
+            if (nx < 0 || nx >= w) continue;
+            final dist = dx.abs() + dy.abs();
+            if (dist == 0) continue;
+            final ni = ny * w + nx;
+            if (g[ni] != El.empty) continue;
+
+            // Intensity falloff by distance
+            int fr, fg, fb;
+            if (dist <= 1) {
+              fr = scaledR;
+              fg = scaledG;
+              fb = scaledB;
+            } else if (dist <= 2) {
+              fr = scaledR * 2 ~/ 3;
+              fg = scaledG * 2 ~/ 3;
+              fb = scaledB * 2 ~/ 3;
+            } else if (dist <= 3) {
+              fr = scaledR ~/ 3;
+              fg = scaledG ~/ 3;
+              fb = scaledB ~/ 3;
+            } else {
+              fr = scaledR ~/ 5;
+              fg = scaledG ~/ 5;
+              fb = scaledB ~/ 5;
             }
-          }
-        } else if (isAcid) {
-          for (int dy = -2; dy <= 2; dy++) {
-            final ny = ey + dy;
-            if (ny < 0 || ny >= h) continue;
-            for (int dx = -2; dx <= 2; dx++) {
-              final nx = ex + dx;
-              if (nx < 0 || nx >= w) continue;
-              final dist = dx.abs() + dy.abs();
-              if (dist == 0 || dist > 3) continue;
-              final ni = ny * w + nx;
-              if (g[ni] != El.empty) continue;
-              final acidIntensity = dist <= 1 ? 8 : 4;
-              glowG8[ni] = (glowG8[ni] + acidIntensity).clamp(0, 255);
-              glowR8[ni] = (glowR8[ni] + acidIntensity ~/ 4).clamp(0, 255);
-            }
-          }
-        } else if (isHeatedStone) {
-          final stoneHeatLevel = engine.velX[i].clamp(0, 5);
-          final heatIntensity = (stoneHeatLevel * 4).clamp(0, 20);
-          for (int dy = -3; dy <= 3; dy++) {
-            final ny = ey + dy;
-            if (ny < 0 || ny >= h) continue;
-            for (int dx = -3; dx <= 3; dx++) {
-              final nx = ex + dx;
-              if (nx < 0 || nx >= w) continue;
-              final dist = dx.abs() + dy.abs();
-              if (dist == 0 || dist > 3) continue;
-              final ni = ny * w + nx;
-              if (g[ni] != El.empty) continue;
-              final gi = dist <= 1
-                  ? heatIntensity
-                  : dist <= 2
-                      ? heatIntensity * 2 ~/ 3
-                      : heatIntensity ~/ 3;
-              glowR8[ni] = (glowR8[ni] + gi).clamp(0, 255);
-              glowG8[ni] = (glowG8[ni] + gi ~/ 3).clamp(0, 255);
-            }
-          }
-        } else {
-          final isFire = el == El.fire;
-          final glowRadius = el == El.lava ? 3 : 3;
-          for (int dy = -glowRadius; dy <= glowRadius; dy++) {
-            final ny = ey + dy;
-            if (ny < 0 || ny >= h) continue;
-            for (int dx = -glowRadius; dx <= glowRadius; dx++) {
-              final nx = ex + dx;
-              if (nx < 0 || nx >= w) continue;
-              final dist = dx.abs() + dy.abs();
-              if (dist == 0) continue;
-              final ni = ny * w + nx;
-              if (g[ni] != El.empty) continue;
-              if (dist <= 1) {
-                glowR8[ni] = (glowR8[ni] + glow1R).clamp(0, 255);
-                if (isFire) {
-                  glowG8[ni] = (glowG8[ni] + glow1G).clamp(0, 255);
-                } else {
-                  glowG8[ni] = (glowG8[ni] + glow1G ~/ 2).clamp(0, 255);
-                }
-              } else if (dist <= 2) {
-                glowR8[ni] = (glowR8[ni] + glow2R).clamp(0, 255);
-                if (isFire) {
-                  glowG8[ni] = (glowG8[ni] + glow2G).clamp(0, 255);
-                }
-              } else if (dist <= 3) {
-                glowR8[ni] = (glowR8[ni] + glow2R ~/ 2).clamp(0, 255);
-                if (isFire) {
-                  glowG8[ni] = (glowG8[ni] + glow2G ~/ 3).clamp(0, 255);
-                }
-              } else {
-                glowR8[ni] = (glowR8[ni] + glow2R ~/ 4).clamp(0, 255);
-              }
-            }
+            glowR8[ni] = (glowR8[ni] + fr).clamp(0, 255);
+            glowG8[ni] = (glowG8[ni] + fg).clamp(0, 255);
+            glowB8[ni] = (glowB8[ni] + fb).clamp(0, 255);
           }
         }
       }
