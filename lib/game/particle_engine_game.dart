@@ -1,5 +1,4 @@
 import 'dart:async' as async_lib;
-import 'dart:math' as math;
 
 import 'package:flame/camera.dart';
 import 'package:flame/components.dart';
@@ -45,7 +44,10 @@ class ParticleEngineGame extends FlameGame
     this.gridHeight = 180,
     this.cellSize = 4.0,
   }) : super(
-          camera: CameraComponent(),
+          camera: CameraComponent.withFixedResolution(
+            width: gridWidth * cellSize,
+            height: gridHeight * cellSize,
+          ),
           world: SandboxWorld(),
         );
 
@@ -79,15 +81,8 @@ class ParticleEngineGame extends FlameGame
 
   // -- Camera configuration ---------------------------------------------------
 
-  /// Minimum zoom level — computed dynamically so the world always
-  /// fills the viewport (cover-fit). Never allows seeing beyond the world.
-  double get minZoom {
-    final viewportSize = camera.viewport.size;
-    if (viewportSize.x == 0 || viewportSize.y == 0) return 1.0;
-    final scaleX = viewportSize.x / cameraWidth;
-    final scaleY = viewportSize.y / cameraHeight;
-    return math.max(scaleX, scaleY);
-  }
+  /// Minimum zoom — at 1.0 the world fills the fixed-resolution viewport exactly.
+  static const double minZoom = 1.0;
 
   /// Maximum zoom level — close enough to see individual cells clearly.
   static const double maxZoom = 6.0;
@@ -137,7 +132,7 @@ class ParticleEngineGame extends FlameGame
 
     camera.viewfinder.anchor = Anchor.center;
     camera.viewfinder.position = Vector2(cameraWidth / 2, cameraHeight / 2);
-    _fitZoomToWindow();
+    camera.viewfinder.zoom = 1.0;
 
     // On desktop, start in creation mode so the HUD is visible immediately.
     if (isDesktop) {
@@ -146,26 +141,7 @@ class ParticleEngineGame extends FlameGame
     }
   }
 
-  @override
-  void onGameResize(Vector2 size) {
-    super.onGameResize(size);
-    _fitZoomToWindow();
-    clampCameraPosition();
-  }
-
-  /// Calculate the minimum zoom so the world fills the entire window
-  /// (no black bars). Uses cover-fit: zoom enough so neither axis is
-  /// under-filled, which may crop one axis slightly.
-  void _fitZoomToWindow() {
-    final viewportSize = camera.viewport.size;
-    if (viewportSize.x == 0 || viewportSize.y == 0) return;
-    // Contain-fit: the entire world is visible, with possible bars.
-    // This ensures the player always sees all terrain, including islands.
-    final scaleX = viewportSize.x / cameraWidth;
-    final scaleY = viewportSize.y / cameraHeight;
-    final fitZoom = math.min(scaleX, scaleY);
-    camera.viewfinder.zoom = fitZoom.clamp(fitZoom, maxZoom);
-  }
+  // Fixed resolution camera handles window resizing automatically.
 
   // ---------------------------------------------------------------------------
   // Day/night cycle — uses Flame Effect for smooth transition

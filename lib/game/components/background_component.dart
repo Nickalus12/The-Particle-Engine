@@ -18,16 +18,11 @@ class BackgroundComponent extends PositionComponent
     required double cellSize,
   }) : _cellSize = cellSize,
        super(
-          // Background extends well beyond the world so contain-fit
-          // zoom never shows raw black beyond the edges.
           size: Vector2(
-            gridWidth * cellSize * 3,
-            gridHeight * cellSize * 3,
+            gridWidth * cellSize,
+            gridHeight * cellSize,
           ),
-          position: Vector2(
-            -gridWidth * cellSize,
-            -gridHeight * cellSize,
-          ),
+          position: Vector2.zero(),
         );
 
   final int gridWidth;
@@ -55,8 +50,7 @@ class BackgroundComponent extends PositionComponent
   @override
   Future<void> onLoad() async {
     await super.onLoad();
-    // _groundY in local coords = world ground position minus our offset.
-    _groundY = gridHeight * _cellSize - position.y;
+    _groundY = gridHeight * _cellSize;
     _generateStars();
   }
 
