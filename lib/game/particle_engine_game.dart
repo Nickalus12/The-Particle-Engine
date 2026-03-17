@@ -159,10 +159,11 @@ class ParticleEngineGame extends FlameGame
   void _fitZoomToWindow() {
     final viewportSize = camera.viewport.size;
     if (viewportSize.x == 0 || viewportSize.y == 0) return;
+    // Contain-fit: the entire world is visible, with possible bars.
+    // This ensures the player always sees all terrain, including islands.
     final scaleX = viewportSize.x / cameraWidth;
     final scaleY = viewportSize.y / cameraHeight;
-    // Cover-fit: use the larger scale so the world fills the window.
-    final fitZoom = math.max(scaleX, scaleY);
+    final fitZoom = math.min(scaleX, scaleY);
     camera.viewfinder.zoom = fitZoom.clamp(fitZoom, maxZoom);
   }
 

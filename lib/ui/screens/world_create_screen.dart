@@ -73,7 +73,7 @@ class _WorldCreateScreenState extends State<WorldCreateScreen>
     }
   }
 
-  void _createWorld() {
+  void _createWorld() async {
     if (_creating) return;
     setState(() => _creating = true);
 
@@ -82,7 +82,7 @@ class _WorldCreateScreenState extends State<WorldCreateScreen>
         ? 'Untitled World'
         : _nameController.text.trim();
 
-    Navigator.of(context).push(
+    await Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (context, _, _) => SandboxScreen(
           worldConfig: config,
@@ -94,6 +94,11 @@ class _WorldCreateScreenState extends State<WorldCreateScreen>
         transitionDuration: ParticleTheme.normalDuration,
       ),
     );
+
+    // Reset creating state when returning from sandbox.
+    if (mounted) {
+      setState(() => _creating = false);
+    }
   }
 
   @override
