@@ -636,7 +636,7 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     // Intermittent smoke while burning (visible plume)
-    if (rng.nextInt(12) == 0) {
+    if (rng.nextInt(6) == 0) {
       final uy = y - gravityDir;
       if (inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
         grid[uy * gridW + x] = El.smoke;
