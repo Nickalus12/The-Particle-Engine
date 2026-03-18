@@ -219,10 +219,19 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
-    // Fall with momentum
+    // Fall with momentum — Torricelli: v = sqrt(2*g*h)
+    // Pressurized water gets an initial velocity boost proportional to sqrt(pressure)
     if (inBoundsY(by) && grid[by * gridW + x] == El.empty) {
       final maxVel = elementMaxVelocity[El.water];
-      final curVel = velY[idx];
+      int curVel = velY[idx];
+      // Pressure-driven initial velocity (Torricelli's theorem)
+      if (curVel == 0 && cellPressure > 2) {
+        // sqrt approximation: pressure 4->2, 9->3, 16->4, 25->5
+        int pVel = 1;
+        int p2 = cellPressure;
+        while (pVel * pVel < p2 && pVel < maxVel) pVel++;
+        curVel = pVel;
+      }
       final newVel = (curVel + 1).clamp(0, maxVel);
       velY[idx] = newVel;
       // Multi-cell fall when velocity > 1
@@ -346,18 +355,21 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
-    for (int d = 1; d <= flowDist; d++) {
-      final sx1 = wrapX(dl ? x + d : x - d);
-      final sx2 = wrapX(dl ? x - d : x + d);
-      if (grid[y * gridW + sx1] == El.empty) {
-        velX[idx] = dl ? 1 : -1;
-        swap(idx, y * gridW + sx1);
-        return;
-      }
-      if (grid[y * gridW + sx2] == El.empty) {
-        velX[idx] = dl ? -1 : 1;
-        swap(idx, y * gridW + sx2);
-        return;
+    // Scan preferred direction first, then opposite.
+    // Stop scanning in a direction if we hit a solid/granular wall.
+    for (int pass = 0; pass < 2; pass++) {
+      final dir = pass == 0 ? (dl ? 1 : -1) : (dl ? -1 : 1);
+      for (int d = 1; d <= flowDist; d++) {
+        final sx = wrapX(x + dir * d);
+        final cell = grid[y * gridW + sx];
+        if (cell == El.empty) {
+          velX[idx] = dir;
+          swap(idx, y * gridW + sx);
+          return;
+        }
+        // If we hit a non-liquid cell, the path is blocked — stop this direction
+        final state = elementPhysicsState[cell];
+        if (state != PhysicsState.liquid.index) break;
       }
     }
 
@@ -449,8 +461,11 @@ extension ElementBehaviors on SimulationEngine {
 
     if (rng.nextInt(4) == 0) velX[idx] = 0;
 
-    // Convection: hot water rises through cold water above
-    if (!isSpecialState && frameCount % 2 == 0) {
+    // Convection: hot water rises through cold water above (every frame).
+    // Rayleigh-Bénard convection: hot fluid expands, becomes less dense,
+    // and rises through cooler fluid above. This is fundamental to
+    // thermal stratification in liquids.
+    if (!isSpecialState) {
       if (tryConvection(x, y, idx, El.water)) return;
     }
 
@@ -647,6 +662,26 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
+    // Radiative heating: fire preheats adjacent cells through thermal
+    // radiation (Stefan-Boltzmann law: q ∝ T⁴). This supplements the
+    // conduction system and creates a smooth temperature gradient ahead
+    // of the fire front, enabling consistent Fisher-KPP propagation
+    // velocity v = 2*sqrt(k*α).
+    for (int dy = -1; dy <= 1; dy++) {
+      for (int dx = -1; dx <= 1; dx++) {
+        if (dx == 0 && dy == 0) continue;
+        final hx = wrapX(x + dx);
+        final hy = y + dy;
+        if (!inBoundsY(hy)) continue;
+        final hi = hy * gridW + hx;
+        final nt = temperature[hi];
+        if (nt < 220) {
+          // +8 per frame models radiative heat transfer from flames
+          temperature[hi] = nt + 8;
+        }
+      }
+    }
+
     for (int dy = -1; dy <= 1; dy++) {
       for (int dx = -1; dx <= 1; dx++) {
         if (dx == 0 && dy == 0) continue;
@@ -669,7 +704,10 @@ extension ElementBehaviors on SimulationEngine {
           life[ni] = 0;
           markProcessed(ni);
         }
-        if (neighbor == El.wood && rng.nextInt(4) == 0) {
+        if (neighbor == El.wood && temperature[ni] >= 190) {
+          // Temperature-based ignition: wood at flash point auto-ignites
+          // from radiated heat. This replaces random ignition with
+          // physics-driven propagation for consistent fire front velocity.
           grid[ni] = El.fire;
           life[ni] = 0;
           markProcessed(ni);
@@ -1822,6 +1860,21 @@ extension ElementBehaviors on SimulationEngine {
       return;
     }
 
+    // Temperature-based auto-ignition (flash point).
+    // Real physics: wood has a flash point of ~300°C. Heat conducted from
+    // adjacent fire raises the wood's temperature until it auto-ignites.
+    // This creates a deterministic fire front driven by thermal diffusion
+    // (Fisher-KPP reaction-diffusion), producing the constant propagation
+    // velocity v = 2*sqrt(k*α) observed in real fire spread.
+    // On our 0-255 scale, fire is 230 and wood base is 128.
+    // Ignition threshold ~190 gives enough time for conduction to establish
+    // a smooth temperature gradient ahead of the fire front.
+    if (temperature[idx] >= 190) {
+      // Auto-ignite: wood reaches flash point from heat conduction
+      life[idx] = 1; // Start burning
+      return;
+    }
+
     // Gravity: wood falls through empty space when unsupported.
     // velY is used for water saturation (0-3), so no momentum tracking.
     final by = y + gravityDir;
@@ -2121,24 +2174,15 @@ extension ElementBehaviors on SimulationEngine {
       velX[idx] = 0;
     }
 
-    // Very slow fall
-    if (life[idx] % 3 != 0) return;
-
-    if (inBoundsY(by)) {
-      final below = by * gridW + x;
-      if (grid[below] == El.empty) { swap(idx, below); return; }
-      if (grid[below] == El.water) return;
+    // Granular fall: ash falls slowly (every 2 frames) using standard
+    // granular mechanics for proper diagonal spreading and realistic
+    // angle of repose (~35°). The 1/2 rate keeps ash's floaty character.
+    if (life[idx] % 2 == 0) {
+      fallGranular(x, y, idx, El.ash);
     }
-
-    final dl = rng.nextBool();
-    final ax1 = wrapX(dl ? x - 1 : x + 1);
-    final ax2 = wrapX(dl ? x + 1 : x - 1);
-    if (inBoundsY(by) && grid[by * gridW + ax1] == El.empty) { swap(idx, by * gridW + ax1); return; }
-    if (inBoundsY(by) && grid[by * gridW + ax2] == El.empty) { swap(idx, by * gridW + ax2); return; }
-
+    // Avalanche: spread piles even when not falling
     if (rng.nextInt(3) == 0) {
-      final sx = wrapX(rng.nextBool() ? x - 1 : x + 1);
-      if (grid[y * gridW + sx] == El.empty) { swap(idx, y * gridW + sx); }
+      _avalancheGranular(x, y, idx);
     }
   }
 

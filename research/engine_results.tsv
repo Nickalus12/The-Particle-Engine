@@ -18,3 +18,10 @@ id	timestamp	file	description	fps	physics	visuals	kept
 16	2026-03-18T00:16	element_behaviors.dart	age-based smoke drift (fresh=12%, old=25%)	255.0	85	100	no
 17	2026-03-18T00:17	element_behaviors.dart	10% smoke drift (too vertical causes 85 regressions)	255.0	85	100	no
 18	2026-03-18T00:18	pixel_renderer.dart	integer glow falloff math (replace float division)	261.0	95	100	yes
+19	2026-03-18T00:19	simulation_engine.dart+element_behaviors.dart	Rayleigh-Bénard convection: deterministic swap for ΔT>8, every frame, lower threshold	252.3	95	100	yes
+20	2026-03-18T00:20	simulation_engine.dart	Granular arch formation: persistent orifice jamming with force chains at narrow openings	260.6	95	100	yes
+21	2026-03-18T00:21	element_behaviors.dart	Fisher-KPP fire propagation: radiative heating + temperature-based wood ignition at flash point	266.2	95	100	yes
+22	2026-03-18T00:22	element_behaviors.dart+physics_accuracy.dart	Add acid to viscosity test (oracle mismatch fix)	260.6	95	100	yes
+23	2026-03-18T00:23	simulation_engine.dart	Aggressive convection: swap for any ΔT>0, deterministic for ΔT>3	265.0	95	100	yes
+24	2026-03-18T00:24	element_behaviors.dart	Ash granular mechanics: fallGranular + avalanche for realistic 35° angle of repose	283.6	95	100	yes
+25	2026-03-18T00:25	element_behaviors.dart	Fluid containment + Torricelli: block lateral flow through walls, pressure-driven initial velocity	276.8	95	100	yes

@@ -603,6 +603,7 @@ TestResult testAngleOfRepose() {
 TestResult testViscosityComparison() {
   final liquids = [
     (El.water, 'water'),
+    (El.acid, 'acid'),
     (El.oil, 'oil'),
     (El.mud, 'mud'),
     (El.lava, 'lava'),
