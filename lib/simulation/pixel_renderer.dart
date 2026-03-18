@@ -202,9 +202,6 @@ class PixelRenderer {
 
   double dayNightT = 0.0;
 
-  /// Accumulated time for animated effects (heat shimmer, snow sparkle).
-  double _effectTime = 0.0;
-
   void renderPixels() {
     final total = engine.gridW * engine.gridH;
     final w = engine.gridW;
@@ -212,9 +209,6 @@ class PixelRenderer {
     final g = engine.grid;
     final t = engine.isNight ? dayNightT : 0.0;
     final fc = engine.frameCount;
-
-    // Advance effect timer (~60fps assumed)
-    _effectTime += 0.016;
 
     // Update ground level cache every 8 frames for underground detection
     _groundLevelAge++;
@@ -1215,16 +1209,20 @@ class PixelRenderer {
         _inlineG = (strataG + layer + sedimentShift + hBandShift + strataEdge - depthDarken).clamp(53, 173);
         _inlineB = (strataB + layer - sedimentShift + hBandShift + strataEdge - depthDarken ~/ 2).clamp(68, 185);
         if (stoneHeat > 0) {
-          final heatFrac = stoneHeat / 5.0;
-          final pulse = _fastSin(frameCount * 0.3 + idx * 0.1) * 0.3 + 0.7;
+          // Integer heat glow: heatFrac = stoneHeat/5 as [0,256]
+          final heatFrac256 = stoneHeat * 256 ~/ 5;
+          // pulse = sin * 0.3 + 0.7 -> [0.4, 1.0] -> [102, 256]
+          final pulsePhase = (frameCount * 77 + idx * 26) >> 8;
+          final pulseI = _fastSinI(pulsePhase); // [0, 256]
+          final pulse256 = 102 + (pulseI * 154) >> 8; // [102, 256]
           _inlineR =
-              (_inlineR + (heatFrac * 130 * pulse).round())
+              (_inlineR + ((heatFrac256 * 130 * pulse256) >> 16))
                   .clamp(0, 255);
           _inlineG =
-              (_inlineG + (heatFrac * 45 * pulse).round())
+              (_inlineG + ((heatFrac256 * 45 * pulse256) >> 16))
                   .clamp(0, 255);
           _inlineB =
-              (_inlineB - (heatFrac * 70).round()).clamp(0, 255);
+              (_inlineB - (heatFrac256 * 70 >> 8)).clamp(0, 255);
           if (frameCount % 20 == 0) {
             velX[idx] = (stoneHeat - 1).clamp(0, 5);
           }
@@ -1248,15 +1246,17 @@ class PixelRenderer {
         _inlineA = 255;
         final isOilTop = y > 0 && grid[(y - 1) * w + x] != El.oil;
         if (isOilTop) {
-          // Iridescent surface shimmer -- rainbow oil slick effect
-          final shimmer1 = _fastSin(frameCount * 0.15 + x * 0.7) * 0.5 + 0.5;
-          final shimmer2 = _fastSin(frameCount * 0.12 + x * 1.1 + 1.2) * 0.5 + 0.5;
-          final iridPhase = ((x * 37 + frameCount * 2) % 120) / 120.0;
-          // Rainbow phase for iridescence
-          final iridR = (_fastSin(iridPhase * 6.28) * 20 + 20).round();
-          final iridG = (_fastSin(iridPhase * 6.28 + 2.09) * 15 + 10).round();
-          final iridB = (_fastSin(iridPhase * 6.28 + 4.19) * 20 + 15).round();
-          final shimVal = (shimmer1 * 14 + shimmer2 * 8).round();
+          // Iridescent surface shimmer -- integer rainbow oil slick
+          final sp1 = (frameCount * 38 + x * 179) >> 8;
+          final sp2 = (frameCount * 31 + x * 282 + 31) >> 8;
+          final shimmer1 = _fastSinI(sp1); // [0, 256]
+          final shimmer2 = _fastSinI(sp2); // [0, 256]
+          // Rainbow iridescence phase: [0, 256] mapped from x*37+fc*2
+          final iridP = ((x * 37 + frameCount * 2) % 120) * 256 ~/ 120;
+          final iridR = (_fastSinI(iridP) * 20 >> 8) + 10;
+          final iridG = (_fastSinI(iridP + 85) * 15 >> 8) + 3; // +85 ≈ 2.09/6.28*256
+          final iridB = (_fastSinI(iridP + 170) * 20 >> 8) + 5; // +170 ≈ 4.19/6.28*256
+          final shimVal = (shimmer1 * 14 + shimmer2 * 8) >> 8;
           _inlineR = (60 + shimVal + iridR).clamp(45, 110);
           _inlineG = (45 + shimVal + iridG).clamp(32, 85);
           _inlineB = (35 + shimVal ~/ 2 + iridB).clamp(25, 75);
@@ -1270,8 +1270,9 @@ class PixelRenderer {
         }
 
       case El.acid:
-        final pulse = _fastSin(frameCount * 0.15 + idx * 0.3) * 0.5 + 0.5;
-        final acidGlow = (pulse * 30).round();
+        final acidPulsePhase = (frameCount * 38 + idx * 77) >> 8;
+        final acidPulse = _fastSinI(acidPulsePhase); // [0, 256]
+        final acidGlow = (acidPulse * 30) >> 8;
         final variation = ((idx * 7 + y * 3) % 11) - 5;
         _inlineR = (20 + variation + acidGlow ~/ 3).clamp(0, 80);
         _inlineG = (240 + variation + acidGlow ~/ 4).clamp(210, 255);
@@ -1365,7 +1366,9 @@ class PixelRenderer {
         final isSparkle = sparkleActive < 3 && (sparkleHash % 4 == 0);
         final sparkleIntensity = isSparkle ? 45 : 0;
         // Slower gentle shimmer for overall snow surface
-        final shimmerVal = (_fastSin(_effectTime * 1.5 + sparkleHash * 0.01) * 6).round();
+        // Integer shimmer: slow frequency based on frameCount
+        final snowShimPhase = (frameCount * 6 + sparkleHash) >> 8;
+        final shimmerVal = (_fastSinI(snowShimPhase) * 6) >> 8;
         // Surface snow is slightly brighter than buried snow
         final isSnowSurface = y > 0 && grid[(y - 1) * w + x] != El.snow;
         final surfaceBoost = isSnowSurface ? 8 : 0;
@@ -1377,8 +1380,9 @@ class PixelRenderer {
         _inlineA = 255;
         final variation = ((idx * 7 + y * 3) % 11) - 5;
         if (life[idx] > 0) {
-          final burnPhase = _fastSin(frameCount * 0.25 + life[idx] * 0.3) * 0.5 + 0.5;
-          final bright = (burnPhase * 35).round();
+          final burnP = (frameCount * 64 + life[idx] * 77) >> 8;
+          final burnPhase = _fastSinI(burnP); // [0, 256]
+          final bright = (burnPhase * 35) >> 8;
           _inlineR = (200 + bright).clamp(185, 255);
           _inlineG = (80 + bright - life[idx]).clamp(20, 120);
           _inlineB = 10;
@@ -1425,8 +1429,9 @@ class PixelRenderer {
                 .round()
                 .clamp(30, 210);
           } else {
-            final sheenPhase = _fastSin(frameCount * 0.1 + x * 0.3 + y * 0.2) * 0.5 + 0.5;
-            final sheen = (sheenPhase * 18).round();
+            final sheenP = (frameCount * 26 + x * 77 + y * 51) >> 8;
+            final sheenPhase = _fastSinI(sheenP); // [0, 256]
+            final sheen = (sheenPhase * 18) >> 8;
             _inlineR = (168 + sheen + variation).clamp(145, 200);
             _inlineG = (168 + sheen + variation).clamp(145, 200);
             _inlineB = (176 + sheen + variation).clamp(155, 210);
@@ -1436,8 +1441,9 @@ class PixelRenderer {
       case El.smoke:
         final smokeLife = life[idx];
         final fade = (60 - smokeLife).clamp(0, 60);
-        final wisp = _fastSin(frameCount * 0.1 + idx * 0.5) * 0.5 + 0.5;
-        final wispVal = (wisp * 15).round();
+        final wispP = (frameCount * 26 + idx * 128) >> 8;
+        final wisp = _fastSinI(wispP); // [0, 256]
+        final wispVal = (wisp * 15) >> 8;
         _inlineA = (fade * 3 + 60).clamp(60, 200);
         final smokeBase =
             _lerpC(155, 110, (smokeLife * 255 ~/ 60).clamp(0, 255));
@@ -1447,18 +1453,19 @@ class PixelRenderer {
         _inlineB = (smokeBase + variation + wispVal ~/ 3).clamp(95, 180);
 
       case El.bubble:
-        // Iridescent soap-bubble feel with shifting rainbow highlight
-        final bubbleTime = frameCount * 0.08 + idx * 0.5;
-        final iridShift = _fastSin(bubbleTime) * 0.5 + 0.5;
-        final iridShift2 = _fastSin(bubbleTime * 0.7 + 1.5) * 0.5 + 0.5;
+        // Iridescent soap-bubble feel with shifting rainbow highlight (integer)
+        final bubbleP1 = (frameCount * 20 + idx * 128) >> 8;
+        final bubbleP2 = (frameCount * 14 + idx * 90 + 38) >> 8;
+        final iridShift = _fastSinI(bubbleP1); // [0, 256]
+        final iridShift2 = _fastSinI(bubbleP2); // [0, 256]
         // Specular highlight that moves across the bubble
         final highlight = (frameCount + idx * 7) % 40 < 4 ? 40 : 0;
         // Base: light cyan-white with rainbow shimmer
-        _inlineR = (180 + (iridShift * 50).round() + highlight).clamp(165, 255);
-        _inlineG = (210 + (iridShift2 * 35).round() + highlight).clamp(195, 255);
+        _inlineR = (180 + (iridShift * 50 >> 8) + highlight).clamp(165, 255);
+        _inlineG = (210 + (iridShift2 * 35 >> 8) + highlight).clamp(195, 255);
         _inlineB = (240 + highlight).clamp(230, 255);
         // Very translucent to show what's behind
-        _inlineA = (120 + (iridShift * 30).round()).clamp(100, 160);
+        _inlineA = (120 + (iridShift * 30 >> 8)).clamp(100, 160);
 
       case El.ash:
         final variation = ((idx * 7 + y * 3) % 11) - 5;
