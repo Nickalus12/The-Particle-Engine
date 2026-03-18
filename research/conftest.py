@@ -72,8 +72,30 @@ def simulation_frame():
 
 @pytest.fixture(scope="session")
 def element_names(simulation_frame):
-    """Map element names to IDs from simulation metadata."""
-    return simulation_frame["meta"]["elements"]
+    """Map element names (capitalized) to IDs from simulation metadata.
+
+    Also supports case-insensitive lookup via __getitem__ fallback.
+    """
+    raw = simulation_frame["meta"]["elements"]
+    # Provide a dict that supports case-insensitive .get()
+    return _CaseInsensitiveDict(raw)
+
+
+class _CaseInsensitiveDict(dict):
+    """Dict with case-insensitive get/contains, preserving original keys."""
+
+    def __init__(self, data):
+        super().__init__(data)
+        self._lower = {k.lower(): v for k, v in data.items()}
+
+    def get(self, key, default=None):
+        result = super().get(key, None)
+        if result is not None:
+            return result
+        return self._lower.get(key.lower(), default)
+
+    def __contains__(self, key):
+        return super().__contains__(key) or key.lower() in self._lower
 
 
 @pytest.fixture(scope="session")

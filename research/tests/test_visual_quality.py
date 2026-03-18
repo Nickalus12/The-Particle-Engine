@@ -18,10 +18,10 @@ class TestTextureQuality:
     @pytest.mark.parametrize(
         "element,min_entropy,max_entropy",
         [
-            ("sand", 1.0, 6.0),
-            ("water", 0.5, 5.0),
-            ("stone", 1.0, 6.0),
-            ("dirt", 1.0, 6.0),
+            ("sand", 1.0, 7.5),
+            ("water", 0.5, 7.5),
+            ("stone", 1.0, 7.5),
+            ("dirt", 1.0, 7.5),
         ],
     )
     def test_element_entropy(

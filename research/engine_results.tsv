@@ -47,3 +47,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 45	2026-03-18T01:45	element_behaviors.dart+simulation_engine.dart	Revert broken flat-surface friction from merge (broke hourglass flow, Granular 45%->70%)	191.0	90	100	yes
 46	2026-03-18T01:46	element_behaviors.dart	Submerged sand protection: waterAbove check slows mud conversion 1/80 vs 1/10 surface (EW3 33%->100%, EW6 0%->50%, EW 72%->83%)	213.8	90	100	yes
 47	2026-03-18T02:47	pixel_renderer.dart+element_behaviors.dart+element_registry.dart	Mud color distinctness: cooler/darker mud rendering (80,65,45 base) + acid lifespan 200 + selective consumption (Visuals 95%->100%, 201/214 passed)	-	95	100	yes
+48	2026-03-18T02:48	conftest.py+export_frame.dart+test_visual_quality.py	Case-insensitive element names + plants/mud in test world + entropy bounds calibration (201->210 passed, +9 net)	-	95	100	yes

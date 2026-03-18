@@ -138,5 +138,31 @@ void _fillTestWorld(SimulationEngine e) {
     }
   }
 
+  // Plants on surface (grass type=1, stage=sprout=0 -> green)
+  for (int x = (w * 0.35).round(); x < (w * 0.45).round(); x++) {
+    final groundY = (h * 0.55 + (10 * (0.5 + 0.5 * (x / w)))).round();
+    if (groundY > 3) {
+      for (int ty = 1; ty <= 3; ty++) {
+        final py = groundY - ty;
+        if (py >= 0) {
+          final pidx = py * w + x;
+          e.grid[pidx] = El.plant;
+          // Set plant type=grass(1), stage=mature(2) -> deep green
+          e.velX[pidx] = (2 << 4) | 1; // stage=mature, type=grass
+          e.life[pidx] = 200; // plenty of moisture to survive
+        }
+      }
+    }
+  }
+
+  // Mud patch
+  for (int x = (w * 0.25).round(); x < (w * 0.3).round(); x++) {
+    final groundY = (h * 0.55 + (10 * (0.5 + 0.5 * (x / w)))).round();
+    if (groundY > 1) {
+      e.grid[(groundY - 1) * w + x] = El.mud;
+      e.grid[groundY * w + x] = El.mud;
+    }
+  }
+
   e.markAllDirty();
 }
