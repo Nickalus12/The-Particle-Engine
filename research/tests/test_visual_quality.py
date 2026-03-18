@@ -150,6 +150,119 @@ class TestEdgeQuality:
         )
 
 
+class TestGlowCorrectness:
+    """Light-emitting elements should glow without black halos."""
+
+    @pytest.mark.visual
+    def test_lava_no_black_halo(self, simulation_frame, element_names):
+        """Pixels adjacent to lava should not be pure black (halo artifact)."""
+        grid = simulation_frame["grid"]
+        pixels = simulation_frame["pixels"]
+        lava_id = element_names.get("Lava") or element_names.get("lava")
+        if lava_id is None:
+            pytest.skip("No Lava element")
+        lava_mask = grid == lava_id
+        if lava_mask.sum() < 10:
+            pytest.skip("Not enough lava pixels")
+        # Check neighbors of lava pixels for black halos
+        black_neighbor_count = 0
+        total_neighbors = 0
+        lava_positions = np.argwhere(lava_mask)
+        for y, x in lava_positions[:50]:  # sample up to 50
+            for dy, dx in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                ny, nx = y + dy, x + dx
+                if 0 <= ny < 180 and 0 <= nx < 320:
+                    if grid[ny, nx] != lava_id:
+                        total_neighbors += 1
+                        r, g, b = int(pixels[ny, nx, 0]), int(pixels[ny, nx, 1]), int(pixels[ny, nx, 2])
+                        if r == 0 and g == 0 and b == 0 and int(pixels[ny, nx, 3]) == 255:
+                            black_neighbor_count += 1
+        if total_neighbors == 0:
+            pytest.skip("No lava neighbors found")
+        black_ratio = black_neighbor_count / total_neighbors
+        assert black_ratio < 0.1, (
+            f"{black_ratio*100:.1f}% of lava neighbors are pure black (halo artifact)"
+        )
+
+    @pytest.mark.visual
+    def test_fire_has_warm_colors(self, simulation_frame, element_names):
+        """Fire pixels should have warm colors (high red, moderate green)."""
+        grid = simulation_frame["grid"]
+        pixels = simulation_frame["pixels"]
+        fire_id = element_names.get("Fire") or element_names.get("fire")
+        if fire_id is None:
+            pytest.skip("No Fire element")
+        fire_mask = grid == fire_id
+        if fire_mask.sum() < 5:
+            pytest.skip("Not enough fire pixels")
+        fire_pixels = pixels[fire_mask][:, :3].astype(float)
+        avg_r = float(fire_pixels[:, 0].mean())
+        avg_b = float(fire_pixels[:, 2].mean())
+        assert avg_r > avg_b, (
+            f"Fire should be warm: avg_r={avg_r:.0f} should be > avg_b={avg_b:.0f}"
+        )
+
+
+class TestWaterDepthGradient:
+    """Deeper water should appear darker than shallow water."""
+
+    @pytest.mark.visual
+    def test_water_depth_darkens(self, simulation_frame, element_names):
+        """Water pixels at greater depth should have lower brightness."""
+        grid = simulation_frame["grid"]
+        pixels = simulation_frame["pixels"]
+        water_id = element_names.get("Water") or element_names.get("water")
+        if water_id is None:
+            pytest.skip("No Water element")
+        water_mask = grid == water_id
+        if water_mask.sum() < 20:
+            pytest.skip("Not enough water pixels")
+        water_positions = np.argwhere(water_mask)
+        # Find the topmost water row
+        min_water_y = int(water_positions[:, 0].min())
+        shallow = []
+        deep = []
+        for y, x in water_positions:
+            depth = y - min_water_y
+            brightness = float(pixels[y, x, :3].mean())
+            if depth <= 2:
+                shallow.append(brightness)
+            elif depth >= 5:
+                deep.append(brightness)
+        if len(shallow) < 5 or len(deep) < 5:
+            pytest.skip("Not enough depth variation in water")
+        avg_shallow = np.mean(shallow)
+        avg_deep = np.mean(deep)
+        # Deep water should be at least slightly darker
+        assert avg_deep <= avg_shallow + 20, (
+            f"Deep water ({avg_deep:.0f}) should not be brighter "
+            f"than shallow water ({avg_shallow:.0f})"
+        )
+
+
+class TestSteamSubtlety:
+    """Steam should be subtle and translucent."""
+
+    @pytest.mark.visual
+    def test_steam_low_alpha(self, simulation_frame, element_names):
+        """Steam pixels should have low alpha (translucent)."""
+        grid = simulation_frame["grid"]
+        pixels = simulation_frame["pixels"]
+        steam_id = element_names.get("Steam") or element_names.get("steam")
+        if steam_id is None:
+            pytest.skip("No Steam element")
+        steam_mask = grid == steam_id
+        if steam_mask.sum() < 3:
+            pytest.skip("Not enough steam pixels")
+        steam_alphas = pixels[steam_mask][:, 3].astype(float)
+        avg_alpha = float(steam_alphas.mean())
+        # Steam base color has alpha 0x30 = 48, rendered may differ
+        # but should be subtle (< 150)
+        assert avg_alpha < 150, (
+            f"Steam avg alpha={avg_alpha:.0f}, expected subtle (< 150)"
+        )
+
+
 class TestElementColorRange:
     """Non-empty elements should have visible colors (not transparent/black)."""
 

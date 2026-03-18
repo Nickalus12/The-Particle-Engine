@@ -1,0 +1,347 @@
+# serializer version: 1
+# name: TestOracleSnapshots.test_density_ordering_stable
+  list([
+    'stone',
+    'metal',
+    'glass',
+    'sand',
+    'dirt',
+    'mud',
+    'water',
+    'ice',
+    'wood',
+    'oil',
+    'snow',
+    'ash',
+  ])
+# ---
+# name: TestOracleSnapshots.test_element_count_stable
+  23
+# ---
+# name: TestOracleSnapshots.test_gravity_oracle_stable
+  dict({
+    'acid': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'ant': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'ash': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'bubble': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'dirt': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'fire': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'glass': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'ice': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'lava': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'lightning': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'metal': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'mud': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'oil': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'rainbow': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'sand': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'seed': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'smoke': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'snow': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'steam': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'stone': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'tnt': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'water': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+    'wood': list([
+      'gravity',
+      'maxVelocity',
+      'direction',
+      'positions_60frames',
+      'final_position',
+    ]),
+  })
+# ---
+# name: TestOracleSnapshots.test_phase_change_products_stable
+  dict({
+    'glass': '',
+    'ice': '',
+    'lava': '',
+    'metal': '',
+    'oil': '',
+    'sand': '',
+    'snow': '',
+    'steam': '',
+    'stone': '',
+    'water': '',
+  })
+# ---
+# name: TestOracleSnapshots.test_reaction_products_stable
+  dict({
+    'acid_ant': dict({
+      'source_becomes': None,
+      'target_becomes': 'empty',
+    }),
+    'acid_dirt': dict({
+      'source_becomes': None,
+      'target_becomes': 'empty',
+    }),
+    'acid_glass': dict({
+      'source_becomes': 'empty',
+      'target_becomes': 'empty',
+    }),
+    'acid_ice': dict({
+      'source_becomes': None,
+      'target_becomes': 'water',
+    }),
+    'acid_lava': dict({
+      'source_becomes': 'smoke',
+      'target_becomes': 'steam',
+    }),
+    'acid_metal': dict({
+      'source_becomes': None,
+      'target_becomes': None,
+    }),
+    'acid_plant': dict({
+      'source_becomes': None,
+      'target_becomes': 'empty',
+    }),
+    'acid_seed': dict({
+      'source_becomes': None,
+      'target_becomes': 'empty',
+    }),
+    'acid_stone': dict({
+      'source_becomes': 'empty',
+      'target_becomes': 'empty',
+    }),
+    'acid_water': dict({
+      'source_becomes': 'water',
+      'target_becomes': None,
+    }),
+    'acid_wood': dict({
+      'source_becomes': 'empty',
+      'target_becomes': 'empty',
+    }),
+    'fire_ice': dict({
+      'source_becomes': None,
+      'target_becomes': 'water',
+    }),
+    'fire_oil': dict({
+      'source_becomes': None,
+      'target_becomes': 'fire',
+    }),
+    'fire_plant': dict({
+      'source_becomes': None,
+      'target_becomes': 'fire',
+    }),
+    'fire_seed': dict({
+      'source_becomes': None,
+      'target_becomes': 'fire',
+    }),
+    'fire_snow': dict({
+      'source_becomes': None,
+      'target_becomes': 'water',
+    }),
+    'fire_tnt': dict({
+      'source_becomes': None,
+      'target_becomes': None,
+    }),
+    'fire_wood': dict({
+      'source_becomes': None,
+      'target_becomes': None,
+    }),
+    'ice_fire': dict({
+      'source_becomes': 'water',
+      'target_becomes': None,
+    }),
+    'lava_ice': dict({
+      'source_becomes': None,
+      'target_becomes': 'water',
+    }),
+    'lava_snow': dict({
+      'source_becomes': None,
+      'target_becomes': 'steam',
+    }),
+    'lava_stone': dict({
+      'source_becomes': None,
+      'target_becomes': None,
+    }),
+    'lava_water': dict({
+      'source_becomes': 'stone',
+      'target_becomes': 'steam',
+    }),
+    'lava_wood': dict({
+      'source_becomes': None,
+      'target_becomes': 'fire',
+    }),
+    'lightning_metal': dict({
+      'source_becomes': None,
+      'target_becomes': None,
+    }),
+    'lightning_sand': dict({
+      'source_becomes': None,
+      'target_becomes': 'glass',
+    }),
+    'lightning_tnt': dict({
+      'source_becomes': None,
+      'target_becomes': None,
+    }),
+    'lightning_water': dict({
+      'source_becomes': None,
+      'target_becomes': None,
+    }),
+    'mud_fire': dict({
+      'source_becomes': 'dirt',
+      'target_becomes': None,
+    }),
+    'mud_lava': dict({
+      'source_becomes': 'dirt',
+      'target_becomes': None,
+    }),
+    'sand_lightning': dict({
+      'source_becomes': 'glass',
+      'target_becomes': None,
+    }),
+    'sand_water': dict({
+      'source_becomes': 'mud',
+      'target_becomes': None,
+    }),
+    'seed_water': dict({
+      'source_becomes': None,
+      'target_becomes': None,
+    }),
+    'snow_fire': dict({
+      'source_becomes': 'water',
+      'target_becomes': None,
+    }),
+    'water_fire': dict({
+      'source_becomes': 'steam',
+      'target_becomes': 'empty',
+    }),
+    'water_lava': dict({
+      'source_becomes': 'steam',
+      'target_becomes': 'stone',
+    }),
+  })
+# ---

@@ -1,0 +1,32 @@
+{
+  "width": 320,
+  "height": 180,
+  "frames": 100,
+  "elements": {
+    "Empty": 0,
+    "Sand": 1,
+    "Water": 2,
+    "Fire": 3,
+    "Ice": 4,
+    "Zap": 5,
+    "Seed": 6,
+    "Stone": 7,
+    "TNT": 8,
+    "Rainbow": 9,
+    "Mud": 10,
+    "Steam": 11,
+    "Ant": 12,
+    "Oil": 13,
+    "Acid": 14,
+    "Glass": 15,
+    "Dirt": 16,
+    "Plant": 17,
+    "Lava": 18,
+    "Snow": 19,
+    "Wood": 20,
+    "Metal": 21,
+    "Smoke": 22,
+    "Bubble": 23,
+    "Ash": 24
+  }
+}

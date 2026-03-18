@@ -50,3 +50,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 48	2026-03-18T02:48	conftest.py+export_frame.dart+test_visual_quality.py	Case-insensitive element names + plants/mud in test world + entropy bounds calibration (201->210 passed, +9 net)	-	95	100	yes
 49	2026-03-18T02:49	export_frame.dart	Add cave pocket to test world for underground darkness test (210->211 passed)	-	95	100	yes
 50	2026-03-18T02:50	test_*.py	Add surface tension, light emission, thermal stratification, porosity tests (211->221 passed, +10)	-	95	100	yes
+51	2026-03-18T02:51	test_*.py	Add decay chains, fire cycle, explosion falloff, electrical conductivity, Beverloo flow tests (221->234 passed, +13)	-	95	100	yes
