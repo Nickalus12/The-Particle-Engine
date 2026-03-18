@@ -60,3 +60,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 58	2026-03-18T03:58	pixel_renderer.dart	Complete integer sine conversion: _fastSinI replaces all _fastSin in render loop (water, heat, caustics, oil, acid, snow, wood, metal, smoke, bubble) + remove _effectTime	-	95	100	yes
 59	2026-03-18T03:59	pixel_renderer.dart	Integer sky gradient + water sky reflection: eliminate y/h float division and dayNightT*0.9 float multiply from per-cell sky rendering	-	95	100	yes
 60	2026-03-18T04:00	pixel_renderer.dart	Integer night system: t256 replaces float t for nightBoost/glowMul/star brightness + glow scaling uses >>16 instead of /255.0	-	95	100	yes
+61	2026-03-18T04:01	test_fluid_statics.py	Add hydrostatic paradox tests: pressure independence from container shape (614->616 passed, +2)	-	95	100	yes

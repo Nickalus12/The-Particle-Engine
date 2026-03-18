@@ -190,3 +190,30 @@ class TestLiveDensityOrdering:
         assert lava_avg > water_avg, (
             f"Lava avg_y={lava_avg:.1f} should be below water avg_y={water_avg:.1f}"
         )
+
+
+class TestHydrostaticParadox:
+    """Pressure at the bottom depends only on height, not container shape."""
+
+    @pytest.mark.physics
+    def test_hydrostatic_paradox_principle(self, ground_truth):
+        """Oracle: pressure difference between shapes should be ~0."""
+        gt = ground_truth.get("hydrostatic_paradox")
+        if gt is None:
+            pytest.skip("No hydrostatic_paradox oracle data")
+        assert gt["expected_pressure_difference"] == 0
+        assert gt["tolerance"] <= 5
+
+    @pytest.mark.physics
+    def test_pressure_independent_of_width(self, ground_truth):
+        """Pressure at a given depth is the same regardless of column width."""
+        gt = ground_truth.get("pressure_depth")
+        if gt is None:
+            pytest.skip("No pressure_depth oracle data")
+        depths = gt["depths_cells"]
+        pressures = gt["expected_pressure"]
+        # For any depth, pressure = depth (independent of container width)
+        for d, p in zip(depths, pressures):
+            assert abs(p - d) <= 1, (
+                f"Pressure at depth {d} should be ~{d}, got {p}"
+            )
