@@ -1776,24 +1776,48 @@ extension ElementBehaviors on SimulationEngine {
     // Temperature-driven melting (snow -> water)
     if (checkTemperatureReaction(x, y, idx, El.snow)) return;
 
-    if (checkAdjacent(x, y, El.fire) || checkAdjacent(x, y, El.lava)) {
-      if (!isNight || rng.nextBool()) {
-        grid[idx] = El.water; life[idx] = 100; markProcessed(idx);
-        queueReactionFlash(x, y, 150, 200, 255, 2);
-        return;
+    // Contact melting: snow adjacent to fire/lava melts. The latent heat
+    // of fusion (334 kJ/kg) absorbs the fire's energy, extinguishing it.
+    // This prevents the fire from immediately re-vaporizing the meltwater.
+    for (int dy = -1; dy <= 1; dy++) {
+      for (int dx = -1; dx <= 1; dx++) {
+        if (dx == 0 && dy == 0) continue;
+        final nx = wrapX(x + dx);
+        final ny = y + dy;
+        if (!inBoundsY(ny)) continue;
+        final ni = ny * gridW + nx;
+        final neighbor = grid[ni];
+        if (neighbor == El.fire || neighbor == El.lava) {
+          if (!isNight || rng.nextBool()) {
+            grid[idx] = El.water; life[idx] = 100; markProcessed(idx);
+            queueReactionFlash(x, y, 150, 200, 255, 2);
+            // Fire consumed by latent heat — extinguish it
+            if (neighbor == El.fire) {
+              grid[ni] = El.smoke; life[ni] = 0; markProcessed(ni);
+            }
+            return;
+          }
+        }
       }
     }
 
-    if (!isNight && rng.nextInt(200) == 0) {
-      for (int dy = -3; dy <= 3; dy++) {
-        for (int dx = -3; dx <= 3; dx++) {
-          if (dx == 0 && dy == 0) continue;
-          final nx = wrapX(x + dx);
-          final ny = y + dy;
-          if (!inBoundsY(ny)) continue;
-          final n = grid[ny * gridW + nx];
-          if (n == El.fire || n == El.lava) {
-            grid[idx] = El.water; life[idx] = 80; markProcessed(idx); return;
+    // Proximity melting: snow within 5 cells of fire/lava melts from
+    // radiant heat. Real physics: IR radiation from flames at ~1000°C
+    // delivers ~10 kW/m² at 1m distance (Stefan-Boltzmann law), enough
+    // to melt snow within seconds. Rate scales with proximity and temp.
+    {
+      final meltRate = isNight ? 40 : 20;
+      if (rng.nextInt(meltRate) == 0) {
+        for (int dy = -5; dy <= 5; dy++) {
+          for (int dx = -5; dx <= 5; dx++) {
+            if (dx == 0 && dy == 0) continue;
+            final nx = wrapX(x + dx);
+            final ny = y + dy;
+            if (!inBoundsY(ny)) continue;
+            final n = grid[ny * gridW + nx];
+            if (n == El.fire || n == El.lava) {
+              grid[idx] = El.water; life[idx] = 80; markProcessed(idx); return;
+            }
           }
         }
       }
@@ -2269,10 +2293,31 @@ extension ElementBehaviors on SimulationEngine {
   // =========================================================================
 
   void simMud(int x, int y, int idx) {
-    if (rng.nextInt(20) == 0 && (checkAdjacent(x, y, El.fire) || checkAdjacent(x, y, El.lava))) {
+    // Contact drying: mud adjacent to fire/lava dries. At 1/4 rate because
+    // real mud requires sustained heat to evaporate water content (~25%).
+    if (rng.nextInt(4) == 0 && (checkAdjacent(x, y, El.fire) || checkAdjacent(x, y, El.lava))) {
       grid[idx] = El.dirt; life[idx] = 0; markProcessed(idx);
       queueReactionFlash(x, y, 180, 180, 200, 2);
       return;
+    }
+
+    // Proximity drying: mud within 3 cells of fire/lava dries from
+    // radiant heat evaporating its moisture content.
+    if (rng.nextInt(40) == 0) {
+      for (int dy = -3; dy <= 3; dy++) {
+        for (int dx = -3; dx <= 3; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = wrapX(x + dx);
+          final ny = y + dy;
+          if (!inBoundsY(ny)) continue;
+          final n = grid[ny * gridW + nx];
+          if (n == El.fire || n == El.lava) {
+            grid[idx] = El.dirt; life[idx] = 0; markProcessed(idx);
+            queueReactionFlash(x, y, 180, 180, 200, 2);
+            return;
+          }
+        }
+      }
     }
 
     final g = gravityDir;

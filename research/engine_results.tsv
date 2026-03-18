@@ -35,3 +35,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 33	2026-03-18T00:33	element_behaviors.dart	Oil flash point auto-ignition: temp>145 combustion + lava adjacency ignition (CR1:fire+oil 0%->100%)	273.5	90	100	yes
 34	2026-03-18T00:34	element_behaviors.dart+element_registry.dart	Selective acid corrosion + Empty element name mapping (Chemical Reactions 72%->80%)	276.8	95	100	yes
 35	2026-03-18T00:35	simulation_engine.dart	Radiant heat warms all non-metallic surfaces (IR absorption, not conduction-gated)	277.8	95	100	yes
+36	2026-03-18T00:36	element_behaviors.dart	Snow latent heat melt (fire extinguish) + mud drying rate 1/4 + proximity ranges (CR1 snow/mud+fire 0%->100%)	293.3	95	100	yes
