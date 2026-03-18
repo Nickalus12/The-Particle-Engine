@@ -258,6 +258,33 @@ extension ElementBehaviors on SimulationEngine {
     }
     velY[idx] = 0;
 
+    // Puddle spreading: water with enough mass on a solid surface splits
+    // laterally to fill depressions, simulating real fluid behavior.
+    if (!isSpecialState && mass >= 60) {
+      for (final dir in rng.nextBool() ? [1, -1] : [-1, 1]) {
+        final nx = wrapX(x + dir);
+        final ni = y * gridW + nx;
+        if (grid[ni] == El.empty) {
+          // Check that the lateral cell has a solid floor below it
+          final nby = y + g;
+          if (inBoundsY(nby)) {
+            final belowNeighbor = grid[nby * gridW + nx];
+            if (belowNeighbor != El.empty && belowNeighbor != El.water &&
+                belowNeighbor != El.oil) {
+              // Split: create new water cell with half the mass
+              final halfMass = mass ~/ 2;
+              life[idx] = halfMass.clamp(20, 139);
+              grid[ni] = El.water;
+              life[ni] = halfMass.clamp(20, 139);
+              temperature[ni] = temperature[idx];
+              markProcessed(ni);
+              return;
+            }
+          }
+        }
+      }
+    }
+
     // Momentum-based lateral flow
     final momentum = velX[idx];
     final frameBias = rng.nextBool();
@@ -2410,8 +2437,9 @@ extension ElementBehaviors on SimulationEngine {
     // If at least one structural neighbor exists, stone holds in place.
     final g = gravityDir;
     final by = y + g;
-    final belowEmpty = !inBoundsY(by) || grid[by * gridW + x] == El.empty
-        || grid[by * gridW + x] == El.water || grid[by * gridW + x] == El.oil;
+    // Out of bounds below means grounded (grid edge acts as bedrock)
+    final belowEmpty = inBoundsY(by) && (grid[by * gridW + x] == El.empty
+        || grid[by * gridW + x] == El.water || grid[by * gridW + x] == El.oil);
 
     if (belowEmpty) {
       // Check for lateral structural support
@@ -2442,8 +2470,10 @@ extension ElementBehaviors on SimulationEngine {
             if (fallSolid(x, y, idx, El.stone)) return;
           }
         } else {
-          // Lateral support but no diagonal — weaker, crumble faster
-          if (rng.nextInt(8) == 0) {
+          // Lateral support but no diagonal — stable if both sides support,
+          // otherwise weaker structure crumbles occasionally
+          final bothSidesLateral = hasSupport(leftSupport) && hasSupport(rightSupport);
+          if (!bothSidesLateral && rng.nextInt(8) == 0) {
             if (fallSolid(x, y, idx, El.stone)) return;
           }
         }
