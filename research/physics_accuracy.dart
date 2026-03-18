@@ -3922,7 +3922,1122 @@ int _elIdByName(String name) {
 }
 
 // ===========================================================================
-// KINEMATICS (K1-K10)
+// CORE MECHANICS EXPANSION (CM5-CM24)
+// ===========================================================================
+
+/// CM5: Frame-by-frame trajectory R² for sand against engine model.
+TestResult testTrajectoryR2Sand() {
+  final oracle = _oracle('gravity_trajectory');
+  if (oracle == null) return _oracleError('CM5: Sand Trajectory R²', 'gravity_trajectory');
+  final engineModel = (oracle['engine_model_cells'] as List);
+
+  final e = _createEngine(20, 200);
+  const startY = 2;
+  e.grid[startY * e.gridW + 10] = El.sand;
+
+  final measured = <double>[];
+  final expected = <double>[];
+  for (int f = 0; f < 30 && f < engineModel.length; f++) {
+    _step(e, 1);
+    int foundY = startY;
+    for (int y = e.gridH - 1; y >= 0; y--) {
+      if (e.grid[y * e.gridW + 10] == El.sand) { foundY = y; break; }
+    }
+    measured.add((foundY - startY).toDouble());
+    expected.add((engineModel[f] as num).toDouble());
+  }
+
+  if (measured.length < 5) return TestResult('CM5: Sand Trajectory R²', 0.0, 'not enough data');
+  final meanE = expected.reduce((a, b) => a + b) / expected.length;
+  double ssRes = 0, ssTot = 0;
+  for (int i = 0; i < measured.length; i++) {
+    ssRes += (measured[i] - expected[i]) * (measured[i] - expected[i]);
+    ssTot += (expected[i] - meanE) * (expected[i] - meanE);
+  }
+  final r2 = ssTot > 0 ? (1.0 - ssRes / ssTot).clamp(0.0, 1.0) : 1.0;
+  return TestResult('CM5: Sand Trajectory R²', r2,
+      'R²=${r2.toStringAsFixed(4)} over ${measured.length} frames');
+}
+
+/// CM6: Per-element first-frame gravity displacement.
+List<TestResult> testFirstFrameDisplacement() {
+  final oracle = _oracle('first_frame_displacement');
+  if (oracle == null) return [_oracleError('CM6: First Frame', 'first_frame_displacement')];
+  final results = <TestResult>[];
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    final elId = _elIdByName(entry.key);
+    if (elId < 0) continue;
+    final expectedVel = data['first_frame_vel'] as int;
+    final direction = data['direction'] as String;
+
+    final eng = _createEngine(20, 60);
+    const startY = 30;
+    eng.grid[startY * eng.gridW + 10] = elId;
+    _step(eng, 1);
+
+    int foundY = startY;
+    if (direction == 'up') {
+      for (int y = 0; y < eng.gridH; y++) {
+        if (eng.grid[y * eng.gridW + 10] == elId) { foundY = y; break; }
+      }
+    } else {
+      for (int y = eng.gridH - 1; y >= 0; y--) {
+        if (eng.grid[y * eng.gridW + 10] == elId) { foundY = y; break; }
+      }
+    }
+    final actualDisp = foundY - startY;
+    final score = actualDisp == expectedVel ? 1.0 : (1.0 - (actualDisp - expectedVel).abs() / 3.0).clamp(0.0, 1.0);
+    results.add(TestResult('CM6: 1st Frame ${entry.key}', score,
+        'displaced=$actualDisp, expected=$expectedVel'));
+  }
+  return results.isEmpty ? [TestResult('CM6: First Frame', 0.0, 'no elements')] : results;
+}
+
+/// CM7: Negative gravity elements should rise.
+TestResult testNegativeGravityRise() {
+  final oracle = _oracle('negative_gravity');
+  if (oracle == null) return _oracleError('CM7: Neg Gravity', 'negative_gravity');
+  int tested = 0;
+  double totalScore = 0;
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    final elId = _elIdByName(entry.key);
+    if (elId < 0) continue;
+    final expectedRise = (data['expected_rise_10frames'] as num).toDouble();
+
+    final eng = _createEngine(20, 60);
+    const startY = 50;
+    eng.grid[startY * eng.gridW + 10] = elId;
+    _step(eng, 10);
+
+    int foundY = startY;
+    for (int y = 0; y < eng.gridH; y++) {
+      if (eng.grid[y * eng.gridW + 10] == elId) { foundY = y; break; }
+    }
+    final actualRise = (startY - foundY).toDouble();
+    if (actualRise > 0) {
+      final ratio = (actualRise / expectedRise).clamp(0.0, 1.5);
+      totalScore += ratio > 1.0 ? 1.0 : ratio;
+    }
+    tested++;
+  }
+  if (tested == 0) return TestResult('CM7: Neg Gravity', 0.0, 'no elements');
+  final avg = totalScore / tested;
+  return TestResult('CM7: Neg Gravity', avg,
+      '$tested elements, avg score=${avg.toStringAsFixed(3)}');
+}
+
+/// CM8: Acceleration curve — velY should increase linearly then clamp.
+TestResult testAccelerationCurve() {
+  final oracle = _oracle('acceleration_curves');
+  if (oracle == null) return _oracleError('CM8: Accel Curve', 'acceleration_curves');
+  int tested = 0;
+  double totalScore = 0;
+
+  for (final name in ['sand', 'water', 'stone', 'dirt']) {
+    final data = oracle[name] as Map<String, dynamic>?;
+    if (data == null) continue;
+    final elId = _elIdByName(name);
+    if (elId < 0) continue;
+    final expectedVels = (data['velocities_10frames'] as List).cast<int>();
+
+    final eng = _createEngine(20, 200);
+    const startY = 2;
+    eng.grid[startY * eng.gridW + 10] = elId;
+
+    int prevY = startY;
+    int matchCount = 0;
+    for (int f = 0; f < expectedVels.length && f < 10; f++) {
+      _step(eng, 1);
+      int curY = startY;
+      for (int y = eng.gridH - 1; y >= 0; y--) {
+        if (eng.grid[y * eng.gridW + 10] == elId) { curY = y; break; }
+      }
+      final delta = curY - prevY;
+      if (delta == expectedVels[f]) matchCount++;
+      prevY = curY;
+    }
+    totalScore += matchCount / expectedVels.length;
+    tested++;
+  }
+
+  if (tested == 0) return TestResult('CM8: Accel Curve', 0.0, 'no elements');
+  final avg = totalScore / tested;
+  return TestResult('CM8: Accel Curve', avg,
+      '$tested elements, avg match=${avg.toStringAsFixed(3)}');
+}
+
+/// CM9: Terminal velocity per element — steady-state velocity ≤ maxVelocity.
+TestResult testTerminalVelocityCore() {
+  final oracle = _oracle('acceleration_curves');
+  if (oracle == null) return _oracleError('CM9: Term Vel Core', 'acceleration_curves');
+  int correct = 0, total = 0;
+  final violations = <String>[];
+
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    final elId = _elIdByName(entry.key);
+    if (elId < 0) continue;
+    final maxV = data['maxVelocity'] as int;
+    if (maxV <= 0) continue;
+
+    final eng = _createEngine(10, 200);
+    eng.grid[2 * eng.gridW + 5] = elId;
+    int prevY = 2;
+    int maxObserved = 0;
+    for (int f = 0; f < 40; f++) {
+      _step(eng, 1);
+      int curY = 2;
+      for (int y = eng.gridH - 1; y >= 0; y--) {
+        if (eng.grid[y * eng.gridW + 5] == elId) { curY = y; break; }
+      }
+      final delta = (curY - prevY).abs();
+      if (delta > maxObserved) maxObserved = delta;
+      prevY = curY;
+    }
+    total++;
+    if (maxObserved <= maxV + 1) {
+      correct++;
+    } else {
+      violations.add('${entry.key}: max=$maxObserved, limit=$maxV');
+    }
+  }
+  final score = total > 0 ? correct / total : 0.0;
+  return TestResult('CM9: Term Vel Core', score,
+      '$correct/$total passed${violations.isNotEmpty ? " | ${violations.join("; ")}" : ""}');
+}
+
+/// CM10: Velocity resets to 0 on impact (landing on solid).
+TestResult testVelocityResetOnImpact() {
+  final e = _createEngine(20, 40);
+  for (int x = 0; x < 20; x++) {
+    e.grid[30 * e.gridW + x] = El.stone;
+  }
+  e.grid[5 * e.gridW + 10] = El.sand;
+  _step(e, 30);
+
+  int sandY = -1;
+  for (int y = 0; y < 40; y++) {
+    if (e.grid[y * e.gridW + 10] == El.sand) { sandY = y; break; }
+  }
+  if (sandY < 0) return TestResult('CM10: Vel Reset', 0.0, 'sand disappeared');
+
+  final velAfter = e.velY[sandY * e.gridW + 10];
+  final score = velAfter == 0 ? 1.0 : 0.0;
+  return TestResult('CM10: Vel Reset', score,
+      'sand at y=$sandY, velY after impact=$velAfter (expected 0)');
+}
+
+/// CM11: Multi-cell fall — when velY > 1, element skips cells.
+TestResult testMultiCellFallCore() {
+  final oracle = _oracle('multi_cell_fall');
+  if (oracle == null) return _oracleError('CM11: Multi-Cell', 'multi_cell_fall');
+  int tested = 0;
+  double totalScore = 0;
+
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    final elId = _elIdByName(entry.key);
+    if (elId < 0) continue;
+
+    final eng = _createEngine(20, 100);
+    const startY = 2;
+    eng.grid[startY * eng.gridW + 10] = elId;
+
+    int prevY = startY;
+    bool sawMultiCell = false;
+    for (int f = 0; f < 10; f++) {
+      _step(eng, 1);
+      int curY = startY;
+      for (int y = eng.gridH - 1; y >= 0; y--) {
+        if (eng.grid[y * eng.gridW + 10] == elId) { curY = y; break; }
+      }
+      final delta = curY - prevY;
+      if (delta > 1) sawMultiCell = true;
+      prevY = curY;
+    }
+    totalScore += sawMultiCell ? 1.0 : 0.0;
+    tested++;
+  }
+  if (tested == 0) return TestResult('CM11: Multi-Cell', 0.0, 'no elements');
+  final avg = totalScore / tested;
+  return TestResult('CM11: Multi-Cell', avg,
+      '$tested elements, ${(avg * 100).toStringAsFixed(0)}% showed multi-cell fall');
+}
+
+/// CM12: Wrapping edge cases — verify wrapX produces correct values.
+TestResult testWrappingEdgeCases() {
+  final oracle = _oracle('wrapping_edge_cases');
+  if (oracle == null) return _oracleError('CM12: WrapX', 'wrapping_edge_cases');
+  final inputs = (oracle['inputs'] as List).cast<int>();
+  final expected = (oracle['expected'] as List).cast<int>();
+  final gridW = oracle['grid_width'] as int;
+
+  final eng = _createEngine(gridW, 10);
+  int correct = 0;
+  final details = <String>[];
+  for (int i = 0; i < inputs.length; i++) {
+    final result = eng.wrapX(inputs[i]);
+    if (result == expected[i]) {
+      correct++;
+    } else {
+      details.add('wrapX(${inputs[i]})=$result, expected=${expected[i]}');
+    }
+  }
+  final score = correct / inputs.length;
+  return TestResult('CM12: WrapX', score,
+      '$correct/${inputs.length} correct${details.isNotEmpty ? " | ${details.join("; ")}" : ""}');
+}
+
+/// CM13: Element wrapping — sand slides via wrapping at edge.
+TestResult testElementWrapping() {
+  final e = _createEngine(20, 10);
+  e.grid[3 * e.gridW + 0] = El.sand;
+  e.grid[4 * e.gridW + 0] = El.stone;
+  e.grid[4 * e.gridW + 1] = El.stone;
+  _step(e, 1);
+
+  final wrappedIdx = 4 * e.gridW + (e.gridW - 1);
+  final landedCorrectly = e.grid[wrappedIdx] == El.sand;
+  final stayedPut = e.grid[3 * e.gridW + 0] == El.sand;
+  int sandX = -1, sandY = -1;
+  for (int y = 0; y < 10; y++) {
+    for (int x = 0; x < e.gridW; x++) {
+      if (e.grid[y * e.gridW + x] == El.sand) { sandX = x; sandY = y; }
+    }
+  }
+  final score = landedCorrectly ? 1.0 : (stayedPut ? 0.5 : 0.0);
+  return TestResult('CM13: Elem Wrap', score,
+      'sand at ($sandX,$sandY), expected (${e.gridW - 1},4) or stayed at (0,3)');
+}
+
+/// CM14: Clock-bit — no double processing per step.
+TestResult testClockBitNoDoubleProcess() {
+  final e = _createEngine(20, 40);
+  e.grid[5 * e.gridW + 10] = El.sand;
+  e.markAllDirty();
+  _step(e, 1);
+
+  int sandY = -1;
+  for (int y = 0; y < 40; y++) {
+    if (e.grid[y * e.gridW + 10] == El.sand) { sandY = y; break; }
+  }
+  final moved = sandY - 5;
+  // Sand with gravity=2: first frame vel=2, multi-cell -> moves 2. Not double-processed (which would be 4+).
+  final score = (moved >= 1 && moved <= 3) ? 1.0 : 0.0;
+  return TestResult('CM14: Clock Bit', score,
+      'sand moved $moved cells in 1 step (expected 1-3, not double-processed)');
+}
+
+/// CM15: Settling after 3 stable frames.
+TestResult testSettlingTiming() {
+  final oracle = _oracle('settling_timing');
+  if (oracle == null) return _oracleError('CM15: Settling', 'settling_timing');
+
+  final e = _createEngine(20, 20);
+  e.grid[18 * e.gridW + 10] = El.sand;
+  e.grid[19 * e.gridW + 10] = El.stone;
+  e.markAllDirty();
+  _step(e, 10);
+
+  final idx = 18 * e.gridW + 10;
+  final flagVal = e.flags[idx];
+  final isSettled = (flagVal & 0x40) != 0;
+  return TestResult('CM15: Settling', isSettled ? 1.0 : 0.0,
+      'flags=0x${flagVal.toRadixString(16)}, settled=$isSettled');
+}
+
+/// CM16: Unsettling neighbors — removing floor unsettles sand above.
+TestResult testUnsettlingNeighbors() {
+  final e = _createEngine(20, 20);
+  e.grid[17 * e.gridW + 10] = El.sand;
+  e.grid[18 * e.gridW + 10] = El.stone;
+  e.markAllDirty();
+  _step(e, 10);
+
+  final idx = 17 * e.gridW + 10;
+  final settledBefore = (e.flags[idx] & 0x40) != 0;
+
+  e.grid[18 * e.gridW + 10] = El.empty;
+  e.unsettleNeighbors(10, 18);
+  e.markAllDirty();
+
+  final unsettledAfter = (e.flags[idx] & 0x40) == 0;
+
+  _step(e, 5);
+  int sandY = -1;
+  for (int y = 0; y < 20; y++) {
+    if (e.grid[y * e.gridW + 10] == El.sand) { sandY = y; break; }
+  }
+  final fell = sandY > 17;
+
+  double score = 0;
+  if (settledBefore) score += 0.33;
+  if (unsettledAfter) score += 0.33;
+  if (fell) score += 0.34;
+  return TestResult('CM16: Unsettle', score,
+      'settled before=$settledBefore, unsettled after=$unsettledAfter, fell=$fell (sandY=$sandY)');
+}
+
+/// CM17: Momentum symmetry — identical drops land symmetrically.
+TestResult testMomentumSymmetry() {
+  final e = _createEngine(60, 80);
+  e.grid[2 * e.gridW + 15] = El.sand;
+  e.grid[2 * e.gridW + 45] = El.sand;
+  _step(e, 40);
+
+  int leftY = -1, rightY = -1;
+  for (int y = e.gridH - 1; y >= 0; y--) {
+    if (leftY < 0 && e.grid[y * e.gridW + 15] == El.sand) leftY = y;
+    if (rightY < 0 && e.grid[y * e.gridW + 45] == El.sand) rightY = y;
+  }
+  final diff = (leftY - rightY).abs();
+  return TestResult('CM17: Sym Momentum', diff == 0 ? 1.0 : (1.0 - diff / 5.0).clamp(0.0, 1.0),
+      'left=$leftY, right=$rightY, diff=$diff');
+}
+
+/// CM18: Lateral momentum — water with initial velX should flow.
+TestResult testLateralMomentum() {
+  final e = _createEngine(60, 20);
+  for (int x = 0; x < 60; x++) {
+    e.grid[15 * e.gridW + x] = El.stone;
+  }
+  e.grid[14 * e.gridW + 5] = El.water;
+  e.life[14 * e.gridW + 5] = 100;
+  e.velX[14 * e.gridW + 5] = 1;
+  e.markAllDirty();
+
+  _step(e, 30);
+
+  int maxWaterX = 5;
+  for (int y = 0; y < 15; y++) {
+    for (int x = 0; x < 60; x++) {
+      if (e.grid[y * e.gridW + x] == El.water && x > maxWaterX) maxWaterX = x;
+    }
+  }
+  final spread = maxWaterX - 5;
+  final score = (spread / 10.0).clamp(0.0, 1.0);
+  return TestResult('CM18: Lateral Mom', score,
+      'water spread $spread cells from start');
+}
+
+/// CM19: Collision momentum — heavy element displaces lighter.
+TestResult testCollisionMomentum() {
+  final e = _createEngine(20, 40);
+  for (int y = 20; y <= 35; y++) {
+    e.grid[y * e.gridW + 10] = El.water;
+    e.life[y * e.gridW + 10] = 100;
+  }
+  e.grid[5 * e.gridW + 10] = El.sand;
+  _step(e, 40);
+
+  int sandY = -1;
+  int topWaterY = 40;
+  for (int y = 0; y < 40; y++) {
+    if (sandY < 0 && e.grid[y * e.gridW + 10] == El.sand) sandY = y;
+    if (e.grid[y * e.gridW + 10] == El.water && y < topWaterY) topWaterY = y;
+  }
+  final score = (sandY > topWaterY) ? 1.0 : 0.0;
+  return TestResult('CM19: Collision Mom', score,
+      'sand at y=$sandY, top water at y=$topWaterY');
+}
+
+/// CM20: Chunk boundary wrapping — dirty chunk at x=0 marks edge chunk.
+TestResult testChunkBoundaryWrapping() {
+  final e = _createEngine(320, 32);
+  e.grid[16 * e.gridW + 0] = El.sand;
+  e.markDirty(0, 16);
+  final chunkCols = e.gridW >> 4;
+  final chunkRow = 16 >> 4;
+  final lastChunkCol = chunkCols - 1;
+  final lastChunkDirty = e.nextDirtyChunks[chunkRow * chunkCols + lastChunkCol] != 0;
+  final firstChunkDirty = e.nextDirtyChunks[chunkRow * chunkCols + 0] != 0;
+
+  double score = 0;
+  if (firstChunkDirty) score += 0.5;
+  if (lastChunkDirty) score += 0.5;
+  return TestResult('CM20: Chunk Wrap', score,
+      'first chunk dirty=$firstChunkDirty, last chunk dirty=$lastChunkDirty');
+}
+
+/// CM21: Pile stability — large sand pile reaches equilibrium.
+TestResult testPileStability() {
+  final e = _createEngine(80, 60);
+  const dropX = 40;
+  for (int i = 0; i < 100; i++) {
+    if (e.grid[2 * e.gridW + dropX] == El.empty) {
+      e.grid[2 * e.gridW + dropX] = El.sand;
+    }
+    _step(e, 2);
+  }
+  _step(e, 200);
+
+  int totalSand = 0, settledSand = 0;
+  for (int y = 0; y < 60; y++) {
+    for (int x = 0; x < 80; x++) {
+      final idx = y * e.gridW + x;
+      if (e.grid[idx] == El.sand) {
+        totalSand++;
+        if ((e.flags[idx] & 0x40) != 0) settledSand++;
+      }
+    }
+  }
+  final score = totalSand > 0 ? settledSand / totalSand : 0.0;
+  return TestResult('CM21: Pile Stability', score,
+      '$settledSand/$totalSand sand cells settled');
+}
+
+/// CM22: Stack remains stable — 10 sand on floor stay stacked.
+TestResult testStackStability() {
+  final e = _createEngine(20, 30);
+  for (int x = 0; x < 20; x++) {
+    e.grid[25 * e.gridW + x] = El.stone;
+  }
+  for (int y = 15; y <= 24; y++) {
+    e.grid[y * e.gridW + 10] = El.sand;
+  }
+  _step(e, 100);
+
+  int totalSand = 0;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.sand) totalSand++;
+  }
+  final score = totalSand == 10 ? 1.0 : (totalSand / 10.0).clamp(0.0, 1.0);
+  return TestResult('CM22: Stack Stable', score,
+      'total sand=$totalSand (expected 10)');
+}
+
+/// CM23: Simultaneous drops — all positive-gravity elements fall.
+TestResult testSimultaneousDropAll() {
+  final e = _createEngine(200, 80);
+  final elements = <int>[];
+  int xPos = 5;
+  for (int el = 1; el < El.count; el++) {
+    if (elementGravity[el] > 0 && xPos < 195) {
+      e.grid[2 * e.gridW + xPos] = el;
+      elements.add(el);
+      xPos += 8;
+    }
+  }
+  _step(e, 40);
+
+  int moved = 0;
+  for (int el in elements) {
+    for (int y = e.gridH - 1; y >= 0; y--) {
+      for (int x = 0; x < e.gridW; x++) {
+        if (e.grid[y * e.gridW + x] == el) {
+          if (y > 2) moved++;
+          y = -1;
+          break;
+        }
+      }
+    }
+  }
+  final score = elements.isNotEmpty ? moved / elements.length : 0.0;
+  return TestResult('CM23: Simult Drop', score,
+      '$moved/${elements.length} elements fell from y=2');
+}
+
+/// CM24: Opposite clock placement — freshly placed elements get processed.
+TestResult testOppositeClockPlacement() {
+  final e = _createEngine(20, 40);
+  _step(e, 1);
+
+  e.grid[5 * e.gridW + 10] = El.sand;
+  final clockBit = e.simClock ? 0x80 : 0;
+  e.flags[5 * e.gridW + 10] = clockBit;
+
+  _step(e, 1);
+  int sandY = -1;
+  for (int y = 0; y < 40; y++) {
+    if (e.grid[y * e.gridW + 10] == El.sand) { sandY = y; break; }
+  }
+  final moved = sandY > 5;
+  return TestResult('CM24: Clock Place', moved ? 1.0 : 0.0,
+      'sand at y=$sandY after 1 step (expected >5)');
+}
+
+// ===========================================================================
+// KINEMATICS EXPANSION (K11-K31)
+// ===========================================================================
+
+/// K11: Water trajectory R².
+TestResult testWaterTrajectoryR2() {
+  final oracle = _oracle('gravity_all');
+  if (oracle == null) return _oracleError('K11: Water Traj', 'gravity_all');
+  final waterData = oracle['water'] as Map<String, dynamic>?;
+  if (waterData == null) return TestResult('K11: Water Traj', 0.0, 'no water data');
+  final positions = waterData['positions_60frames'] as List;
+
+  final e = _createEngine(20, 80);
+  e.grid[2 * e.gridW + 10] = El.water;
+  e.life[2 * e.gridW + 10] = 100;
+
+  final measured = <double>[];
+  final expected = <double>[];
+  for (int f = 0; f < 30 && f < positions.length; f++) {
+    _step(e, 1);
+    int foundY = 2;
+    for (int y = e.gridH - 1; y >= 0; y--) {
+      if (e.grid[y * e.gridW + 10] == El.water) { foundY = y; break; }
+    }
+    measured.add(foundY.toDouble());
+    expected.add((positions[f] as num).toDouble() + 2);
+  }
+  if (measured.length < 5) return TestResult('K11: Water Traj', 0.0, 'insufficient data');
+  final meanE = expected.reduce((a, b) => a + b) / expected.length;
+  double ssRes = 0, ssTot = 0;
+  for (int i = 0; i < measured.length; i++) {
+    ssRes += (measured[i] - expected[i]) * (measured[i] - expected[i]);
+    ssTot += (expected[i] - meanE) * (expected[i] - meanE);
+  }
+  final r2 = ssTot > 0 ? (1.0 - ssRes / ssTot).clamp(0.0, 1.0) : 1.0;
+  return TestResult('K11: Water Traj', r2,
+      'R²=${r2.toStringAsFixed(4)} over ${measured.length} frames');
+}
+
+/// K12: Stone trajectory R².
+TestResult testStoneTrajectoryR2() {
+  final oracle = _oracle('gravity_all');
+  if (oracle == null) return _oracleError('K12: Stone Traj', 'gravity_all');
+  final stoneData = oracle['stone'] as Map<String, dynamic>?;
+  if (stoneData == null) return TestResult('K12: Stone Traj', 0.0, 'no stone data');
+  final positions = stoneData['positions_60frames'] as List;
+
+  final e = _createEngine(20, 80);
+  e.grid[2 * e.gridW + 10] = El.stone;
+  final measured = <double>[];
+  final expected = <double>[];
+  for (int f = 0; f < 30 && f < positions.length; f++) {
+    _step(e, 1);
+    int foundY = 2;
+    for (int y = e.gridH - 1; y >= 0; y--) {
+      if (e.grid[y * e.gridW + 10] == El.stone) { foundY = y; break; }
+    }
+    measured.add(foundY.toDouble());
+    expected.add((positions[f] as num).toDouble() + 2);
+  }
+  if (measured.length < 5) return TestResult('K12: Stone Traj', 0.0, 'insufficient data');
+  final meanE = expected.reduce((a, b) => a + b) / expected.length;
+  double ssRes = 0, ssTot = 0;
+  for (int i = 0; i < measured.length; i++) {
+    ssRes += (measured[i] - expected[i]) * (measured[i] - expected[i]);
+    ssTot += (expected[i] - meanE) * (expected[i] - meanE);
+  }
+  final r2 = ssTot > 0 ? (1.0 - ssRes / ssTot).clamp(0.0, 1.0) : 1.0;
+  return TestResult('K12: Stone Traj', r2,
+      'R²=${r2.toStringAsFixed(4)} over ${measured.length} frames');
+}
+
+/// K13: Snow trajectory R².
+TestResult testSnowTrajectoryR2() {
+  final oracle = _oracle('gravity_all');
+  if (oracle == null) return _oracleError('K13: Snow Traj', 'gravity_all');
+  final snowData = oracle['snow'] as Map<String, dynamic>?;
+  if (snowData == null) return TestResult('K13: Snow Traj', 0.0, 'no snow data');
+  final positions = snowData['positions_60frames'] as List;
+
+  final e = _createEngine(20, 80);
+  e.grid[2 * e.gridW + 10] = El.snow;
+  final measured = <double>[];
+  final expected = <double>[];
+  for (int f = 0; f < 30 && f < positions.length; f++) {
+    _step(e, 1);
+    int foundY = 2;
+    for (int y = e.gridH - 1; y >= 0; y--) {
+      if (e.grid[y * e.gridW + 10] == El.snow) { foundY = y; break; }
+    }
+    measured.add(foundY.toDouble());
+    expected.add((positions[f] as num).toDouble() + 2);
+  }
+  if (measured.length < 5) return TestResult('K13: Snow Traj', 0.0, 'insufficient data');
+  final meanE = expected.reduce((a, b) => a + b) / expected.length;
+  double ssRes = 0, ssTot = 0;
+  for (int i = 0; i < measured.length; i++) {
+    ssRes += (measured[i] - expected[i]) * (measured[i] - expected[i]);
+    ssTot += (expected[i] - meanE) * (expected[i] - meanE);
+  }
+  final r2 = ssTot > 0 ? (1.0 - ssRes / ssTot).clamp(0.0, 1.0) : 1.0;
+  return TestResult('K13: Snow Traj', r2,
+      'R²=${r2.toStringAsFixed(4)} over ${measured.length} frames');
+}
+
+/// K14: Ash trajectory R².
+TestResult testAshTrajectoryR2() {
+  final oracle = _oracle('gravity_all');
+  if (oracle == null) return _oracleError('K14: Ash Traj', 'gravity_all');
+  final ashData = oracle['ash'] as Map<String, dynamic>?;
+  if (ashData == null) return TestResult('K14: Ash Traj', 0.0, 'no ash data');
+  final positions = ashData['positions_60frames'] as List;
+
+  final e = _createEngine(20, 80);
+  e.grid[2 * e.gridW + 10] = El.ash;
+  final measured = <double>[];
+  final expected = <double>[];
+  for (int f = 0; f < 30 && f < positions.length; f++) {
+    _step(e, 1);
+    int foundY = 2;
+    for (int y = e.gridH - 1; y >= 0; y--) {
+      if (e.grid[y * e.gridW + 10] == El.ash) { foundY = y; break; }
+    }
+    measured.add(foundY.toDouble());
+    expected.add((positions[f] as num).toDouble() + 2);
+  }
+  if (measured.length < 5) return TestResult('K14: Ash Traj', 0.0, 'insufficient data');
+  final meanE = expected.reduce((a, b) => a + b) / expected.length;
+  double ssRes = 0, ssTot = 0;
+  for (int i = 0; i < measured.length; i++) {
+    ssRes += (measured[i] - expected[i]) * (measured[i] - expected[i]);
+    ssTot += (expected[i] - meanE) * (expected[i] - meanE);
+  }
+  final r2 = ssTot > 0 ? (1.0 - ssRes / ssTot).clamp(0.0, 1.0) : 1.0;
+  return TestResult('K14: Ash Traj', r2,
+      'R²=${r2.toStringAsFixed(4)} over ${measured.length} frames');
+}
+
+/// K15: Fall in fluid vs air.
+TestResult testFallInFluid() {
+  final e1 = _createEngine(20, 60);
+  e1.grid[2 * e1.gridW + 10] = El.sand;
+  _step(e1, 20);
+  int airY = 2;
+  for (int y = e1.gridH - 1; y >= 0; y--) {
+    if (e1.grid[y * e1.gridW + 10] == El.sand) { airY = y; break; }
+  }
+
+  final e2 = _createEngine(20, 60);
+  for (int y = 5; y < 55; y++) {
+    for (int x = 0; x < 20; x++) {
+      e2.grid[y * e2.gridW + x] = El.water;
+      e2.life[y * e2.gridW + x] = 100;
+    }
+  }
+  e2.grid[2 * e2.gridW + 10] = El.sand;
+  _step(e2, 20);
+  int waterY = 2;
+  for (int y = e2.gridH - 1; y >= 0; y--) {
+    if (e2.grid[y * e2.gridW + 10] == El.sand) { waterY = y; break; }
+  }
+
+  final airDist = airY - 2;
+  final waterDist = waterY - 2;
+  final score = (airDist > 0 && waterDist > 0) ? 1.0 : 0.5;
+  return TestResult('K15: Fall in Fluid', score,
+      'air=$airDist, water=$waterDist');
+}
+
+/// K16: Fall in oil.
+TestResult testFallInOil() {
+  final e = _createEngine(20, 60);
+  for (int y = 5; y < 55; y++) {
+    for (int x = 0; x < 20; x++) {
+      e.grid[y * e.gridW + x] = El.oil;
+    }
+  }
+  e.grid[2 * e.gridW + 10] = El.sand;
+  _step(e, 20);
+  int oilY = 2;
+  for (int y = e.gridH - 1; y >= 0; y--) {
+    if (e.grid[y * e.gridW + 10] == El.sand) { oilY = y; break; }
+  }
+  final dist = oilY - 2;
+  return TestResult('K16: Fall in Oil', dist > 0 ? 1.0 : 0.0,
+      'sand fell $dist cells through oil');
+}
+
+/// K17: Buoyant rise rate — bubble in water.
+TestResult testBuoyantRiseRate() {
+  final e = _createEngine(20, 60);
+  for (int y = 5; y < 55; y++) {
+    for (int x = 0; x < 20; x++) {
+      e.grid[y * e.gridW + x] = El.water;
+      e.life[y * e.gridW + x] = 100;
+    }
+  }
+  e.grid[40 * e.gridW + 10] = El.bubble;
+  _step(e, 20);
+  int bubY = 40;
+  for (int y = 0; y < e.gridH; y++) {
+    if (e.grid[y * e.gridW + 10] == El.bubble) { bubY = y; break; }
+  }
+  final rose = 40 - bubY;
+  final score = rose > 0 ? (rose / 10.0).clamp(0.0, 1.0) : 0.0;
+  return TestResult('K17: Buoyant Rise', score,
+      'bubble rose $rose cells');
+}
+
+/// K18: Gas rise rates — steam vs smoke.
+TestResult testGasRiseRates() {
+  final e1 = _createEngine(20, 60);
+  e1.grid[50 * e1.gridW + 10] = El.steam;
+  _step(e1, 15);
+  int steamY = 50;
+  for (int y = 0; y < e1.gridH; y++) {
+    if (e1.grid[y * e1.gridW + 10] == El.steam) { steamY = y; break; }
+  }
+
+  final e2 = _createEngine(20, 60);
+  e2.grid[50 * e2.gridW + 10] = El.smoke;
+  _step(e2, 15);
+  int smokeY = 50;
+  for (int y = 0; y < e2.gridH; y++) {
+    if (e2.grid[y * e2.gridW + 10] == El.smoke) { smokeY = y; break; }
+  }
+
+  final steamRose = 50 - steamY;
+  final smokeRose = 50 - smokeY;
+  final bothRose = steamRose > 0 && smokeRose > 0;
+  return TestResult('K18: Gas Rise Rates', bothRose ? 1.0 : 0.5,
+      'steam rose $steamRose, smoke rose $smokeRose');
+}
+
+/// K19: Horizontal launch — sand with velX tracks parabolic arc.
+TestResult testHorizontalLaunch() {
+  final oracle = _oracle('projectile_motion');
+  if (oracle == null) return _oracleError('K19: H-Launch', 'projectile_motion');
+
+  final e = _createEngine(200, 100);
+  const startX = 10;
+  const startY = 10;
+  e.grid[startY * e.gridW + startX] = El.sand;
+  e.velX[startY * e.gridW + startX] = 2;
+  e.markAllDirty();
+
+  double lastX = 0, lastY = 0;
+  for (int f = 0; f < 15; f++) {
+    _step(e, 1);
+    for (int y = 0; y < 100; y++) {
+      for (int x = 0; x < 200; x++) {
+        if (e.grid[y * e.gridW + x] == El.sand) {
+          lastX = (x - startX).toDouble();
+          lastY = (y - startY).toDouble();
+          y = 100; break;
+        }
+      }
+    }
+  }
+  double score = 0;
+  if (lastX > 0) score += 0.5;
+  if (lastY > 0) score += 0.5;
+  return TestResult('K19: H-Launch', score,
+      'final x=$lastX, y=$lastY (expected both >0)');
+}
+
+/// K20: Diagonal launch — sand with velX=1, velY=-2 should arc.
+TestResult testDiagonalLaunch() {
+  final e = _createEngine(100, 100);
+  const startX = 10;
+  const startY = 50;
+  e.grid[startY * e.gridW + startX] = El.sand;
+  e.velX[startY * e.gridW + startX] = 1;
+  e.velY[startY * e.gridW + startX] = -2;
+  e.markAllDirty();
+
+  _step(e, 20);
+
+  int fx = startX, fy = startY;
+  for (int y = 0; y < 100; y++) {
+    for (int x = 0; x < 100; x++) {
+      if (e.grid[y * e.gridW + x] == El.sand) { fx = x; fy = y; y = 100; break; }
+    }
+  }
+  final yNet = fy - startY;
+  final score = (yNet > 0) ? 1.0 : 0.5;
+  return TestResult('K20: Diag Launch', score,
+      'x moved ${fx - startX}, y net $yNet');
+}
+
+/// K21: Kinetic energy — velocity before/after impact.
+TestResult testKineticEnergy() {
+  final e = _createEngine(20, 60);
+  for (int x = 0; x < 20; x++) {
+    e.grid[50 * e.gridW + x] = El.stone;
+  }
+  e.grid[5 * e.gridW + 10] = El.sand;
+  int maxVel = 0;
+  for (int f = 0; f < 30; f++) {
+    final prevIdx = _findElement(e, El.sand);
+    _step(e, 1);
+    if (prevIdx >= 0) {
+      final v = e.velY[prevIdx].abs();
+      if (v > maxVel) maxVel = v;
+    }
+  }
+  final sandIdx = _findElement(e, El.sand);
+  final velAfter = sandIdx >= 0 ? e.velY[sandIdx] : 0;
+  final score = (maxVel > 0 && velAfter == 0) ? 1.0 : (maxVel > 0 ? 0.5 : 0.0);
+  return TestResult('K21: KE Impact', score,
+      'maxVel before=$maxVel, vel after=$velAfter');
+}
+
+/// K22: Potential energy — sand from height h reaches bottom.
+TestResult testPotentialEnergy() {
+  final e = _createEngine(20, 60);
+  e.grid[5 * e.gridW + 10] = El.sand;
+  _step(e, 40);
+  int sandY = -1;
+  for (int y = e.gridH - 1; y >= 0; y--) {
+    if (e.grid[y * e.gridW + 10] == El.sand) { sandY = y; break; }
+  }
+  final distFromBottom = e.gridH - 1 - sandY;
+  final score = distFromBottom <= 1 ? 1.0 : (1.0 - distFromBottom / 30.0).clamp(0.0, 1.0);
+  return TestResult('K22: PE to KE', score,
+      'sand at y=$sandY, bottom=${e.gridH - 1}, gap=$distFromBottom');
+}
+
+/// K23: Drag quantitative comparison.
+TestResult testDragQuantitative() {
+  final oracle = _oracle('drag_comparison');
+  if (oracle == null) return _oracleError('K23: Drag Quant', 'drag_comparison');
+  final sandData = (oracle['elements'] as Map<String, dynamic>)['sand'] as Map<String, dynamic>;
+  final airDist20 = (sandData['air_distance_20frames'] as num).toDouble();
+
+  final e1 = _createEngine(20, 200);
+  e1.grid[2 * e1.gridW + 10] = El.sand;
+  _step(e1, 20);
+  int airY = 2;
+  for (int y = e1.gridH - 1; y >= 0; y--) {
+    if (e1.grid[y * e1.gridW + 10] == El.sand) { airY = y; break; }
+  }
+
+  final e2 = _createEngine(20, 200);
+  for (int y = 5; y < 190; y++) {
+    for (int x = 0; x < 20; x++) {
+      e2.grid[y * e2.gridW + x] = El.water;
+      e2.life[y * e2.gridW + x] = 100;
+    }
+  }
+  e2.grid[2 * e2.gridW + 10] = El.sand;
+  _step(e2, 20);
+  int waterY = 2;
+  for (int y = e2.gridH - 1; y >= 0; y--) {
+    if (e2.grid[y * e2.gridW + 10] == El.sand) { waterY = y; break; }
+  }
+
+  final airActual = (airY - 2).toDouble();
+  final waterActual = (waterY - 2).toDouble();
+  final airMatch = airActual > 0 ? (1.0 - ((airActual - airDist20).abs() / airDist20)).clamp(0.0, 1.0) : 0.0;
+  final dragEffect = (airActual > waterActual) ? 1.0 : 0.5;
+  final score = airMatch * 0.5 + dragEffect * 0.5;
+  return TestResult('K23: Drag Quant', score,
+      'air=$airActual (oracle=$airDist20), water=$waterActual');
+}
+
+/// K24: Dirt trajectory R².
+TestResult testDirtTrajectoryR2() {
+  final oracle = _oracle('gravity_all');
+  if (oracle == null) return _oracleError('K24: Dirt Traj', 'gravity_all');
+  final dirtData = oracle['dirt'] as Map<String, dynamic>?;
+  if (dirtData == null) return TestResult('K24: Dirt Traj', 0.0, 'no dirt data');
+  final positions = dirtData['positions_60frames'] as List;
+
+  final e = _createEngine(20, 80);
+  e.grid[2 * e.gridW + 10] = El.dirt;
+  final measured = <double>[];
+  final expected = <double>[];
+  for (int f = 0; f < 30 && f < positions.length; f++) {
+    _step(e, 1);
+    int foundY = 2;
+    for (int y = e.gridH - 1; y >= 0; y--) {
+      if (e.grid[y * e.gridW + 10] == El.dirt) { foundY = y; break; }
+    }
+    measured.add(foundY.toDouble());
+    expected.add((positions[f] as num).toDouble() + 2);
+  }
+  if (measured.length < 5) return TestResult('K24: Dirt Traj', 0.0, 'insufficient data');
+  final meanE = expected.reduce((a, b) => a + b) / expected.length;
+  double ssRes = 0, ssTot = 0;
+  for (int i = 0; i < measured.length; i++) {
+    ssRes += (measured[i] - expected[i]) * (measured[i] - expected[i]);
+    ssTot += (expected[i] - meanE) * (expected[i] - meanE);
+  }
+  final r2 = ssTot > 0 ? (1.0 - ssRes / ssTot).clamp(0.0, 1.0) : 1.0;
+  return TestResult('K24: Dirt Traj', r2,
+      'R²=${r2.toStringAsFixed(4)} over ${measured.length} frames');
+}
+
+/// K25: TNT trajectory R².
+TestResult testTntTrajectoryR2() {
+  final oracle = _oracle('gravity_all');
+  if (oracle == null) return _oracleError('K25: TNT Traj', 'gravity_all');
+  final tntData = oracle['tnt'] as Map<String, dynamic>?;
+  if (tntData == null) return TestResult('K25: TNT Traj', 0.0, 'no tnt data');
+  final positions = tntData['positions_60frames'] as List;
+
+  final e = _createEngine(20, 80);
+  e.grid[2 * e.gridW + 10] = El.tnt;
+  final measured = <double>[];
+  final expected = <double>[];
+  for (int f = 0; f < 30 && f < positions.length; f++) {
+    _step(e, 1);
+    int foundY = 2;
+    for (int y = e.gridH - 1; y >= 0; y--) {
+      if (e.grid[y * e.gridW + 10] == El.tnt) { foundY = y; break; }
+    }
+    measured.add(foundY.toDouble());
+    expected.add((positions[f] as num).toDouble() + 2);
+  }
+  if (measured.length < 5) return TestResult('K25: TNT Traj', 0.0, 'insufficient data');
+  final meanE = expected.reduce((a, b) => a + b) / expected.length;
+  double ssRes = 0, ssTot = 0;
+  for (int i = 0; i < measured.length; i++) {
+    ssRes += (measured[i] - expected[i]) * (measured[i] - expected[i]);
+    ssTot += (expected[i] - meanE) * (expected[i] - meanE);
+  }
+  final r2 = ssTot > 0 ? (1.0 - ssRes / ssTot).clamp(0.0, 1.0) : 1.0;
+  return TestResult('K25: TNT Traj', r2,
+      'R²=${r2.toStringAsFixed(4)} over ${measured.length} frames');
+}
+
+/// K26: Fire rise trajectory.
+TestResult testFireRiseTrajectory() {
+  final e = _createEngine(20, 60);
+  e.grid[50 * e.gridW + 10] = El.fire;
+  _step(e, 10);
+  int fireY = 50;
+  for (int y = 0; y < 50; y++) {
+    if (e.grid[y * e.gridW + 10] == El.fire || e.grid[y * e.gridW + 10] == El.smoke) {
+      fireY = y; break;
+    }
+  }
+  final rose = 50 - fireY;
+  final score = rose > 0 ? (rose / 5.0).clamp(0.0, 1.0) : 0.0;
+  return TestResult('K26: Fire Rise', score,
+      'fire/smoke rose $rose cells');
+}
+
+/// K27: Steam rise speed matches oracle.
+TestResult testSteamRiseSpeed() {
+  final oracle = _oracle('gravity_all');
+  if (oracle == null) return _oracleError('K27: Steam Rise', 'gravity_all');
+  final steamData = oracle['steam'] as Map<String, dynamic>?;
+  if (steamData == null) return TestResult('K27: Steam Rise', 0.0, 'no steam data');
+  final expectedRise = (steamData['positions_60frames'] as List);
+
+  final e = _createEngine(20, 80);
+  e.grid[60 * e.gridW + 10] = El.steam;
+  _step(e, 10);
+  int steamY = 60;
+  for (int y = 0; y < e.gridH; y++) {
+    if (e.grid[y * e.gridW + 10] == El.steam) { steamY = y; break; }
+  }
+  final rose = 60 - steamY;
+  final expected10 = (expectedRise.length >= 10 ? (expectedRise[9] as num).toDouble().abs() : 10.0);
+  final score = rose > 0 ? (rose / expected10).clamp(0.0, 1.0) : 0.0;
+  return TestResult('K27: Steam Rise', score,
+      'rose $rose cells, oracle expects ~${expected10.toStringAsFixed(0)}');
+}
+
+/// K28: Gravity consistency — same drop repeated.
+TestResult testGravityConsistency() {
+  int runDrop() {
+    final e = _createEngine(20, 80);
+    e.grid[2 * e.gridW + 10] = El.sand;
+    _step(e, 20);
+    for (int y = e.gridH - 1; y >= 0; y--) {
+      if (e.grid[y * e.gridW + 10] == El.sand) return y;
+    }
+    return -1;
+  }
+  final y1 = runDrop();
+  final y2 = runDrop();
+  final diff = (y1 - y2).abs();
+  return TestResult('K28: Grav Consist', diff <= 1 ? 1.0 : (1.0 - diff / 10.0).clamp(0.0, 1.0),
+      'run1=$y1, run2=$y2, diff=$diff');
+}
+
+/// K29: Wall bounce — sand should not pass through wall.
+TestResult testWallBounce() {
+  final e = _createEngine(20, 40);
+  for (int y = 0; y < 40; y++) {
+    e.grid[y * e.gridW + 15] = El.stone;
+  }
+  e.grid[10 * e.gridW + 13] = El.sand;
+  e.velX[10 * e.gridW + 13] = 2;
+  e.markAllDirty();
+  _step(e, 10);
+
+  bool passedWall = false;
+  for (int y = 0; y < 40; y++) {
+    for (int x = 16; x < 20; x++) {
+      if (e.grid[y * e.gridW + x] == El.sand) passedWall = true;
+    }
+  }
+  return TestResult('K29: Wall Bounce', passedWall ? 0.0 : 1.0,
+      passedWall ? 'sand passed through wall' : 'sand correctly blocked');
+}
+
+/// K30: Column of sand should all fall.
+TestResult testColumnFall() {
+  final e = _createEngine(20, 80);
+  for (int y = 5; y <= 9; y++) {
+    e.grid[y * e.gridW + 10] = El.sand;
+  }
+  _step(e, 40);
+
+  int sandCount = 0;
+  int lowestSand = 0;
+  for (int y = 0; y < 80; y++) {
+    for (int x = 0; x < 20; x++) {
+      if (e.grid[y * e.gridW + x] == El.sand) {
+        sandCount++;
+        if (y > lowestSand) lowestSand = y;
+      }
+    }
+  }
+  final allPresent = sandCount == 5;
+  final fell = lowestSand >= e.gridH - 5;
+  double score = 0;
+  if (allPresent) score += 0.5;
+  if (fell) score += 0.5;
+  return TestResult('K30: Column Fall', score,
+      'count=$sandCount/5, lowest=$lowestSand');
+}
+
+/// K31: Ice trajectory R² — solid fall.
+TestResult testIceTrajectoryR2() {
+  final oracle = _oracle('gravity_all');
+  if (oracle == null) return _oracleError('K31: Ice Traj', 'gravity_all');
+  final iceData = oracle['ice'] as Map<String, dynamic>?;
+  if (iceData == null) return TestResult('K31: Ice Traj', 0.0, 'no ice data');
+  final positions = iceData['positions_60frames'] as List;
+
+  final e = _createEngine(20, 80);
+  e.grid[2 * e.gridW + 10] = El.ice;
+  final measured = <double>[];
+  final expected = <double>[];
+  for (int f = 0; f < 30 && f < positions.length; f++) {
+    _step(e, 1);
+    int foundY = 2;
+    for (int y = e.gridH - 1; y >= 0; y--) {
+      if (e.grid[y * e.gridW + 10] == El.ice) { foundY = y; break; }
+    }
+    measured.add(foundY.toDouble());
+    expected.add((positions[f] as num).toDouble() + 2);
+  }
+  if (measured.length < 5) return TestResult('K31: Ice Traj', 0.0, 'insufficient data');
+  final meanE = expected.reduce((a, b) => a + b) / expected.length;
+  double ssRes = 0, ssTot = 0;
+  for (int i = 0; i < measured.length; i++) {
+    ssRes += (measured[i] - expected[i]) * (measured[i] - expected[i]);
+    ssTot += (expected[i] - meanE) * (expected[i] - meanE);
+  }
+  final r2 = ssTot > 0 ? (1.0 - ssRes / ssTot).clamp(0.0, 1.0) : 1.0;
+  return TestResult('K31: Ice Traj', r2,
+      'R²=${r2.toStringAsFixed(4)} over ${measured.length} frames');
+}
+
+/// Helper: find first index of element in grid.
+int _findElement(SimulationEngine e, int elType) {
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == elType) return i;
+  }
+  return -1;
+}
+
+// ===========================================================================
+// KINEMATICS (K1-K10) [original]
 // ===========================================================================
 
 TestResult testTrajectoryRSquared() {
@@ -5296,6 +6411,26 @@ void main() {
       testDensityOrdering(),
       testAngleOfRepose(),
       testBuoyancy(),
+      testTrajectoryR2Sand(),
+      ...testFirstFrameDisplacement(),
+      testNegativeGravityRise(),
+      testAccelerationCurve(),
+      testTerminalVelocityCore(),
+      testVelocityResetOnImpact(),
+      testMultiCellFallCore(),
+      testWrappingEdgeCases(),
+      testElementWrapping(),
+      testClockBitNoDoubleProcess(),
+      testSettlingTiming(),
+      testUnsettlingNeighbors(),
+      testMomentumSymmetry(),
+      testLateralMomentum(),
+      testCollisionMomentum(),
+      testChunkBoundaryWrapping(),
+      testPileStability(),
+      testStackStability(),
+      testSimultaneousDropAll(),
+      testOppositeClockPlacement(),
     ]),
     TestCategory('Conservation Laws', [
       testMassConservation(),
@@ -5378,6 +6513,27 @@ void main() {
       testGravityDisabledForGas(),
       testVelocityClamping(),
       testProjectileLanding(),
+      testWaterTrajectoryR2(),
+      testStoneTrajectoryR2(),
+      testSnowTrajectoryR2(),
+      testAshTrajectoryR2(),
+      testFallInFluid(),
+      testFallInOil(),
+      testBuoyantRiseRate(),
+      testGasRiseRates(),
+      testHorizontalLaunch(),
+      testDiagonalLaunch(),
+      testKineticEnergy(),
+      testPotentialEnergy(),
+      testDragQuantitative(),
+      testDirtTrajectoryR2(),
+      testTntTrajectoryR2(),
+      testFireRiseTrajectory(),
+      testSteamRiseSpeed(),
+      testGravityConsistency(),
+      testWallBounce(),
+      testColumnFall(),
+      testIceTrajectoryR2(),
     ]),
     TestCategory('Phase Changes', [
       testMeltPointOrdering(),
