@@ -1296,7 +1296,7 @@ class SimulationEngine {
 
           // Transfer rate based on min conductivity of the pair
           final rate = (myCond < nCond ? myCond : nCond);
-          final transfer = (tDiff * rate) >> 10; // divide by ~1024
+          final transfer = (tDiff * rate) >> 9; // divide by ~512
           if (transfer == 0) continue;
 
           myTemp = (myTemp - transfer).clamp(0, 255);
