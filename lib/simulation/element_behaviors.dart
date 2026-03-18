@@ -75,19 +75,16 @@ extension ElementBehaviors on SimulationEngine {
       life[idx] = 100;
     }
 
-    // Stefan solidification: water near ice freezes at a rate proportional
-    // to its subcooling. The Stefan condition states that the solidification
-    // front velocity v ∝ ΔT/L (subcooling / latent heat). Colder water
-    // adjacent to ice freezes much faster than water near the freezing point.
+    // Stefan solidification: water adjacent to ice freezes via
+    // heterogeneous nucleation. The ice surface provides a nucleation
+    // template — colder ice is a more effective seed. Rate depends on
+    // both the water's subcooling and the adjacent ice's temperature.
     {
       final t = temperature[idx];
-      if (t < 120 && checkAdjacent(x, y, El.ice)) {
-        // Freezing rate scales with subcooling: colder = faster
-        // At temp 50 (deeply cold): ~1/10 per frame
-        // At temp 90 (mildly cold): ~1/60 per frame
-        // At temp 115 (barely cold): ~1/200 per frame
-        final subcooling = 120 - t; // 0..120
-        final rate = (300 - subcooling * 3).clamp(10, 300);
+      if (t < 126 && checkAdjacent(x, y, El.ice)) {
+        // Base rate from water subcooling
+        final subcooling = 126 - t; // 0..126
+        final rate = (30 - (subcooling * 25) ~/ 126).clamp(5, 30);
         if (rng.nextInt(rate) == 0) {
           grid[idx] = El.ice;
           markProcessed(idx);
