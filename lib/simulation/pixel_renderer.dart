@@ -23,6 +23,12 @@ class PixelRenderer {
   late Set<int> _starSet;
   bool _starsGenerated = false;
 
+  /// Cached ground surface height per column. _groundLevel[x] = first y from
+  /// top that has a solid element (stone/dirt/metal/sand/etc). Updated every
+  /// few frames to avoid per-cell upward scans.
+  late Int16List _groundLevel;
+  int _groundLevelAge = 0;
+
   double _prevDayNightT = 0.0;
 
   PixelRenderer(this.engine);
@@ -33,6 +39,7 @@ class PixelRenderer {
   void init() {
     final total = engine.gridW * engine.gridH;
     _pixels = Uint8List(total * 4);
+    _groundLevel = Int16List(engine.gridW);
     _glowR = Uint8List(total);
     _glowG = Uint8List(total);
     _glowB = Uint8List(total);
@@ -125,23 +132,38 @@ class PixelRenderer {
     return (top + ((bot - top) * fy) ~/ 256).clamp(0, 255);
   }
 
-  /// Check if a cell is "underground" -- has solid/terrain above it somewhere
-  /// within a short scan. Returns true if surrounded by terrain.
+  /// Update the cached ground level for each column. Scans from top down
+  /// to find the first solid terrain cell per column.
+  void _updateGroundLevel() {
+    final w = engine.gridW;
+    final h = engine.gridH;
+    final g = engine.grid;
+    for (int x = 0; x < w; x++) {
+      int level = h; // default: no ground found
+      for (int y = 0; y < h; y++) {
+        final el = g[y * w + x];
+        if (el == El.stone || el == El.dirt || el == El.metal ||
+            el == El.sand || el == El.mud || el == El.wood ||
+            el == El.glass || el == El.ice) {
+          level = y;
+          break;
+        }
+      }
+      _groundLevel[x] = level;
+    }
+  }
+
+  /// Check if a cell is underground using the cached ground level.
+  /// A cell is underground if it is below the ground surface for its column.
   @pragma('vm:prefer-inline')
   bool _isUnderground(int x, int y, int w, Uint8List grid) {
-    // Scan upward for terrain surface (max 30 rows)
-    final scanLimit = y < 30 ? y : 30;
-    for (int dy = 1; dy <= scanLimit; dy++) {
-      final above = grid[(y - dy) * w + x];
-      if (above == El.empty) return false;
-      if (above == El.stone || above == El.dirt || above == El.sand) {
-        return true;
-      }
-    }
-    return y > 10; // deep cells with no empty above are underground
+    return y > _groundLevel[x];
   }
 
   double dayNightT = 0.0;
+
+  /// Accumulated time for animated effects (heat shimmer, snow sparkle).
+  double _effectTime = 0.0;
 
   void renderPixels() {
     final total = engine.gridW * engine.gridH;
@@ -150,6 +172,16 @@ class PixelRenderer {
     final g = engine.grid;
     final t = engine.isNight ? dayNightT : 0.0;
     final fc = engine.frameCount;
+
+    // Advance effect timer (~60fps assumed)
+    _effectTime += 0.016;
+
+    // Update ground level cache every 8 frames for underground detection
+    _groundLevelAge++;
+    if (_groundLevelAge >= 8) {
+      _updateGroundLevel();
+      _groundLevelAge = 0;
+    }
     final temp = engine.temperature;
 
     final glowMul = 1.0 + t * 2.0;
@@ -214,11 +246,11 @@ class PixelRenderer {
 
         // Lava gets larger glow for atmospheric molten look
         if (el == El.lava) {
-          glowRadius = 5;
+          glowRadius = 3;
         } else if (el == El.fire) {
-          glowRadius = 4;
+          glowRadius = 3;
         } else if (emission > 200) {
-          glowRadius = 5;
+          glowRadius = 4;
         }
 
         for (int dy = -glowRadius; dy <= glowRadius; dy++) {
@@ -307,6 +339,14 @@ class PixelRenderer {
                 emptyR = (18 + stoneVar).clamp(12, 30);
                 emptyG = (16 + stoneVar).clamp(10, 28);
                 emptyB = (20 + stoneVar).clamp(14, 32);
+                // Floating dust motes in cave air — sparse twinkling specks
+                final dustHash = _smoothHash(x * 53 + fc ~/ 8, y * 37 + fc ~/ 12);
+                if (dustHash % 180 == 0) {
+                  final dustBright = 25 + (dustHash >> 8) % 20;
+                  emptyR = (emptyR + dustBright).clamp(0, 60);
+                  emptyG = (emptyG + dustBright - 3).clamp(0, 55);
+                  emptyB = (emptyB + dustBright - 5).clamp(0, 50);
+                }
               } else {
                 // Day sky: beautiful blue gradient from light top to deeper blue
                 final skyFrac = y / h; // 0 at top, 1 at bottom
@@ -340,6 +380,21 @@ class PixelRenderer {
                 // Hot: reddish tint
                 final heatAmount = ((cellTemp - 148) * 3 ~/ 10).clamp(0, 30);
                 emptyR = (emptyR + heatAmount).clamp(0, 255);
+
+                // Heat shimmer: distort color above hot sources (lava/fire)
+                // Creates a wavy mirage-like effect
+                if (!underground && cellTemp > 170 && y > 2) {
+                  final shimmerPhase = math.sin(
+                      _effectTime * 3.5 + x * 0.8 + y * 0.4) * 0.5 + 0.5;
+                  final shimmerPhase2 = math.sin(
+                      _effectTime * 2.3 + x * 1.2 + y * 0.6 + 1.9) * 0.5 + 0.5;
+                  final heatIntensity = ((cellTemp - 170) / 80.0).clamp(0.0, 1.0);
+                  final shimmerAmount = (heatIntensity * (shimmerPhase * 18 + shimmerPhase2 * 10)).round();
+                  // Warm orange-red shimmer tint
+                  emptyR = (emptyR + shimmerAmount).clamp(0, 255);
+                  emptyG = (emptyG + shimmerAmount ~/ 3).clamp(0, 255);
+                  emptyB = (emptyB - shimmerAmount ~/ 4).clamp(0, 255);
+                }
               } else if (cellTemp < 108) {
                 // Cold: bluish tint
                 final coldAmount = ((108 - cellTemp) * 3 ~/ 10).clamp(0, 25);
@@ -399,7 +454,7 @@ class PixelRenderer {
                 final isLavaSurface =
                     y > 1 && g[(y - 1) * w + x] == El.empty;
                 if (isLavaSurface) {
-                  if (rng.nextInt(40) < 3) {
+                  if (rng.nextInt(120) < 2) {
                     const emberR = 255;
                     final emberG = 160 + rng.nextInt(95);
                     final emberB = rng.nextInt(80);
@@ -677,13 +732,19 @@ class PixelRenderer {
 
       case El.steam:
         final steamLife = life[idx];
-        _inlineA = (180 - steamLife * 2).clamp(40, 180);
-        final phase = (frameCount + idx * 5) % 30;
-        final wisp = phase < 8 ? (8 - phase) * 2 : 0;
-        final steamBase = _lerpC(230, 200, (steamLife * 255 ~/ 60).clamp(0, 255));
-        _inlineR = (steamBase + wisp).clamp(195, 255);
-        _inlineG = (steamBase + wisp).clamp(195, 255);
-        _inlineB = (steamBase + 15 + wisp ~/ 2).clamp(210, 255);
+        // Steam should be nearly invisible wisps that fade quickly.
+        // Alpha ramps down from ~50 at birth to ~8 near end-of-life,
+        // so individual pixels are never bright white dots.
+        final lifeFrac = (steamLife * 255 ~/ 30).clamp(0, 255);
+        _inlineA = _lerpC(50, 8, lifeFrac);
+        // Gentle shimmer: slow phase offset per-pixel avoids uniform look
+        final phase = (frameCount ~/ 2 + idx * 7) % 40;
+        final wisp = phase < 10 ? (10 - phase) : 0;
+        // Tint toward sky-blue rather than bright white
+        final steamBase = _lerpC(210, 180, lifeFrac);
+        _inlineR = (steamBase + wisp).clamp(175, 220);
+        _inlineG = (steamBase + wisp + 2).clamp(178, 225);
+        _inlineB = (steamBase + 20 + wisp ~/ 2).clamp(195, 240);
 
       case El.water:
         if (life[idx] >= 200) {
@@ -727,11 +788,12 @@ class PixelRenderer {
             final hasFoam = isSolid || leftSolid || rightSolid;
 
             if (hasFoam) {
-              // White-ish foam highlight
-              _inlineR = (100 + shimmer * 2).clamp(80, 180);
-              _inlineG = (220 + shimmer).clamp(200, 255);
+              // White-ish foam highlight with animated sparkle
+              final foamFlicker = ((frameCount + x * 7) % 20 < 3) ? 25 : 0;
+              _inlineR = (110 + shimmer * 2 + foamFlicker).clamp(80, 200);
+              _inlineG = (225 + shimmer + foamFlicker ~/ 2).clamp(200, 255);
               _inlineB = 255;
-              _inlineA = 230;
+              _inlineA = 235;
             } else if (isUndergroundWater) {
               // Underground surface water: darker, more muted
               _inlineR = (30 + shimmer ~/ 2).clamp(20, 60);
@@ -739,10 +801,16 @@ class PixelRenderer {
               _inlineB = (200 + shimmer ~/ 3).clamp(180, 230);
               _inlineA = 235;
             } else {
-              _inlineR = (55 + shimmer).clamp(35, 120);
-              _inlineG = (185 + shimmer).clamp(165, 240);
-              _inlineB = 255;
-              _inlineA = 220;
+              // Surface water reflects sky color — blend water blue with sky tint
+              // Sky color shifts from azure (day) to dark blue (night)
+              final skyReflectR = (135 * (1.0 - dayNightT * 0.85)).round();
+              final skyReflectG = (195 * (1.0 - dayNightT * 0.7)).round();
+              final skyReflectB = (255 * (1.0 - dayNightT * 0.3)).round();
+              // Blend ~25% sky reflection into surface water
+              _inlineR = (55 + shimmer + (skyReflectR * 60) ~/ 256).clamp(35, 140);
+              _inlineG = (185 + shimmer + (skyReflectG * 30) ~/ 256).clamp(165, 245);
+              _inlineB = (240 + (skyReflectB * 15) ~/ 256).clamp(230, 255);
+              _inlineA = 215;
             }
           } else {
             // Depth calculation
@@ -891,16 +959,23 @@ class PixelRenderer {
         final variation = (spatial * 20) ~/ 256 - 10;
         final warmth = _spatialBlend(x + 100, y + 100, 8);
         final warmShift = (warmth * 8) ~/ 256 - 4;
-        final baseR = 140 + variation + warmShift - compactDarken;
-        final baseG = 95 + variation ~/ 2 - compactDarken;
-        final baseB = 40 + variation ~/ 3 - compactDarken ~/ 2;
+        // Organic texture: dark patches (decaying matter, roots)
+        final organicHash = _smoothHash(x * 19, y * 23);
+        final isDarkPatch = organicHash % 12 == 0; // ~8% of pixels
+        final isRootFiber = organicHash % 17 == 0 && (organicHash >> 8) % 3 == 0; // rare darker streaks
+        final organicDarken = isDarkPatch ? 18 : (isRootFiber ? 12 : 0);
+        // Small lighter mineral specks
+        final mineralSpeck = (organicHash % 25 == 0) ? 10 : 0;
+        final baseR = 140 + variation + warmShift - compactDarken - organicDarken + mineralSpeck;
+        final baseG = 95 + variation ~/ 2 - compactDarken - organicDarken ~/ 2;
+        final baseB = 40 + variation ~/ 3 - compactDarken ~/ 2 - organicDarken ~/ 3;
         // Darker when moist (driven by life value)
         _inlineR =
-            (baseR - mFrac * 60).round().clamp(40, 165);
+            (baseR - mFrac * 60).round().clamp(35, 168);
         _inlineG =
-            (baseG - mFrac * 50).round().clamp(22, 120);
+            (baseG - mFrac * 50).round().clamp(18, 120);
         _inlineB =
-            (baseB - mFrac * 12).round().clamp(6, 55);
+            (baseB - mFrac * 12).round().clamp(4, 55);
         _inlineA = 255;
 
       case El.plant:
@@ -1064,15 +1139,38 @@ class PixelRenderer {
         // Smooth layered look with spatial gradients
         final spatial = _spatialBlend(x, y, 6);
         final layer = (spatial * 16) ~/ 256 - 8;
-        // Subtle horizontal sediment banding
+        // Visible geological strata — horizontal bands every 4-6 rows
+        // Uses y-coordinate directly for clear sedimentary layering
+        final strataHash = _smoothHash(0, y ~/ 4);
+        final strataType = strataHash % 5; // different rock "types" per band
+        int strataR, strataG, strataB;
+        if (strataType == 0) {
+          // Blue-gray (standard)
+          strataR = 128; strataG = 126; strataB = 138;
+        } else if (strataType == 1) {
+          // Warm brown-gray (sandstone-like)
+          strataR = 140; strataG = 125; strataB = 115;
+        } else if (strataType == 2) {
+          // Cool dark gray (basalt-like)
+          strataR = 110; strataG = 110; strataB = 120;
+        } else if (strataType == 3) {
+          // Light cream-gray (limestone-like)
+          strataR = 148; strataG = 142; strataB = 135;
+        } else {
+          // Slight greenish-gray (slate-like)
+          strataR = 120; strataG = 128; strataB = 125;
+        }
+        // Transition zone between strata — slight darkening at boundaries
+        final strataEdge = (y % 4 == 0) ? -6 : 0;
+        // Subtle horizontal sediment banding within each layer
         final sediment = _spatialBlend(x + 50, y * 2, 10);
         final sedimentShift = (sediment * 10) ~/ 256 - 5;
         // Horizontal band emphasis for sedimentary look
         final hBand = _spatialBlend(x * 3, y, 12);
         final hBandShift = (hBand * 6) ~/ 256 - 3;
-        _inlineR = (128 + layer + hBandShift - depthDarken).clamp(65, 165);
-        _inlineG = (126 + layer + sedimentShift + hBandShift - depthDarken).clamp(63, 163);
-        _inlineB = (138 + layer - sedimentShift + hBandShift - depthDarken ~/ 2).clamp(78, 178);
+        _inlineR = (strataR + layer + hBandShift + strataEdge - depthDarken).clamp(55, 175);
+        _inlineG = (strataG + layer + sedimentShift + hBandShift + strataEdge - depthDarken).clamp(53, 173);
+        _inlineB = (strataB + layer - sedimentShift + hBandShift + strataEdge - depthDarken ~/ 2).clamp(68, 185);
         if (stoneHeat > 0) {
           final heatFrac = stoneHeat / 5.0;
           final pulse = math.sin(frameCount * 0.3 + idx * 0.1) * 0.3 + 0.7;
@@ -1148,18 +1246,18 @@ class PixelRenderer {
 
       case El.lava:
         final lavaLife = life[idx];
-        final pulse1 = math.sin(frameCount * 0.06 + idx * 0.15) * 0.5 + 0.5;
-        final pulse2 = math.sin(frameCount * 0.10 + idx * 0.28 + 1.5) * 0.5 + 0.5;
-        final lavaFlicker = ((pulse1 * 20 + pulse2 * 15)).round();
+        // Use cheaper hash-based flicker instead of per-cell sin()
+        final flickerHash = ((frameCount * 7 + idx * 13) >> 3) & 0x1F;
+        final lavaFlicker = flickerHash < 16 ? flickerHash : 31 - flickerHash;
         final isLavaSurf = y > 0 && grid[(y - 1) * w + x] == El.empty;
 
-        // Deep glowing red-orange with pulsing glow
+        // Warm molten look — NOT blinding white
         if (lavaLife < 30) {
-          // Fresh, bright lava: orange-white glow
-          final surfBoost = isLavaSurf ? 20 : 0;
+          // Fresh lava: warm orange-red, not white-hot
+          final surfBoost = isLavaSurf ? 10 : 0;
           _inlineR = 255;
-          _inlineG = (225 + lavaFlicker ~/ 2 + surfBoost).clamp(205, 255);
-          _inlineB = (110 + lavaFlicker + surfBoost).clamp(90, 190);
+          _inlineG = (160 + lavaFlicker + surfBoost).clamp(140, 200);
+          _inlineB = (40 + lavaFlicker ~/ 2).clamp(20, 80);
           _inlineA = 255;
         } else if (lavaLife < 80) {
           // Cooling: deep red-orange with dark crust veins
@@ -1183,11 +1281,12 @@ class PixelRenderer {
           final crustHash = _smoothHash(x, y);
           final isGlowingCrack = crustHash % 7 == 0;
           if (isGlowingCrack) {
-            // Glowing crack in dark crust
-            final crackPulse = math.sin(frameCount * 0.15 + idx * 0.4) * 0.5 + 0.5;
-            _inlineR = (220 + (crackPulse * 35).round()).clamp(200, 255);
-            _inlineG = (60 + (crackPulse * 30).round()).clamp(40, 100);
-            _inlineB = (10 + (crackPulse * 10).round()).clamp(5, 25);
+            // Glowing crack in dark crust — cheap pulse
+            final crackPhase = ((frameCount * 3 + idx * 5) >> 4) & 0xF;
+            final crackPulse = crackPhase < 8 ? crackPhase : 15 - crackPhase;
+            _inlineR = (220 + crackPulse * 2).clamp(200, 255);
+            _inlineG = (60 + crackPulse * 2).clamp(40, 100);
+            _inlineB = (10 + crackPulse ~/ 2).clamp(5, 25);
           } else {
             _inlineR = _lerpC(230, 100, t2);
             _inlineG = (_lerpC(40, 12, t2) + lavaFlicker ~/ 5).clamp(0, 50);
@@ -1215,10 +1314,21 @@ class PixelRenderer {
         _inlineA = 255;
         final snowSpatial = _smoothHash(x, y) % 256;
         final snowVar = (snowSpatial * 8) ~/ 256 - 4;
-        final glint = (frameCount + idx * 7) % 30 < 2 ? 12 : 0;
-        _inlineR = (238 + snowVar + glint).clamp(228, 255);
-        _inlineG = (240 + snowVar + glint).clamp(232, 255);
-        _inlineB = 255;
+        // Multi-frequency sparkle/glitter — different pixels glint at different times
+        final sparkleHash = _smoothHash(x * 31, y * 47);
+        final sparklePhase = (sparkleHash % 60);
+        final sparkleActive = ((frameCount + sparklePhase) % 60);
+        // Sharp, bright sparkle that appears and disappears quickly
+        final isSparkle = sparkleActive < 3 && (sparkleHash % 4 == 0);
+        final sparkleIntensity = isSparkle ? 45 : 0;
+        // Slower gentle shimmer for overall snow surface
+        final shimmerVal = (math.sin(_effectTime * 1.5 + sparkleHash * 0.01) * 6).round();
+        // Surface snow is slightly brighter than buried snow
+        final isSnowSurface = y > 0 && grid[(y - 1) * w + x] != El.snow;
+        final surfaceBoost = isSnowSurface ? 8 : 0;
+        _inlineR = (235 + snowVar + shimmerVal + sparkleIntensity + surfaceBoost).clamp(225, 255);
+        _inlineG = (238 + snowVar + shimmerVal + sparkleIntensity + surfaceBoost).clamp(228, 255);
+        _inlineB = (250 + sparkleIntensity ~/ 2).clamp(245, 255);
 
       case El.wood:
         _inlineA = 255;
