@@ -738,9 +738,9 @@ extension ElementBehaviors on SimulationEngine {
 
     // Movement: fire rises with horizontal flickering for a dancing flame effect
     final uy = y - gravityDir;
-    // Flicker: alternate between rising straight and drifting sideways
-    final flicker = rng.nextInt(4); // 0-1 = straight up, 2 = drift left, 3 = drift right
-    if (flicker <= 1) {
+    // Flicker: mostly rise straight, occasionally drift for flame dance
+    final flicker = rng.nextInt(6); // 0-3 = straight up, 4 = drift left, 5 = drift right
+    if (flicker <= 3) {
       // Rise straight up
       if (inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
         swap(idx, uy * gridW + x);
@@ -748,7 +748,7 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
     // Drift diagonally upward
-    final drift = flicker == 2 ? -1 : (flicker == 3 ? 1 : (rng.nextBool() ? -1 : 1));
+    final drift = flicker == 4 ? -1 : (flicker == 5 ? 1 : (rng.nextBool() ? -1 : 1));
     final driftX = wrapX(x + drift);
     if (inBoundsY(uy) && grid[uy * gridW + driftX] == El.empty) {
       swap(idx, uy * gridW + driftX);
@@ -1954,7 +1954,8 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     final uy = y - gravityDir;
-    int drift = rng.nextInt(3) - 1;
+    // Smoke rises mostly straight, with occasional drift
+    int drift = rng.nextInt(5) < 3 ? 0 : (rng.nextBool() ? 1 : -1);
     if (windForce != 0) {
       final windBias = windForce > 0 ? 1 : -1;
       if (rng.nextInt(3) < 2) drift = windBias;
