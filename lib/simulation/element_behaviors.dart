@@ -792,7 +792,7 @@ extension ElementBehaviors on SimulationEngine {
             grid[ni] = El.fire;
             life[ni] = 0;
             markProcessed(ni);
-          } else if (life[ni] == 0 && rng.nextInt(6) == 0) {
+          } else if (life[ni] == 0 && rng.nextInt(3) == 0) {
             // Contact pyrolysis: flame touching wood surface starts
             // internal charring, igniting the wood from within
             life[ni] = 1;
@@ -2006,7 +2006,11 @@ extension ElementBehaviors on SimulationEngine {
     // wood catches fire through surface pyrolysis. The flame's convective
     // heat flux (~25 kW/m²) causes rapid surface decomposition without
     // needing the bulk to reach flash point.
-    if (checkAdjacent(x, y, El.fire) && rng.nextInt(4) == 0) {
+    // Pilot flame ignition: fire adjacent to wood surface ignites it
+    // through convective heat flux (~25 kW/m²). At this heat flux, wood
+    // surface reaches pyrolysis temperature within ~1 second, so ignition
+    // should be rapid (50% per frame ≈ 2-frame expected ignition time).
+    if (checkAdjacent(x, y, El.fire) && rng.nextBool()) {
       life[idx] = 1; // Start burning from contact
       return;
     }

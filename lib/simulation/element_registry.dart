@@ -673,7 +673,7 @@ const List<int> plantMaxH = [0, 3, 6, 15, 3, 12];
 const List<int> plantMinMoist = [0, 1, 2, 3, 4, 2];
 
 /// Growth rate (lower = faster). Tick modulo gate.
-const List<int> plantGrowRate = [0, 25, 35, 20, 40, 30];
+const List<int> plantGrowRate = [0, 15, 35, 20, 40, 30];
 
 // ---------------------------------------------------------------------------
 // Ant state constants
