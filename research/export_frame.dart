@@ -155,6 +155,13 @@ void _fillTestWorld(SimulationEngine e) {
     }
   }
 
+  // Cave pocket underground (empty cells below ground surface)
+  for (int y = (h * 0.65).round(); y < (h * 0.72).round(); y++) {
+    for (int x = (w * 0.15).round(); x < (w * 0.25).round(); x++) {
+      e.grid[y * w + x] = El.empty;
+    }
+  }
+
   // Mud patch
   for (int x = (w * 0.25).round(); x < (w * 0.3).round(); x++) {
     final groundY = (h * 0.55 + (10 * (0.5 + 0.5 * (x / w)))).round();
