@@ -36,9 +36,15 @@ extension ElementBehaviors on SimulationEngine {
     if (grid[idx] == El.sand) {
       _avalancheGranular(x, y, idx);
     }
-    // Sand absorbs water to form mud (surface wetting / mechanical mixing)
+    // Sand absorbs water to form mud (surface wetting / mechanical mixing).
+    // Submerged sand (water above) resists conversion — settled grains in a
+    // water column maintain structural integrity. Only surface contact
+    // (sand at water's edge, not buried under water) promotes rapid wetting.
     if (grid[idx] == El.sand && checkAdjacent(x, y, El.water)) {
-      if (rng.nextInt(10) == 0) {
+      final waterAbove = inBoundsY(y - gravityDir) &&
+          grid[(y - gravityDir) * gridW + x] == El.water;
+      final mudRate = waterAbove ? 80 : 10;
+      if (rng.nextInt(mudRate) == 0) {
         grid[idx] = El.mud;
         removeOneAdjacent(x, y, El.water);
         markProcessed(idx);
