@@ -1894,28 +1894,39 @@ extension ElementBehaviors on SimulationEngine {
   // =========================================================================
 
   void simMetal(int x, int y, int idx) {
-    // Structural integrity: metal holds with lateral support, falls without.
-    // Metal is stronger than stone — never crumbles from thin support.
+    // Structural integrity: metal is the strongest structural element.
+    // Falls only when completely unsupported AND destabilized.
     final g = gravityDir;
     final by = y + g;
-    final belowEmpty = !inBoundsY(by) || grid[by * gridW + x] == El.empty
-        || grid[by * gridW + x] == El.water || grid[by * gridW + x] == El.oil;
+    final belowEmpty = inBoundsY(by) && (grid[by * gridW + x] == El.empty
+        || grid[by * gridW + x] == El.water || grid[by * gridW + x] == El.oil);
 
     if (belowEmpty) {
-      final lx = wrapX(x - 1);
-      final rx = wrapX(x + 1);
-      final leftEl = grid[y * gridW + lx];
-      final rightEl = grid[y * gridW + rx];
-
-      bool isStructural(int el) =>
-          el == El.stone || el == El.metal || el == El.dirt ||
-          el == El.wood || el == El.glass || el == El.ice;
-
-      if (!isStructural(leftEl) && !isStructural(rightEl)) {
-        // No lateral support — fall
-        if (fallSolid(x, y, idx, El.metal)) return;
+      // Check ALL 8 neighbors for any structural support
+      bool hasAnySupport = false;
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = wrapX(x + dx);
+          final ny = y + dy;
+          if (!inBoundsY(ny)) { hasAnySupport = true; continue; } // Edge = support
+          final n = grid[ny * gridW + nx];
+          if (n == El.stone || n == El.metal || n == El.dirt ||
+              n == El.wood || n == El.glass || n == El.ice) {
+            hasAnySupport = true;
+          }
+        }
       }
-      // With lateral support, metal holds (stronger than stone)
+      // Metal only falls when completely isolated AND with accumulated velocity
+      if (!hasAnySupport && velY[idx] > 0) {
+        if (fallSolid(x, y, idx, El.metal)) return;
+      } else if (!hasAnySupport) {
+        // Start accumulating fall velocity slowly (metal resists gravity)
+        if (rng.nextInt(30) == 0) velY[idx] = 1;
+      }
+      // With any support, metal holds firm
+    } else {
+      velY[idx] = 0; // Reset velocity when resting on something
     }
 
     if (life[idx] >= 200) return;

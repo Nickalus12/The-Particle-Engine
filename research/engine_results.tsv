@@ -6,3 +6,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 4	2026-03-18T00:04	element_behaviors.dart	fire ignition burst smoke + sand-mud rate reduced to 1/100	251.3	90	100	yes
 5	2026-03-18T00:05	element_behaviors.dart	oil buoyancy active float + metal static + mud pressure spread + density=10	260.9	90	100	yes
 6	2026-03-18T00:06	element_behaviors.dart	fire/smoke rise bias straight-up for reliable plume + fireRises test	258.8	95	100	yes
+7	2026-03-18T00:07	element_behaviors.dart	metal structural integrity with fallSolid preserved (delayed gravity)	251.7	95	100	yes
