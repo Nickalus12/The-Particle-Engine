@@ -1,0 +1,717 @@
+{
+  "element_lab_colors": {
+    "sand": {
+      "L": 79.5,
+      "a": 0.34,
+      "b": 28.51
+    },
+    "water": {
+      "L": 62.43,
+      "a": 5.09,
+      "b": -58.48
+    },
+    "fire": {
+      "L": 68.74,
+      "a": 39.22,
+      "b": 68.99
+    },
+    "stone": {
+      "L": 54.07,
+      "a": 3.35,
+      "b": -8.59
+    },
+    "dirt": {
+      "L": 46.57,
+      "a": 8.11,
+      "b": 36.42
+    },
+    "lava": {
+      "L": 59.01,
+      "a": 64.07,
+      "b": 66.46
+    },
+    "ice": {
+      "L": 88.96,
+      "a": -7.31,
+      "b": -16.85
+    },
+    "wood": {
+      "L": 44.5,
+      "a": 27.85,
+      "b": 34.8
+    },
+    "metal": {
+      "L": 69.32,
+      "a": 3.15,
+      "b": -8.19
+    },
+    "oil": {
+      "L": 18.02,
+      "a": 7.15,
+      "b": 8.59
+    },
+    "acid": {
+      "L": 83.53,
+      "a": -77.89,
+      "b": 72.48
+    },
+    "glass": {
+      "L": 91.82,
+      "a": 0.8,
+      "b": -12.34
+    },
+    "mud": {
+      "L": 38.0,
+      "a": 14.02,
+      "b": 25.85
+    },
+    "snow": {
+      "L": 96.18,
+      "a": 0.68,
+      "b": -5.73
+    },
+    "plant": {
+      "L": 63.24,
+      "a": -58.04,
+      "b": 46.11
+    },
+    "smoke": {
+      "L": 63.77,
+      "a": 1.17,
+      "b": -3.13
+    },
+    "steam": {
+      "L": 83.32,
+      "a": 0.39,
+      "b": -8.82
+    },
+    "ash": {
+      "L": 72.06,
+      "a": 1.53,
+      "b": -4.07
+    },
+    "seed": {
+      "L": 49.99,
+      "a": 4.91,
+      "b": 20.13
+    },
+    "tnt": {
+      "L": 44.38,
+      "a": 63.35,
+      "b": 44.52
+    },
+    "rainbow": {
+      "L": 60.32,
+      "a": 98.23,
+      "b": -60.82
+    },
+    "bubble": {
+      "L": 90.42,
+      "a": -5.62,
+      "b": -14.59
+    },
+    "lightning": {
+      "L": 98.16,
+      "a": -13.5,
+      "b": 45.41
+    },
+    "ant": {
+      "L": 13.23,
+      "a": -0.0,
+      "b": 0.0
+    }
+  },
+  "delta_e_pairs": {
+    "sand_water": 47.39,
+    "sand_fire": 23.36,
+    "sand_stone": 33.56,
+    "sand_dirt": 28.53,
+    "sand_lava": 34.01,
+    "sand_ice": 32.87,
+    "sand_wood": 35.38,
+    "sand_metal": 27.29,
+    "sand_oil": 63.0,
+    "sand_acid": 29.94,
+    "sand_glass": 29.31,
+    "sand_mud": 39.0,
+    "sand_snow": 25.57,
+    "sand_plant": 29.48,
+    "sand_smoke": 24.33,
+    "sand_steam": 25.72,
+    "sand_ash": 22.87,
+    "sand_seed": 25.17,
+    "sand_tnt": 44.15,
+    "sand_rainbow": 58.66,
+    "sand_bubble": 31.67,
+    "sand_lightning": 15.89,
+    "sand_ant": 66.38,
+    "water_fire": 52.75,
+    "water_stone": 25.26,
+    "water_dirt": 49.36,
+    "water_lava": 51.88,
+    "water_ice": 22.14,
+    "water_wood": 48.31,
+    "water_metal": 24.81,
+    "water_oil": 51.06,
+    "water_acid": 64.18,
+    "water_glass": 27.28,
+    "water_mud": 48.53,
+    "water_snow": 32.2,
+    "water_plant": 55.89,
+    "water_smoke": 25.65,
+    "water_steam": 24.74,
+    "water_ash": 26.53,
+    "water_seed": 41.77,
+    "water_tnt": 52.08,
+    "water_rainbow": 42.88,
+    "water_bubble": 23.35,
+    "water_lightning": 64.87,
+    "water_ant": 49.03,
+    "fire_stone": 36.86,
+    "fire_dirt": 25.59,
+    "fire_lava": 14.5,
+    "fire_ice": 45.19,
+    "fire_wood": 24.92,
+    "fire_metal": 34.38,
+    "fire_oil": 52.1,
+    "fire_acid": 58.79,
+    "fire_glass": 40.47,
+    "fire_mud": 33.17,
+    "fire_snow": 37.8,
+    "fire_plant": 54.29,
+    "fire_smoke": 31.22,
+    "fire_steam": 36.69,
+    "fire_ash": 31.75,
+    "fire_seed": 25.75,
+    "fire_tnt": 29.65,
+    "fire_rainbow": 55.01,
+    "fire_bubble": 43.72,
+    "fire_lightning": 37.53,
+    "fire_ant": 57.14,
+    "stone_dirt": 29.25,
+    "stone_lava": 34.79,
+    "stone_ice": 30.11,
+    "stone_wood": 29.11,
+    "stone_metal": 13.11,
+    "stone_oil": 33.3,
+    "stone_acid": 45.7,
+    "stone_glass": 28.62,
+    "stone_mud": 28.43,
+    "stone_snow": 30.97,
+    "stone_plant": 36.51,
+    "stone_smoke": 9.94,
+    "stone_steam": 23.35,
+    "stone_ash": 15.69,
+    "stone_seed": 21.96,
+    "stone_tnt": 33.17,
+    "stone_rainbow": 29.42,
+    "stone_bubble": 30.0,
+    "stone_lightning": 46.82,
+    "stone_ant": 34.01,
+    "dirt_lava": 27.27,
+    "dirt_ice": 48.85,
+    "dirt_wood": 13.92,
+    "dirt_metal": 34.73,
+    "dirt_oil": 27.21,
+    "dirt_acid": 47.7,
+    "dirt_glass": 46.62,
+    "dirt_mud": 11.09,
+    "dirt_snow": 45.68,
+    "dirt_plant": 37.38,
+    "dirt_smoke": 28.67,
+    "dirt_steam": 41.24,
+    "dirt_ash": 33.35,
+    "dirt_seed": 7.97,
+    "dirt_tnt": 27.68,
+    "dirt_rainbow": 56.9,
+    "dirt_bubble": 48.42,
+    "dirt_lightning": 41.82,
+    "dirt_ant": 32.91,
+    "lava_ice": 50.9,
+    "lava_wood": 18.87,
+    "lava_metal": 35.37,
+    "lava_oil": 42.95,
+    "lava_acid": 75.38,
+    "lava_glass": 44.59,
+    "lava_mud": 28.23,
+    "lava_snow": 42.85,
+    "lava_plant": 67.89,
+    "lava_smoke": 32.05,
+    "lava_steam": 40.4,
+    "lava_ash": 34.0,
+    "lava_seed": 26.63,
+    "lava_tnt": 17.09,
+    "lava_rainbow": 45.51,
+    "lava_bubble": 49.25,
+    "lava_lightning": 50.95,
+    "lava_ant": 48.59,
+    "ice_wood": 52.02,
+    "ice_metal": 19.69,
+    "ice_oil": 73.52,
+    "ice_acid": 44.82,
+    "ice_glass": 9.41,
+    "ice_mud": 54.06,
+    "ice_snow": 12.15,
+    "ice_plant": 43.63,
+    "ice_smoke": 22.6,
+    "ice_steam": 10.33,
+    "ice_ash": 17.84,
+    "ice_seed": 41.82,
+    "ice_tnt": 57.76,
+    "ice_rainbow": 37.49,
+    "ice_bubble": 2.08,
+    "ice_lightning": 39.1,
+    "ice_ant": 76.69,
+    "wood_metal": 35.6,
+    "wood_oil": 25.66,
+    "wood_acid": 64.5,
+    "wood_glass": 48.43,
+    "wood_mud": 9.48,
+    "wood_snow": 48.0,
+    "wood_plant": 54.58,
+    "wood_smoke": 30.92,
+    "wood_steam": 43.42,
+    "wood_ash": 35.42,
+    "wood_seed": 15.28,
+    "wood_tnt": 13.44,
+    "wood_rainbow": 45.68,
+    "wood_bubble": 51.24,
+    "wood_lightning": 51.02,
+    "wood_ant": 33.31,
+    "metal_oil": 49.66,
+    "metal_acid": 40.42,
+    "metal_glass": 16.2,
+    "metal_mud": 38.41,
+    "metal_snow": 18.43,
+    "metal_plant": 35.61,
+    "metal_smoke": 6.37,
+    "metal_steam": 10.81,
+    "metal_ash": 4.19,
+    "metal_seed": 27.29,
+    "metal_tnt": 39.06,
+    "metal_rainbow": 29.89,
+    "metal_bubble": 18.96,
+    "metal_lightning": 38.97,
+    "metal_ant": 50.84,
+    "oil_acid": 76.61,
+    "oil_glass": 72.26,
+    "oil_mud": 18.17,
+    "oil_snow": 73.02,
+    "oil_plant": 53.99,
+    "oil_smoke": 42.37,
+    "oil_steam": 67.17,
+    "oil_ash": 52.6,
+    "oil_seed": 27.43,
+    "oil_tnt": 30.78,
+    "oil_rainbow": 50.91,
+    "oil_bubble": 73.44,
+    "oil_lightning": 76.34,
+    "oil_ant": 10.96,
+    "acid_glass": 42.69,
+    "acid_mud": 59.25,
+    "acid_snow": 37.92,
+    "acid_plant": 16.56,
+    "acid_smoke": 37.63,
+    "acid_steam": 39.71,
+    "acid_ash": 36.47,
+    "acid_seed": 43.9,
+    "acid_tnt": 84.21,
+    "acid_rainbow": 108.2,
+    "acid_bubble": 43.66,
+    "acid_lightning": 22.85,
+    "acid_ant": 76.45,
+    "glass_mud": 51.87,
+    "glass_snow": 5.41,
+    "glass_plant": 42.98,
+    "glass_smoke": 21.07,
+    "glass_steam": 5.96,
+    "glass_ash": 14.84,
+    "glass_seed": 39.99,
+    "glass_tnt": 51.65,
+    "glass_rainbow": 36.77,
+    "glass_bubble": 7.55,
+    "glass_lightning": 37.2,
+    "glass_ant": 77.76,
+    "mud_snow": 51.9,
+    "mud_plant": 47.64,
+    "mud_smoke": 32.99,
+    "mud_steam": 46.75,
+    "mud_ash": 38.61,
+    "mud_seed": 13.35,
+    "mud_tnt": 20.87,
+    "mud_rainbow": 49.75,
+    "mud_bubble": 53.73,
+    "mud_lightning": 52.7,
+    "mud_ant": 26.19,
+    "snow_plant": 40.24,
+    "snow_smoke": 22.56,
+    "snow_steam": 8.42,
+    "snow_ash": 16.12,
+    "snow_seed": 39.55,
+    "snow_tnt": 50.97,
+    "snow_rainbow": 38.27,
+    "snow_bubble": 10.03,
+    "snow_lightning": 30.61,
+    "snow_ant": 79.08,
+    "plant_smoke": 31.04,
+    "plant_steam": 38.46,
+    "plant_ash": 32.65,
+    "plant_seed": 33.56,
+    "plant_tnt": 74.08,
+    "plant_rainbow": 97.63,
+    "plant_bubble": 43.04,
+    "plant_lightning": 30.4,
+    "plant_ant": 51.19,
+    "smoke_steam": 15.28,
+    "smoke_ash": 6.64,
+    "smoke_seed": 21.4,
+    "smoke_tnt": 35.0,
+    "smoke_rainbow": 30.46,
+    "smoke_bubble": 22.26,
+    "smoke_lightning": 36.51,
+    "smoke_ant": 43.67,
+    "steam_ash": 9.03,
+    "steam_seed": 34.52,
+    "steam_tnt": 46.91,
+    "steam_rainbow": 33.19,
+    "steam_bubble": 9.02,
+    "steam_lightning": 34.97,
+    "steam_ant": 69.83,
+    "ash_seed": 26.3,
+    "ash_tnt": 39.05,
+    "ash_rainbow": 31.48,
+    "ash_bubble": 17.03,
+    "ash_lightning": 33.81,
+    "ash_ant": 53.93,
+    "seed_tnt": 26.74,
+    "seed_rainbow": 48.06,
+    "seed_bubble": 41.47,
+    "seed_lightning": 39.2,
+    "seed_ant": 32.39,
+    "tnt_rainbow": 40.17,
+    "tnt_bubble": 56.32,
+    "tnt_lightning": 61.9,
+    "tnt_ant": 36.96,
+    "rainbow_bubble": 35.99,
+    "rainbow_lightning": 79.02,
+    "rainbow_ant": 51.01,
+    "bubble_lightning": 37.6,
+    "bubble_ant": 77.37,
+    "lightning_ant": 82.87
+  },
+  "min_delta_e_threshold": 5.0,
+  "texture_entropy": {
+    "sand": {
+      "min": 1.5,
+      "max": 5.0,
+      "desc": "grainy, moderate variation"
+    },
+    "water": {
+      "min": 0.5,
+      "max": 4.0,
+      "desc": "smooth with shimmer"
+    },
+    "stone": {
+      "min": 1.5,
+      "max": 5.0,
+      "desc": "layered strata"
+    },
+    "dirt": {
+      "min": 1.5,
+      "max": 5.0,
+      "desc": "organic texture"
+    },
+    "lava": {
+      "min": 2.0,
+      "max": 5.5,
+      "desc": "dynamic, pulsing"
+    },
+    "fire": {
+      "min": 2.0,
+      "max": 6.0,
+      "desc": "highly dynamic"
+    },
+    "ice": {
+      "min": 0.5,
+      "max": 3.5,
+      "desc": "crystalline, sparkle"
+    },
+    "snow": {
+      "min": 0.3,
+      "max": 3.0,
+      "desc": "uniform with glitter"
+    },
+    "metal": {
+      "min": 0.5,
+      "max": 3.5,
+      "desc": "smooth sheen"
+    },
+    "wood": {
+      "min": 1.5,
+      "max": 5.0,
+      "desc": "grain texture"
+    },
+    "oil": {
+      "min": 1.0,
+      "max": 4.0,
+      "desc": "iridescent"
+    },
+    "glass": {
+      "min": 0.3,
+      "max": 2.5,
+      "desc": "nearly transparent"
+    }
+  },
+  "sky_gradient": {
+    "top_L_range": [
+      55,
+      75
+    ],
+    "bottom_L_range": [
+      60,
+      85
+    ],
+    "max_second_derivative": 25,
+    "night_top_L_range": [
+      5,
+      25
+    ]
+  },
+  "underground": {
+    "max_avg_brightness": 120,
+    "max_brightness_std": 40
+  },
+  "transparency": {
+    "steam": {
+      "max_alpha": 80,
+      "min_alpha": 5
+    },
+    "smoke": {
+      "max_alpha": 190,
+      "min_alpha": 30
+    },
+    "glass": {
+      "max_alpha": 220,
+      "min_alpha": 120
+    },
+    "bubble": {
+      "max_alpha": 180,
+      "min_alpha": 60
+    }
+  },
+  "glow": {
+    "max_radius": 6,
+    "falloff_type": "quadratic",
+    "no_black_halos": true
+  },
+  "water_depth": {
+    "surface_brightness_min": 120,
+    "deep_brightness_max": 80,
+    "gradient_direction": "darker_with_depth"
+  },
+  "contrast": {
+    "min_contrast_ratio": 1.3,
+    "critical_pairs": [
+      [
+        "fire",
+        "lava"
+      ],
+      [
+        "sand",
+        "dirt"
+      ],
+      [
+        "stone",
+        "metal"
+      ],
+      [
+        "smoke",
+        "steam"
+      ]
+    ]
+  },
+  "known_similar_pairs": [
+    "ice_bubble",
+    "metal_ash"
+  ],
+  "light_emission": {
+    "fire": {
+      "intensity": 180,
+      "r": 255,
+      "g": 120,
+      "b": 20
+    },
+    "lava": {
+      "intensity": 220,
+      "r": 255,
+      "g": 80,
+      "b": 10
+    },
+    "lightning": {
+      "intensity": 255,
+      "r": 255,
+      "g": 255,
+      "b": 180
+    },
+    "rainbow": {
+      "intensity": 100,
+      "r": 200,
+      "g": 100,
+      "b": 255
+    },
+    "acid": {
+      "intensity": 30,
+      "r": 20,
+      "g": 255,
+      "b": 20
+    }
+  },
+  "base_alphas": {
+    "sand": 255,
+    "water": 255,
+    "fire": 255,
+    "stone": 255,
+    "dirt": 255,
+    "lava": 255,
+    "ice": 255,
+    "wood": 255,
+    "metal": 255,
+    "oil": 255,
+    "acid": 255,
+    "glass": 204,
+    "mud": 255,
+    "snow": 255,
+    "plant": 255,
+    "smoke": 176,
+    "steam": 48,
+    "ash": 221,
+    "seed": 255,
+    "tnt": 255,
+    "rainbow": 255,
+    "bubble": 160,
+    "lightning": 255,
+    "ant": 255
+  },
+  "base_rgb": {
+    "sand": {
+      "r": 217,
+      "g": 195,
+      "b": 144
+    },
+    "water": {
+      "r": 46,
+      "g": 154,
+      "b": 255
+    },
+    "fire": {
+      "r": 255,
+      "g": 136,
+      "b": 32
+    },
+    "stone": {
+      "r": 128,
+      "g": 128,
+      "b": 144
+    },
+    "dirt": {
+      "r": 140,
+      "g": 104,
+      "b": 48
+    },
+    "lava": {
+      "r": 255,
+      "g": 80,
+      "b": 16
+    },
+    "ice": {
+      "r": 189,
+      "g": 229,
+      "b": 255
+    },
+    "wood": {
+      "r": 160,
+      "g": 85,
+      "b": 48
+    },
+    "metal": {
+      "r": 168,
+      "g": 168,
+      "b": 184
+    },
+    "oil": {
+      "r": 58,
+      "g": 40,
+      "b": 32
+    },
+    "acid": {
+      "r": 48,
+      "g": 240,
+      "b": 48
+    },
+    "glass": {
+      "r": 221,
+      "g": 232,
+      "b": 255
+    },
+    "mud": {
+      "r": 122,
+      "g": 80,
+      "b": 48
+    },
+    "snow": {
+      "r": 240,
+      "g": 244,
+      "b": 255
+    },
+    "plant": {
+      "r": 40,
+      "g": 176,
+      "b": 64
+    },
+    "smoke": {
+      "r": 154,
+      "g": 154,
+      "b": 160
+    },
+    "steam": {
+      "r": 200,
+      "g": 208,
+      "b": 224
+    },
+    "ash": {
+      "r": 176,
+      "g": 176,
+      "b": 184
+    },
+    "seed": {
+      "r": 139,
+      "g": 115,
+      "b": 85
+    },
+    "tnt": {
+      "r": 204,
+      "g": 34,
+      "b": 34
+    },
+    "rainbow": {
+      "r": 255,
+      "g": 0,
+      "b": 255
+    },
+    "bubble": {
+      "r": 200,
+      "g": 232,
+      "b": 255
+    },
+    "lightning": {
+      "r": 255,
+      "g": 255,
+      "b": 160
+    },
+    "ant": {
+      "r": 34,
+      "g": 34,
+      "b": 34
+    }
+  }
+}
