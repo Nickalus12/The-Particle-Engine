@@ -6,3 +6,5 @@ Pillow
 pytest
 pytest-html
 pytest-benchmark
+hypothesis
+syrupy
