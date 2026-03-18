@@ -1213,9 +1213,9 @@ class PixelRenderer {
         // Subtle wetness sheen on surface
         final isMudTop = y > 0 && grid[(y - 1) * w + x] != El.mud;
         final wetBoost = isMudTop ? 10 : 0;
-        _inlineR = (115 + mudVar + warmShift + wetBoost).clamp(85, 145);
-        _inlineG = (75 + mudVar ~/ 2 + warmShift ~/ 2 + wetBoost ~/ 2).clamp(50, 105);
-        _inlineB = (32 + mudVar ~/ 3 + wetBoost ~/ 3).clamp(15, 50);
+        _inlineR = (80 + mudVar + warmShift + wetBoost).clamp(55, 110);
+        _inlineG = (65 + mudVar ~/ 2 + warmShift ~/ 2 + wetBoost ~/ 2).clamp(40, 90);
+        _inlineB = (45 + mudVar ~/ 3 + wetBoost ~/ 3).clamp(25, 65);
 
       case El.oil:
         _inlineA = 255;

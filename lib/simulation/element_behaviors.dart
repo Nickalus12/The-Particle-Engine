@@ -2699,7 +2699,7 @@ extension ElementBehaviors on SimulationEngine {
   void simAcid(int x, int y, int idx) {
     life[idx]++;
 
-    if (life[idx] > 120 + rng.nextInt(60)) {
+    if (life[idx] > 200 + rng.nextInt(60)) {
       grid[idx] = El.empty; life[idx] = 0; return;
     }
 
@@ -2734,12 +2734,13 @@ extension ElementBehaviors on SimulationEngine {
         final bnx = bestNi % gridW;
         final bny = bestNi ~/ gridW;
         queueReactionFlash(bnx, bny, 60, 230, 60, 4);
-        // Acid consumed only when dissolving hard materials
-        if (bestResist > 40) {
+        // Acid consumed when dissolving very hard materials (metal/glass).
+        // Moderate materials age the acid (gradual neutralization).
+        if (bestResist >= 80) {
           grid[idx] = El.empty; life[idx] = 0;
           return;
         }
-        life[idx] = (life[idx] + 20).clamp(0, 255);
+        life[idx] = (life[idx] + 10).clamp(0, 255);
         markDirty(x, y);
         return;
       }
