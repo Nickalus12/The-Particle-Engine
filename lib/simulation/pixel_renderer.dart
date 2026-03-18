@@ -123,8 +123,8 @@ class PixelRenderer {
       for (int i = 0; i < count; i++) {
         final angle = rng.nextDouble() * 6.2832;
         final dist = exp.radius * 0.3 + rng.nextDouble() * exp.radius * 0.8;
-        final px = exp.x + (dist * math.cos(angle)).round();
-        final py = exp.y + (dist * math.sin(angle)).round();
+        final px = exp.x + (dist * _fastSin(angle + 1.5708)).round();
+        final py = exp.y + (dist * _fastSin(angle)).round();
         const pr = 255;
         final pg = 150 + rng.nextInt(105);
         final pb = rng.nextInt(100);
@@ -1189,7 +1189,7 @@ class PixelRenderer {
         _inlineB = (strataB + layer - sedimentShift + hBandShift + strataEdge - depthDarken ~/ 2).clamp(68, 185);
         if (stoneHeat > 0) {
           final heatFrac = stoneHeat / 5.0;
-          final pulse = math.sin(frameCount * 0.3 + idx * 0.1) * 0.3 + 0.7;
+          final pulse = _fastSin(frameCount * 0.3 + idx * 0.1) * 0.3 + 0.7;
           _inlineR =
               (_inlineR + (heatFrac * 130 * pulse).round())
                   .clamp(0, 255);
@@ -1222,13 +1222,13 @@ class PixelRenderer {
         final isOilTop = y > 0 && grid[(y - 1) * w + x] != El.oil;
         if (isOilTop) {
           // Iridescent surface shimmer -- rainbow oil slick effect
-          final shimmer1 = math.sin(frameCount * 0.15 + x * 0.7) * 0.5 + 0.5;
-          final shimmer2 = math.sin(frameCount * 0.12 + x * 1.1 + 1.2) * 0.5 + 0.5;
+          final shimmer1 = _fastSin(frameCount * 0.15 + x * 0.7) * 0.5 + 0.5;
+          final shimmer2 = _fastSin(frameCount * 0.12 + x * 1.1 + 1.2) * 0.5 + 0.5;
           final iridPhase = ((x * 37 + frameCount * 2) % 120) / 120.0;
           // Rainbow phase for iridescence
-          final iridR = (math.sin(iridPhase * 6.28) * 20 + 20).round();
-          final iridG = (math.sin(iridPhase * 6.28 + 2.09) * 15 + 10).round();
-          final iridB = (math.sin(iridPhase * 6.28 + 4.19) * 20 + 15).round();
+          final iridR = (_fastSin(iridPhase * 6.28) * 20 + 20).round();
+          final iridG = (_fastSin(iridPhase * 6.28 + 2.09) * 15 + 10).round();
+          final iridB = (_fastSin(iridPhase * 6.28 + 4.19) * 20 + 15).round();
           final shimVal = (shimmer1 * 14 + shimmer2 * 8).round();
           _inlineR = (60 + shimVal + iridR).clamp(45, 110);
           _inlineG = (45 + shimVal + iridG).clamp(32, 85);
@@ -1243,7 +1243,7 @@ class PixelRenderer {
         }
 
       case El.acid:
-        final pulse = math.sin(frameCount * 0.15 + idx * 0.3) * 0.5 + 0.5;
+        final pulse = _fastSin(frameCount * 0.15 + idx * 0.3) * 0.5 + 0.5;
         final acidGlow = (pulse * 30).round();
         final variation = ((idx * 7 + y * 3) % 11) - 5;
         _inlineR = (20 + variation + acidGlow ~/ 3).clamp(0, 80);
@@ -1338,7 +1338,7 @@ class PixelRenderer {
         final isSparkle = sparkleActive < 3 && (sparkleHash % 4 == 0);
         final sparkleIntensity = isSparkle ? 45 : 0;
         // Slower gentle shimmer for overall snow surface
-        final shimmerVal = (math.sin(_effectTime * 1.5 + sparkleHash * 0.01) * 6).round();
+        final shimmerVal = (_fastSin(_effectTime * 1.5 + sparkleHash * 0.01) * 6).round();
         // Surface snow is slightly brighter than buried snow
         final isSnowSurface = y > 0 && grid[(y - 1) * w + x] != El.snow;
         final surfaceBoost = isSnowSurface ? 8 : 0;
@@ -1350,7 +1350,7 @@ class PixelRenderer {
         _inlineA = 255;
         final variation = ((idx * 7 + y * 3) % 11) - 5;
         if (life[idx] > 0) {
-          final burnPhase = math.sin(frameCount * 0.25 + life[idx] * 0.3) * 0.5 + 0.5;
+          final burnPhase = _fastSin(frameCount * 0.25 + life[idx] * 0.3) * 0.5 + 0.5;
           final bright = (burnPhase * 35).round();
           _inlineR = (200 + bright).clamp(185, 255);
           _inlineG = (80 + bright - life[idx]).clamp(20, 120);
@@ -1398,7 +1398,7 @@ class PixelRenderer {
                 .round()
                 .clamp(30, 210);
           } else {
-            final sheenPhase = math.sin(frameCount * 0.1 + x * 0.3 + y * 0.2) * 0.5 + 0.5;
+            final sheenPhase = _fastSin(frameCount * 0.1 + x * 0.3 + y * 0.2) * 0.5 + 0.5;
             final sheen = (sheenPhase * 18).round();
             _inlineR = (168 + sheen + variation).clamp(145, 200);
             _inlineG = (168 + sheen + variation).clamp(145, 200);
@@ -1409,7 +1409,7 @@ class PixelRenderer {
       case El.smoke:
         final smokeLife = life[idx];
         final fade = (60 - smokeLife).clamp(0, 60);
-        final wisp = math.sin(frameCount * 0.1 + idx * 0.5) * 0.5 + 0.5;
+        final wisp = _fastSin(frameCount * 0.1 + idx * 0.5) * 0.5 + 0.5;
         final wispVal = (wisp * 15).round();
         _inlineA = (fade * 3 + 60).clamp(60, 200);
         final smokeBase =
@@ -1422,8 +1422,8 @@ class PixelRenderer {
       case El.bubble:
         // Iridescent soap-bubble feel with shifting rainbow highlight
         final bubbleTime = frameCount * 0.08 + idx * 0.5;
-        final iridShift = math.sin(bubbleTime) * 0.5 + 0.5;
-        final iridShift2 = math.sin(bubbleTime * 0.7 + 1.5) * 0.5 + 0.5;
+        final iridShift = _fastSin(bubbleTime) * 0.5 + 0.5;
+        final iridShift2 = _fastSin(bubbleTime * 0.7 + 1.5) * 0.5 + 0.5;
         // Specular highlight that moves across the bubble
         final highlight = (frameCount + idx * 7) % 40 < 4 ? 40 : 0;
         // Base: light cyan-white with rainbow shimmer
