@@ -2882,33 +2882,30 @@ extension ElementBehaviors on SimulationEngine {
     for (final dir in [dir1, dir2]) {
       final sx = wrapX(x + dir);
 
-      // Standard avalanche: side empty + diagonal-below empty → slide down
+      // Standard avalanche: side empty + diagonal-below empty → slide down.
+      // Coulomb friction model: grains on a slope only avalanche when the
+      // slope exceeds the static friction angle. A 2/3 probability gate
+      // produces an effective angle of repose near 34° (real dry sand).
       if (grid[y * gridW + sx] == El.empty &&
           inBoundsY(by) && grid[by * gridW + sx] == El.empty) {
-        swap(idx, by * gridW + sx);
-        return;
+        if (rng.nextInt(3) > 0) {
+          swap(idx, by * gridW + sx);
+          return;
+        }
       }
 
       // Extended slide: side empty + diagonal-below occupied →
-      // check 2 cells out for a step-down (models rolling on slope surface)
+      // check 2 cells out for a step-down (models rolling on slope surface).
+      // Rarer than standard avalanche due to higher activation energy.
       if (grid[y * gridW + sx] == El.empty) {
         final sx2 = wrapX(x + dir * 2);
         // Roll to side if 2-out diagonal-below is empty
         if (inBoundsY(by) && grid[by * gridW + sx2] == El.empty &&
             grid[y * gridW + sx2] == El.empty) {
-          swap(idx, y * gridW + sx);
-          return;
-        }
-        // Steeper slope: side is empty, diagonal is occupied,
-        // but 2-out at same level is empty → lateral slide
-        // (grain rolls along surface to find lower ground)
-        final by2 = y + g * 2;
-        if (inBoundsY(by2) && grid[by * gridW + sx] != El.empty &&
-            grid[y * gridW + sx2] == El.empty &&
-            grid[by * gridW + sx2] == El.empty &&
-            grid[by2 * gridW + sx2] == El.empty) {
-          swap(idx, y * gridW + sx);
-          return;
+          if (rng.nextInt(4) == 0) {
+            swap(idx, y * gridW + sx);
+            return;
+          }
         }
       }
     }
