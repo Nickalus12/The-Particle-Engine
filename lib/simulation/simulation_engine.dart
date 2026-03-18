@@ -1284,25 +1284,75 @@ class SimulationEngine {
         final xl = (x - 1 + w) % w;
         final xr = (x + 1) % w;
 
-        // Transfer heat to each neighbor, using live temp values
-        for (final ni in [idx - w, idx + w, y * w + xl, y * w + xr]) {
-          if (ni < 0 || ni >= g.length) continue;
-          final nEl = g[ni];
-          final nCond = cond[nEl];
-          if (nCond == 0) continue;
+        // Transfer heat to 4 cardinal neighbors (unrolled, no allocation)
+        final ni0 = idx - w; // up
+        final ni1 = idx + w; // down
+        final ni2 = y * w + xl; // left
+        final ni3 = y * w + xr; // right
 
-          final nTemp = temp[ni];
-          final tDiff = myTemp - nTemp;
-          if (tDiff.abs() < 3) continue;
-
-          // Transfer rate based on min conductivity of the pair
-          final rate = (myCond < nCond ? myCond : nCond);
-          final transfer = (tDiff * rate) >> 9; // divide by ~512
-          if (transfer == 0) continue;
-
-          myTemp = (myTemp - transfer).clamp(0, 255);
-          temp[idx] = myTemp;
-          temp[ni] = (nTemp + transfer).clamp(0, 255);
+        // Neighbor 0 (up)
+        if (ni0 >= 0) {
+          final nCond = cond[g[ni0]];
+          if (nCond > 0) {
+            final tDiff = myTemp - temp[ni0];
+            if (tDiff.abs() >= 3) {
+              final rate = myCond < nCond ? myCond : nCond;
+              final transfer = (tDiff * rate) >> 9;
+              if (transfer != 0) {
+                myTemp = (myTemp - transfer).clamp(0, 255);
+                temp[idx] = myTemp;
+                temp[ni0] = (temp[ni0] + transfer).clamp(0, 255);
+              }
+            }
+          }
+        }
+        // Neighbor 1 (down)
+        if (ni1 < g.length) {
+          final nCond = cond[g[ni1]];
+          if (nCond > 0) {
+            final tDiff = myTemp - temp[ni1];
+            if (tDiff.abs() >= 3) {
+              final rate = myCond < nCond ? myCond : nCond;
+              final transfer = (tDiff * rate) >> 9;
+              if (transfer != 0) {
+                myTemp = (myTemp - transfer).clamp(0, 255);
+                temp[idx] = myTemp;
+                temp[ni1] = (temp[ni1] + transfer).clamp(0, 255);
+              }
+            }
+          }
+        }
+        // Neighbor 2 (left)
+        {
+          final nCond = cond[g[ni2]];
+          if (nCond > 0) {
+            final tDiff = myTemp - temp[ni2];
+            if (tDiff.abs() >= 3) {
+              final rate = myCond < nCond ? myCond : nCond;
+              final transfer = (tDiff * rate) >> 9;
+              if (transfer != 0) {
+                myTemp = (myTemp - transfer).clamp(0, 255);
+                temp[idx] = myTemp;
+                temp[ni2] = (temp[ni2] + transfer).clamp(0, 255);
+              }
+            }
+          }
+        }
+        // Neighbor 3 (right)
+        {
+          final nCond = cond[g[ni3]];
+          if (nCond > 0) {
+            final tDiff = myTemp - temp[ni3];
+            if (tDiff.abs() >= 3) {
+              final rate = myCond < nCond ? myCond : nCond;
+              final transfer = (tDiff * rate) >> 9;
+              if (transfer != 0) {
+                myTemp = (myTemp - transfer).clamp(0, 255);
+                temp[idx] = myTemp;
+                temp[ni3] = (temp[ni3] + transfer).clamp(0, 255);
+              }
+            }
+          }
         }
       }
     }
