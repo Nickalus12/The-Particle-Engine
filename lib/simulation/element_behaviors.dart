@@ -77,16 +77,29 @@ extension ElementBehaviors on SimulationEngine {
 
     // Stefan solidification: water adjacent to ice freezes via
     // heterogeneous nucleation. The ice surface provides a nucleation
-    // template — colder ice is a more effective seed. Rate depends on
-    // both the water's subcooling and the adjacent ice's temperature.
+    // template that lowers the energy barrier for crystal formation.
+    // Real water nucleates heterogeneously at ~-1°C on ice surfaces
+    // vs ~-40°C for homogeneous nucleation. The rate follows classical
+    // nucleation theory: J ∝ exp(-ΔG*/kT), exponentially faster at
+    // deeper subcooling.
     {
       final t = temperature[idx];
-      if (t < 126 && checkAdjacent(x, y, El.ice)) {
-        // Base rate from water subcooling
-        final subcooling = 126 - t; // 0..126
-        final rate = (30 - (subcooling * 25) ~/ 126).clamp(5, 30);
+      if (t < 127 && checkAdjacent(x, y, El.ice)) {
+        final subcooling = 127 - t; // 1..127
+        // Deterministic freeze at deep subcooling (temp < 107)
+        if (subcooling > 20) {
+          grid[idx] = El.ice;
+          temperature[idx] = (t - 10).clamp(0, 255); // latent heat absorbed
+          markProcessed(idx);
+          return;
+        }
+        // Probabilistic near threshold: 1/6 at 1° to 1/2 at 20°
+        // Heterogeneous nucleation on ice surfaces has very low energy
+        // barrier — even 1°C subcooling triggers rapid crystal growth.
+        final rate = (6 - (subcooling * 4) ~/ 20).clamp(2, 6);
         if (rng.nextInt(rate) == 0) {
           grid[idx] = El.ice;
+          temperature[idx] = (t - 5).clamp(0, 255); // latent heat absorbed
           markProcessed(idx);
           return;
         }
@@ -2389,13 +2402,16 @@ extension ElementBehaviors on SimulationEngine {
       if (above != El.empty && above != El.steam && above != El.smoke) break;
     }
 
-    // Steam lifespan tuned for natural weather feel:
-    // Open air: 8-18 frames (~0.13-0.3s) — brief wisp, then gone.
-    //   Prevents "white dot carpet" on water surfaces.
-    // Underground: 80-140 frames (~1.3-2.3s) — cave humidity lingers visibly.
+    // Steam lifespan follows the Hertz-Knudsen evaporation model:
+    // hot steam persists longer (higher vapor pressure supports the phase),
+    // while cool steam condenses faster. Open-air steam at 60fps should
+    // last 0.5-1.5s (30-90 frames) for realistic wisps.
+    // Underground: 80-140 frames — cave humidity lingers visibly.
+    final steamTemp = temperature[idx];
+    final hotBonus = ((steamTemp - 128).clamp(0, 80)) ~/ 4; // 0-20 extra frames for hot steam
     final steamLife = isTrappedUnderground
         ? (isNight ? 80 + rng.nextInt(40) : 100 + rng.nextInt(40))
-        : (isNight ? 8 + rng.nextInt(8) : 10 + rng.nextInt(8));
+        : (isNight ? 25 + rng.nextInt(20) : 30 + rng.nextInt(25)) + hotBonus;
 
     if (life[idx] > steamLife) {
       // Open-air steam almost always vanishes — no mid-air condensation.
@@ -2411,22 +2427,45 @@ extension ElementBehaviors on SimulationEngine {
     // Steam at the sky boundary dissipates — but trapped steam (under
     // stone/metal ceiling) persists in enclosed spaces.
     if (atEdge && !isTrappedUnderground) {
-      grid[idx] = El.empty; life[idx] = 0; markProcessed(idx); return;
+      // Adiabatic cooling at altitude: rising steam expands and cools.
+      // ~20% condenses to rain (orographic precipitation), rest dissipates.
+      if (rng.nextInt(5) == 0) {
+        grid[idx] = El.water; life[idx] = 100;
+        temperature[idx] = 128; // neutral — cooled by expansion
+      } else {
+        grid[idx] = El.empty; life[idx] = 0;
+      }
+      markProcessed(idx); return;
     }
 
     // Rain (altitude condensation): steam in top 8% of grid becomes rain.
-    // This is THE water cycle mechanism — but should feel like gentle
-    // weather, not a sprinkler. At 60fps, 1/1200 = one raindrop per ~20s
-    // per steam cell at altitude. Night doubles the chance (dew point).
+    // Adiabatic lapse rate: rising air cools ~6.5°C/km, eventually reaching
+    // dew point. Higher altitude = cooler = more condensation.
     final topThreshold = gravityDir == 1
-        ? (gridH * 8) ~/ 100
-        : gridH - ((gridH * 8) ~/ 100);
+        ? (gridH * 10) ~/ 100
+        : gridH - ((gridH * 10) ~/ 100);
     final isAtAltitude = gravityDir == 1 ? y < topThreshold : y > topThreshold;
-    if (isAtAltitude && rng.nextInt(isNight ? 600 : 1200) == 0) {
+    if (isAtAltitude && rng.nextInt(isNight ? 400 : 800) == 0) {
       grid[idx] = El.water;
       life[idx] = 100;
       markProcessed(idx);
       return;
+    }
+
+    // Temperature-driven condensation: steam below the dew point
+    // condenses spontaneously. The Clausius-Clapeyron relation shows
+    // that saturation vapor pressure drops exponentially with temperature.
+    // Below ~100°C (temp≈108 in our scale), steam is supersaturated and
+    // condenses. Rate increases with subcooling.
+    {
+      final st = temperature[idx];
+      if (st < 108) {
+        final dewSubcool = 108 - st; // how far below dew point
+        // Deterministic condensation at deep subcooling
+        if (dewSubcool > 20 || rng.nextInt((30 - dewSubcool).clamp(2, 30)) == 0) {
+          grid[idx] = El.water; life[idx] = 100; markProcessed(idx); return;
+        }
+      }
     }
 
     // Heterogeneous condensation: steam deposits on cold surfaces (ice)
@@ -2434,9 +2473,15 @@ extension ElementBehaviors on SimulationEngine {
     // physical mechanism behind frost formation and steam condensing on
     // cold windows. Rate depends on temperature difference.
     if (checkAdjacent(x, y, El.ice)) {
-      // Steam near ice condenses readily — ~25% chance per frame
-      if (rng.nextInt(4) == 0) {
-        grid[idx] = El.water; life[idx] = 100; markProcessed(idx); return;
+      // Steam near ice condenses readily — ~75% chance per frame.
+      // The ice surface acts as a nucleation site; the large thermal
+      // gradient ensures rapid heat extraction from the vapor phase.
+      // Condensation releases latent heat (2260 kJ/kg), warming the
+      // resulting water well above freezing point.
+      if (rng.nextInt(4) != 0) {
+        grid[idx] = El.water; life[idx] = 100;
+        temperature[idx] = 160; // latent heat of condensation warms the water
+        markProcessed(idx); return;
       }
     }
 
