@@ -1270,7 +1270,7 @@ class SimulationEngine {
           final diff = bt - current;
           if (diff.abs() > 2) {
             // Heat sources are aggressive — push hard
-            final push = (diff * 0.3).round().clamp(-20, 20);
+            final push = ((diff * 77) >> 8).clamp(-20, 20); // ~0.3 * diff
             temp[idx] = (current + push).clamp(0, 255);
           }
         }
