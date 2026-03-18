@@ -86,7 +86,7 @@ class SimulationEngine {
 
   // -- Random instance -------------------------------------------------------
 
-  final Random rng = Random();
+  late final Random rng;
 
   // -- Frame counter ---------------------------------------------------------
 
@@ -137,7 +137,8 @@ class SimulationEngine {
   /// Create an engine with the given grid dimensions.
   ///
   /// Pass landscape-oriented values (e.g. 320x180) for widescreen layouts.
-  SimulationEngine({this.gridW = 320, this.gridH = 180}) {
+  SimulationEngine({this.gridW = 320, this.gridH = 180, int? seed}) {
+    rng = seed != null ? Random(seed) : Random();
     _allocate();
   }
 

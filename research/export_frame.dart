@@ -22,7 +22,7 @@ void main(List<String> args) {
   final frames = args.isNotEmpty ? int.parse(args[0]) : 100;
   ElementRegistry.init();
 
-  final engine = SimulationEngine(gridW: 320, gridH: 180);
+  final engine = SimulationEngine(gridW: 320, gridH: 180, seed: 42);
   final renderer = PixelRenderer(engine);
   renderer.init();
   renderer.generateStars();
@@ -122,11 +122,12 @@ void _fillTestWorld(SimulationEngine e) {
     e.grid[y * w + x] = El.metal;
   }
 
-  // Oil patch
-  for (int x = (w * 0.7).round(); x < (w * 0.75).round(); x++) {
-    final groundY = (h * 0.55 + (10 * (0.5 + 0.5 * (x / w)))).round();
-    if (groundY > 1) {
-      e.grid[(groundY - 1) * w + x] = El.oil;
+  // Oil layer on top of water pool (should float above water due to lower density)
+  for (int y = (h * 0.48).round(); y < (h * 0.5).round(); y++) {
+    for (int x = (w * 0.3).round(); x < (w * 0.35).round(); x++) {
+      if (e.grid[y * w + x] == El.empty) {
+        e.grid[y * w + x] = El.oil;
+      }
     }
   }
 

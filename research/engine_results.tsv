@@ -51,3 +51,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 49	2026-03-18T02:49	export_frame.dart	Add cave pocket to test world for underground darkness test (210->211 passed)	-	95	100	yes
 50	2026-03-18T02:50	test_*.py	Add surface tension, light emission, thermal stratification, porosity tests (211->221 passed, +10)	-	95	100	yes
 51	2026-03-18T02:51	test_*.py	Add decay chains, fire cycle, explosion falloff, electrical conductivity, Beverloo flow tests (221->234 passed, +13)	-	95	100	yes
+52	2026-03-18T02:52	simulation_engine.dart+export_frame.dart+physics_oracle.py+test_*.py	Deterministic RNG seed, fire+wood oracle fix, oil-above-water layout, dart path fix (4 failures->0)	-	95	100	yes

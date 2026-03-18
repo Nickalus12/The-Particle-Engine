@@ -102,7 +102,7 @@ REAL_VISCOSITY = {
 
 REACTIONS = [
     {"source": "fire",      "target": "oil",       "sourceBecomesElement": None,      "targetBecomesElement": "fire",    "probability": 0.5,   "description": "Fire ignites adjacent oil"},
-    {"source": "fire",      "target": "wood",      "sourceBecomesElement": None,      "targetBecomesElement": None,      "probability": 0.15,  "description": "Fire chars wood"},
+    {"source": "fire",      "target": "wood",      "sourceBecomesElement": None,      "targetBecomesElement": "fire",    "probability": 0.15,  "description": "Fire ignites wood"},
     {"source": "fire",      "target": "plant",     "sourceBecomesElement": None,      "targetBecomesElement": "fire",    "probability": 0.3,   "description": "Fire spreads to plants"},
     {"source": "fire",      "target": "seed",      "sourceBecomesElement": None,      "targetBecomesElement": "fire",    "probability": 0.3,   "description": "Fire ignites seeds"},
     {"source": "fire",      "target": "ice",       "sourceBecomesElement": None,      "targetBecomesElement": "water",   "probability": 0.1,   "description": "Fire melts ice"},
