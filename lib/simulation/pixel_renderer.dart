@@ -218,18 +218,21 @@ class PixelRenderer {
     }
     final temp = engine.temperature;
 
-    final glowMul = 1.0 + t * 2.0;
+    // All night values as integers (t is [0.0, 1.0])
+    final t256 = (t * 256).round(); // [0, 256]
+    // glowMul256 = (1 + t*2) * 256 = 256 + t*512
+    final glowMul256 = 256 + (t256 << 1); // [256, 768]
 
-    final starSet = t > 0.05 ? _starSet : const <int>{};
+    final starSet = t256 > 13 ? _starSet : const <int>{}; // t > ~0.05
 
     final doGlow = fc % 6 == 0;
 
-    final nightBoost = (t * 30).round();
-    final nightBoostG = (nightBoost * 0.2).round();
-    final nightShimmer = (t * 50).round();
-    final nightSmokeBoost = (t * 20).round();
-    final nightDimWater = (256 * (1.0 - t * 0.15)).round();
-    final nightDimGeneral = (256 * (1.0 - t * 0.2)).round();
+    final nightBoost = (t256 * 30) >> 8; // ≈ t * 30
+    final nightBoostG = nightBoost ~/ 5; // ≈ nightBoost * 0.2
+    final nightShimmer = (t256 * 50) >> 8; // ≈ t * 50
+    final nightSmokeBoost = (t256 * 20) >> 8; // ≈ t * 20
+    final nightDimWater = (256 - (t256 * 38 >> 8)).clamp(0, 256); // ≈ 256*(1-t*0.15)
+    final nightDimGeneral = (256 - (t256 * 51 >> 8)).clamp(0, 256); // ≈ 256*(1-t*0.2)
 
     final dayNightTransitioning = (t - _prevDayNightT).abs() > 0.001;
     _prevDayNightT = t;
@@ -273,10 +276,12 @@ class PixelRenderer {
         final ex = i % w;
         final ey = i ~/ w;
 
-        // Scale glow intensities by emission level and night multiplier
-        final scaledR = (emR * emission * glowMul / 255.0).round();
-        final scaledG = (emG * emission * glowMul / 255.0).round();
-        final scaledB = (emB * emission * glowMul / 255.0).round();
+        // Scale glow intensities by emission level and night multiplier (integer)
+        // glowMul256 is [256, 768], emission [0, 255], emR/G/B [0, 255]
+        // scaledX = emX * emission * glowMul / 255 ≈ (emX * emission * glowMul256) >> 16
+        final scaledR = (emR * emission * glowMul256) >> 16;
+        final scaledG = (emG * emission * glowMul256) >> 16;
+        final scaledB = (emB * emission * glowMul256) >> 16;
 
         // Lava gets larger glow for atmospheric molten look
         if (el == El.lava) {
@@ -459,7 +464,7 @@ class PixelRenderer {
                 final twinkle = ((fc + i * 17) % 40);
                 if (twinkle < 6) {
                   final brightness = twinkle < 3 ? 200 : 140;
-                  final starBright = (brightness * t).round();
+                  final starBright = (brightness * t256) >> 8;
                   emptyR = (emptyR + starBright).clamp(0, 255);
                   emptyG = (emptyG + starBright).clamp(0, 255);
                   emptyB = (emptyB + starBright).clamp(0, 255);
