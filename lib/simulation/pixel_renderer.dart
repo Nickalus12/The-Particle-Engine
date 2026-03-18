@@ -274,9 +274,12 @@ class PixelRenderer {
                 neighborEl != El.lightning;
             if (!isTarget && !isTintable) continue;
 
-            // Smooth quadratic falloff
-            final distFrac = dist / (glowRadius + 1);
-            final falloff = ((1.0 - distFrac * distFrac) * 256).round().clamp(0, 256);
+            // Smooth quadratic falloff (integer math)
+            final maxDist = glowRadius + 1;
+            // falloff = (1 - (dist/maxDist)^2) * 256 = (maxDist^2 - dist^2) * 256 / maxDist^2
+            final md2 = maxDist * maxDist;
+            final dd = dist * dist;
+            final falloff = ((md2 - dd) * 256) ~/ md2;
             // Non-empty cells get reduced glow to avoid washing out element color
             final tintScale = isTintable ? 96 : 256;
 

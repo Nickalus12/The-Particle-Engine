@@ -13,3 +13,8 @@ id	timestamp	file	description	fps	physics	visuals	kept
 11	2026-03-18T00:11	element_behaviors.dart	early-exit water neighbor loop for water/empty + else-if chain	260.2	95	100	no
 12	2026-03-18T00:12	element_behaviors.dart	smoke stacking (spawn at y-2 when y-1 blocked by smoke)	265.3	95	95	no
 13	2026-03-18T00:13	element_behaviors.dart	100% smoke spawn first 5 frames then 50%/25%	245.9	95	100	no
+14	2026-03-18T00:14	element_behaviors.dart	water convection (hot rises through cold) every 4 frames	229.7	90	100	no
+15	2026-03-18T00:15	element_behaviors.dart	selective water convection (temp>160 only, every 6 frames)	233.3	95	100	no
+16	2026-03-18T00:16	element_behaviors.dart	age-based smoke drift (fresh=12%, old=25%)	255.0	85	100	no
+17	2026-03-18T00:17	element_behaviors.dart	10% smoke drift (too vertical causes 85 regressions)	255.0	85	100	no
+18	2026-03-18T00:18	pixel_renderer.dart	integer glow falloff math (replace float division)	261.0	95	100	yes
