@@ -8,3 +8,8 @@ id	timestamp	file	description	fps	physics	visuals	kept
 6	2026-03-18T00:06	element_behaviors.dart	fire/smoke rise bias straight-up for reliable plume + fireRises test	258.8	95	100	yes
 7	2026-03-18T00:07	element_behaviors.dart	metal structural integrity with fallSolid preserved (delayed gravity)	251.7	95	100	yes
 8	2026-03-18T00:08	element_behaviors.dart	smoke/fire lateral drift reduction for consistent vertical plumes	255.0	95	100	yes
+9	2026-03-18T00:09	simulation_engine.dart	temperature update every 4 frames instead of 3	269.8	85	100	no
+10	2026-03-18T00:10	element_behaviors.dart	skip water neighbor reactions when deep (pressure>3)	238.1	90	100	no
+11	2026-03-18T00:11	element_behaviors.dart	early-exit water neighbor loop for water/empty + else-if chain	260.2	95	100	no
+12	2026-03-18T00:12	element_behaviors.dart	smoke stacking (spawn at y-2 when y-1 blocked by smoke)	265.3	95	95	no
+13	2026-03-18T00:13	element_behaviors.dart	100% smoke spawn first 5 frames then 50%/25%	245.9	95	100	no
