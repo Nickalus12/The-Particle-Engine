@@ -217,3 +217,35 @@ class TestHydrostaticParadox:
             assert abs(p - d) <= 1, (
                 f"Pressure at depth {d} should be ~{d}, got {p}"
             )
+
+
+class TestLoadDistribution:
+    """Taller liquid columns exert more pressure at the base."""
+
+    @pytest.mark.physics
+    def test_pressure_ratio_matches_height_ratio(self, ground_truth):
+        """P_tall / P_short should equal h_tall / h_short."""
+        gt = ground_truth.get("load_distribution")
+        if gt is None:
+            pytest.skip("No load_distribution oracle data")
+        expected_ratio = gt["expected_pressure_ratio"]
+        tall = gt["tall_height"]
+        short = gt["short_height"]
+        assert expected_ratio == pytest.approx(tall / short, rel=0.01)
+
+    @pytest.mark.physics
+    def test_tall_column_exerts_more_pressure(self, ground_truth):
+        """A column 3x taller should exert 3x the base pressure."""
+        gt = ground_truth.get("load_distribution")
+        if gt is None:
+            pytest.skip("No load_distribution oracle data")
+        assert gt["expected_pressure_ratio"] == pytest.approx(3.0, rel=0.01)
+        assert gt["tall_height"] > gt["short_height"]
+
+    @pytest.mark.physics
+    def test_load_principle(self, ground_truth):
+        """Principle: taller liquid column exerts more pressure at base."""
+        gt = ground_truth.get("load_distribution")
+        if gt is None:
+            pytest.skip("No load_distribution oracle data")
+        assert "pressure" in gt["principle"].lower()

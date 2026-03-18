@@ -146,3 +146,62 @@ class TestThermalConductivityOrdering:
         if wood_idx < 0:
             pytest.skip("Wood not in ordering")
         assert wood_idx > len(ordering) // 2, "Wood should be a poor conductor"
+
+
+class TestHeatDiffusion:
+    """Heat should diffuse from hot to cold following Fick's law."""
+
+    @pytest.mark.physics
+    def test_diffusion_coefficient_positive(self, ground_truth):
+        """Diffusion coefficient D should be positive."""
+        gt = ground_truth.get("diffusion")
+        if gt is None:
+            pytest.skip("No diffusion oracle data")
+        assert gt["D_coefficient"] > 0
+
+    @pytest.mark.physics
+    def test_initial_profile_has_hot_spot(self, ground_truth):
+        """Frame 0 should have a localized hot region (step function)."""
+        gt = ground_truth.get("diffusion")
+        if gt is None:
+            pytest.skip("No diffusion oracle data")
+        profile = gt["profiles"]["frame_0"]
+        max_temp = max(profile)
+        min_temp = min(profile)
+        assert max_temp > min_temp, "Initial profile should have temperature variation"
+
+    @pytest.mark.physics
+    def test_diffusion_spreads_heat(self, ground_truth):
+        """Later frames should have a wider, flatter temperature profile."""
+        gt = ground_truth.get("diffusion")
+        if gt is None:
+            pytest.skip("No diffusion oracle data")
+        profiles = gt["profiles"]
+        keys = sorted(profiles.keys(), key=lambda k: int(k.split("_")[1]))
+        if len(keys) < 2:
+            pytest.skip("Need at least 2 profile snapshots")
+        first = profiles[keys[0]]
+        last = profiles[keys[-1]]
+        # Standard deviation should decrease as heat spreads
+        import numpy as np
+        std_first = float(np.std(first))
+        std_last = float(np.std(last))
+        assert std_last <= std_first, (
+            f"Heat should spread: std went from {std_first:.2f} to {std_last:.2f}"
+        )
+
+    @pytest.mark.physics
+    def test_total_heat_conserved(self, ground_truth):
+        """Total heat (sum of temperatures) should be approximately conserved."""
+        gt = ground_truth.get("diffusion")
+        if gt is None:
+            pytest.skip("No diffusion oracle data")
+        profiles = gt["profiles"]
+        keys = sorted(profiles.keys(), key=lambda k: int(k.split("_")[1]))
+        sums = [sum(profiles[k]) for k in keys]
+        # All frame sums should be within 5% of each other
+        avg_sum = sum(sums) / len(sums)
+        for i, s in enumerate(sums):
+            assert s == pytest.approx(avg_sum, rel=0.05), (
+                f"Heat not conserved: frame {keys[i]} sum={s:.1f} vs avg={avg_sum:.1f}"
+            )

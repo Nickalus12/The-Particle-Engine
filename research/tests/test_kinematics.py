@@ -235,3 +235,57 @@ class TestSettling:
         # All sand should be on or near surfaces (no isolated floating sand)
         min_y = int(sand_ys.min())
         assert min_y > 50, f"Sand found at y={min_y}, seems to be floating"
+
+
+class TestStokesDrag:
+    """Terminal velocity should be proportional to density difference (Stokes law)."""
+
+    @pytest.mark.physics
+    @pytest.mark.parametrize(
+        "element", ["sand", "dirt", "metal", "stone"]
+    )
+    def test_stokes_data_exists(self, ground_truth, element):
+        """Each solid element should have Stokes drag oracle data."""
+        gt = ground_truth.get("stokes_drag", {})
+        entry = gt.get("data", {}).get(element)
+        if entry is None:
+            pytest.skip(f"No stokes_drag data for {element}")
+        assert entry["real_density"] > 0
+        assert entry["engine_gravity"] > 0
+        assert entry["engine_maxVel"] > 0
+
+    @pytest.mark.physics
+    def test_heavier_elements_have_higher_terminal_velocity(self, ground_truth):
+        """Real-world: denser elements should have higher Stokes terminal velocity."""
+        gt = ground_truth.get("stokes_drag", {})
+        data = gt.get("data", {})
+        if not data:
+            pytest.skip("No stokes_drag data")
+        # Sort by real density
+        sorted_els = sorted(data.items(), key=lambda x: x[1]["real_density"])
+        for i in range(1, len(sorted_els)):
+            prev_name, prev = sorted_els[i - 1]
+            curr_name, curr = sorted_els[i]
+            assert curr["stokes_terminal_velocity_m_s"] >= prev["stokes_terminal_velocity_m_s"], (
+                f"{curr_name} (d={curr['real_density']}) should have >= terminal velocity "
+                f"than {prev_name} (d={prev['real_density']})"
+            )
+
+    @pytest.mark.physics
+    def test_engine_gravity_ordering(self, ground_truth):
+        """Sand (gravity=2) should have higher engine gravity than dirt (gravity=1)."""
+        gt = ground_truth.get("stokes_drag", {})
+        data = gt.get("data", {})
+        sand = data.get("sand")
+        dirt = data.get("dirt")
+        if sand is None or dirt is None:
+            pytest.skip("Missing sand or dirt stokes data")
+        assert sand["engine_gravity"] >= dirt["engine_gravity"]
+
+    @pytest.mark.physics
+    def test_terminal_velocity_principle(self, ground_truth):
+        """Stokes drag principle should reference density difference."""
+        gt = ground_truth.get("stokes_drag")
+        if gt is None:
+            pytest.skip("No stokes_drag oracle data")
+        assert "density" in gt["principle"].lower()

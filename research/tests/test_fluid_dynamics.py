@@ -99,3 +99,86 @@ class TestSurfaceTension:
         for liquid in ["water", "oil", "acid", "lava", "mud"]:
             assert liquid in values, f"Missing surface tension for {liquid}"
             assert values[liquid] > 0, f"{liquid} surface tension should be > 0"
+
+
+class TestRippleDamping:
+    """Surface disturbances should decay over time, not amplify."""
+
+    @pytest.mark.physics
+    def test_damping_principle(self, ground_truth):
+        """Oracle confirms viscous dissipation damps water surface waves."""
+        gt = ground_truth.get("ripple_damping")
+        if gt is None:
+            pytest.skip("No ripple_damping oracle data")
+        assert gt["expected_late_less_than_early"] is True
+
+    @pytest.mark.physics
+    def test_damping_mechanism(self, ground_truth):
+        """Damping should be attributed to viscous dissipation."""
+        gt = ground_truth.get("ripple_damping")
+        if gt is None:
+            pytest.skip("No ripple_damping oracle data")
+        assert "dissipation" in gt["mechanism"].lower() or "viscous" in gt["mechanism"].lower()
+
+
+class TestCapillaryWicking:
+    """Porous materials should absorb water via capillary action."""
+
+    @pytest.mark.physics
+    def test_washburn_equation_defined(self, ground_truth):
+        """Oracle provides Washburn equation parameters for capillary rise."""
+        gt = ground_truth.get("capillary_wicking")
+        if gt is None:
+            pytest.skip("No capillary_wicking oracle data")
+        assert "washburn_equation" in gt
+        assert gt["gamma_N_per_m"] > 0
+        assert gt["viscosity_Pa_s"] > 0
+
+    @pytest.mark.physics
+    def test_wicking_distance_increases_with_time(self, ground_truth):
+        """Wicking distance should increase monotonically with time."""
+        gt = ground_truth.get("capillary_wicking")
+        if gt is None:
+            pytest.skip("No capillary_wicking oracle data")
+        distances = gt["wicking_distance_cm"]
+        for i in range(1, len(distances)):
+            assert distances[i] > distances[i - 1], (
+                f"Wicking distance should increase: {distances[i]} <= {distances[i-1]}"
+            )
+
+    @pytest.mark.physics
+    def test_porous_elements_have_porosity(self, ground_truth):
+        """All porous elements should have porosity values between 0 and 1."""
+        gt = ground_truth.get("capillary_wicking")
+        if gt is None:
+            pytest.skip("No capillary_wicking oracle data")
+        porous = gt["porous_elements"]
+        for name, porosity in porous.items():
+            assert 0 < porosity < 1, f"{name} porosity {porosity} out of range"
+
+    @pytest.mark.physics
+    def test_dirt_highest_porosity(self, ground_truth):
+        """Dirt should have the highest porosity among porous elements."""
+        gt = ground_truth.get("capillary_wicking")
+        if gt is None:
+            pytest.skip("No capillary_wicking oracle data")
+        porous = gt["porous_elements"]
+        assert porous["dirt"] == max(porous.values()), (
+            f"Dirt porosity {porous['dirt']} should be highest"
+        )
+
+    @pytest.mark.physics
+    def test_wicking_follows_sqrt_time(self, ground_truth):
+        """Washburn law: L^2 proportional to t (L ~ sqrt(t))."""
+        gt = ground_truth.get("capillary_wicking")
+        if gt is None:
+            pytest.skip("No capillary_wicking oracle data")
+        times = gt["times_s"]
+        distances = gt["wicking_distance_cm"]
+        # L^2/t should be approximately constant
+        ratios = [d * d / t for d, t in zip(distances, times)]
+        avg = sum(ratios) / len(ratios)
+        for r in ratios:
+            assert r == pytest.approx(avg, rel=0.05), (
+                f"L^2/t ratio {r:.2f} deviates from avg {avg:.2f}"
+            )
