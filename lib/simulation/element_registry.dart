@@ -84,6 +84,7 @@ final List<int> baseColors = List<int>.filled(maxElements, 0x00000000)
 /// Human-readable element names (index = element type).
 /// Mutable list sized to [maxElements].
 final List<String> elementNames = List<String>.filled(maxElements, '')
+  ..[El.empty] = 'Empty'
   ..[El.sand] = 'Sand'
   ..[El.water] = 'Water'
   ..[El.fire] = 'Fire'

@@ -2546,6 +2546,49 @@ extension ElementBehaviors on SimulationEngine {
       grid[idx] = El.empty; life[idx] = 0; return;
     }
 
+    // Selective corrosion: acid preferentially attacks the least resistant
+    // neighbor. Real chemistry: reaction kinetics follow Arrhenius rates
+    // k = A * exp(-Ea/RT), so lower activation energy (resistance) reactions
+    // dominate. Find the most reactive target first.
+    int bestNi = -1, bestResist = 999;
+    for (int dy = -1; dy <= 1; dy++) {
+      for (int dx = -1; dx <= 1; dx++) {
+        if (dx == 0 && dy == 0) continue;
+        final nx = wrapX(x + dx);
+        final ny = y + dy;
+        if (!inBoundsY(ny)) continue;
+        final ni = ny * gridW + nx;
+        final neighbor = grid[ni];
+        if (neighbor != El.empty && neighbor != El.water &&
+            neighbor != El.fire && neighbor != El.acid && neighbor != El.lava &&
+            neighbor != El.smoke && neighbor != El.steam && neighbor != El.bubble) {
+          final resistance = neighbor < maxElements ? elementCorrosionResistance[neighbor] : 0;
+          if (resistance < bestResist) {
+            bestResist = resistance;
+            bestNi = ni;
+          }
+        }
+      }
+    }
+    if (bestNi >= 0) {
+      final dissolveChance = 6 + (bestResist * 24) ~/ 90;
+      if (rng.nextInt(dissolveChance) == 0) {
+        grid[bestNi] = El.empty; life[bestNi] = 0; markProcessed(bestNi);
+        final bnx = bestNi % gridW;
+        final bny = bestNi ~/ gridW;
+        queueReactionFlash(bnx, bny, 60, 230, 60, 4);
+        // Acid consumed only when dissolving hard materials
+        if (bestResist > 40) {
+          grid[idx] = El.empty; life[idx] = 0;
+          return;
+        }
+        life[idx] = (life[idx] + 20).clamp(0, 255);
+        markDirty(x, y);
+        return;
+      }
+    }
+
+    // Non-corrosion neighbor reactions
     for (int dy = -1; dy <= 1; dy++) {
       for (int dx = -1; dx <= 1; dx++) {
         if (dx == 0 && dy == 0) continue;
@@ -2555,29 +2598,6 @@ extension ElementBehaviors on SimulationEngine {
         final ni = ny * gridW + nx;
         final neighbor = grid[ni];
 
-        // Corrosion-resistance-driven dissolving
-        // Higher corrosionResistance = harder to dissolve
-        // Acid survives dissolving soft materials, consumed by hard ones
-        if (neighbor != El.empty && neighbor != El.water &&
-            neighbor != El.fire && neighbor != El.acid && neighbor != El.lava &&
-            neighbor != El.smoke && neighbor != El.steam && neighbor != El.bubble) {
-          final resistance = neighbor < maxElements ? elementCorrosionResistance[neighbor] : 0;
-          // Base dissolve chance: soft (0 resist) = 1/6, hard (90 resist) = 1/30
-          final dissolveChance = 6 + (resistance * 24) ~/ 90;
-          if (rng.nextInt(dissolveChance) == 0) {
-            grid[ni] = El.empty; life[ni] = 0; markProcessed(ni);
-            queueReactionFlash(nx, ny, 60, 230, 60, 4);
-            // Acid is consumed only when dissolving hard materials
-            if (resistance > 40) {
-              grid[idx] = El.empty; life[idx] = 0;
-              return;
-            }
-            // Soft materials: acid survives but loses some life
-            life[idx] = (life[idx] + 20).clamp(0, 255);
-            markDirty(x, y);
-            return;
-          }
-        }
         if (neighbor == El.ant) {
           grid[ni] = El.empty; life[ni] = 0; markProcessed(ni);
         }
