@@ -319,16 +319,17 @@ class ParticleEngineGame extends FlameGame
   /// The visible half-size depends on the fixed resolution and current zoom.
   void clampCameraPosition() {
     final zoom = camera.viewfinder.zoom;
+    final halfW = cameraWidth / (2.0 * zoom);
     final halfH = cameraHeight / (2.0 * zoom);
 
     final pos = camera.viewfinder.position;
+    final minX = halfW;
+    final maxX = cameraWidth - halfW;
     final minY = halfH;
     final maxY = cameraHeight - halfH;
 
-    // X is unclamped — the world wraps horizontally so the camera
-    // can pan infinitely left/right.
     camera.viewfinder.position = Vector2(
-      pos.x,
+      minX < maxX ? pos.x.clamp(minX, maxX) : cameraWidth / 2,
       minY < maxY ? pos.y.clamp(minY, maxY) : cameraHeight / 2,
     );
   }

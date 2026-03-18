@@ -529,6 +529,10 @@ class PixelRenderer {
   Future<ui.Image> buildImage() async {
     final completedBuffer = _activePixels;
     _useFirstBuffer = !_useFirstBuffer;
+    // Copy completed buffer to the new active buffer so clean (non-dirty)
+    // chunks retain current pixel data instead of showing stale content
+    // from 2 frames ago. This prevents chunk flickering.
+    _activePixels.setAll(0, completedBuffer);
 
     final completer = Completer<ui.Image>();
     ui.decodeImageFromPixels(
