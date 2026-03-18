@@ -18,10 +18,10 @@ enum BrushMode {
   final String label;
 }
 
-/// Compact, glassmorphic toolbar positioned for thumb reach in landscape.
+/// Right-side vertical tool panel with brush controls, simulation toggles,
+/// and world actions. Slides in from the right edge.
 ///
-/// Contains brush controls, undo, clear, pause/play, day/night toggle,
-/// and shake. Slides in from the right edge.
+/// Narrow (68px) glassmorphic panel mirroring the left element palette.
 class ToolBar extends StatefulWidget {
   const ToolBar({super.key, required this.game, this.onInteraction});
 
@@ -145,67 +145,72 @@ class _ToolBarState extends State<ToolBar>
       child: Align(
         alignment: Alignment.centerRight,
         child: Padding(
-          padding: const EdgeInsets.only(right: 10),
+          padding: const EdgeInsets.only(right: 8, top: 8, bottom: 8),
           child: ClipRRect(
             borderRadius:
                 BorderRadius.circular(ParticleTheme.radiusLarge),
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
               child: Container(
-                width: 44,
+                width: 68,
                 decoration: ParticleTheme.glassDecoration(
                   borderRadius: ParticleTheme.radiusLarge,
                 ),
-                padding: const EdgeInsets.symmetric(vertical: 6),
+                padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Brush size
+                    // -- Brush section --
+                    _SectionLabel(label: 'Brush'),
+                    const SizedBox(height: 4),
                     _BrushSizeButton(
                       size: _brushSize,
                       onTap: _cycleBrushSize,
                     ),
-                    _divider(),
-                    // Brush mode
+                    const SizedBox(height: 4),
                     _ToolButton(
                       icon: _brushMode.icon,
                       onTap: _cycleBrushMode,
                       tooltip: _brushMode.label,
+                      label: _brushMode.label,
                     ),
                     _divider(),
-                    // Undo
+                    // -- Actions section --
+                    _SectionLabel(label: 'Actions'),
+                    const SizedBox(height: 4),
                     _ToolButton(
                       icon: Icons.undo_rounded,
                       onTap: () => _interact(),
                       tooltip: 'Undo',
+                      label: 'Undo',
                     ),
-                    _divider(),
-                    // Clear
+                    const SizedBox(height: 4),
                     _ToolButton(
                       icon: Icons.delete_outline_rounded,
                       onTap: () => _clearGrid(context),
                       tooltip: 'Clear',
+                      label: 'Clear',
                       iconColor: AppColors.danger,
-                      bgColor: AppColors.danger.withValues(alpha: 0.1),
                     ),
-                    _divider(),
-                    // Pause/Play
-                    _PausePlayButton(
-                      isPaused: _isPaused,
-                      onTap: _togglePause,
-                    ),
-                    _divider(),
-                    // Day/Night
-                    _DayNightButton(
-                      isNight: _isNight,
-                      onTap: _toggleDayNight,
-                    ),
-                    _divider(),
-                    // Shake
+                    const SizedBox(height: 4),
                     _ToolButton(
                       icon: Icons.vibration_rounded,
                       onTap: _shake,
                       tooltip: 'Shake',
+                      label: 'Shake',
+                    ),
+                    _divider(),
+                    // -- Simulation section --
+                    _SectionLabel(label: 'World'),
+                    const SizedBox(height: 4),
+                    _PausePlayButton(
+                      isPaused: _isPaused,
+                      onTap: _togglePause,
+                    ),
+                    const SizedBox(height: 4),
+                    _DayNightButton(
+                      isNight: _isNight,
+                      onTap: _toggleDayNight,
                     ),
                   ],
                 ),
@@ -218,12 +223,39 @@ class _ToolBarState extends State<ToolBar>
   }
 
   Widget _divider() => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 1, horizontal: 6),
-        child: Divider(
-          height: 1,
-          color: Colors.white.withValues(alpha: 0.08),
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 10),
+        child: Container(
+          height: 0.5,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Colors.white.withValues(alpha: 0.0),
+                Colors.white.withValues(alpha: 0.10),
+                Colors.white.withValues(alpha: 0.0),
+              ],
+            ),
+          ),
         ),
       );
+}
+
+/// Tiny section label for grouping tools.
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: AppTypography.caption.copyWith(
+        fontSize: 8,
+        color: AppColors.textDim,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.8,
+      ),
+    );
+  }
 }
 
 class _ToolButton extends StatefulWidget {
@@ -231,15 +263,15 @@ class _ToolButton extends StatefulWidget {
     required this.icon,
     required this.onTap,
     this.tooltip,
+    this.label,
     this.iconColor,
-    this.bgColor,
   });
 
   final IconData icon;
   final VoidCallback onTap;
   final String? tooltip;
+  final String? label;
   final Color? iconColor;
-  final Color? bgColor;
 
   @override
   State<_ToolButton> createState() => _ToolButtonState();
@@ -250,9 +282,6 @@ class _ToolButtonState extends State<_ToolButton> {
 
   @override
   Widget build(BuildContext context) {
-    final defaultBg = _hovered
-        ? AppColors.surfaceLight.withValues(alpha: 0.3)
-        : null;
     return Tooltip(
       message: widget.tooltip ?? '',
       child: MouseRegion(
@@ -266,17 +295,36 @@ class _ToolButtonState extends State<_ToolButton> {
             onTap: widget.onTap,
             child: AnimatedContainer(
               duration: ParticleTheme.fastDuration,
-              width: 36,
-              height: 36,
+              width: 52,
+              padding: const EdgeInsets.symmetric(vertical: 4),
               decoration: BoxDecoration(
-                color: widget.bgColor ?? defaultBg,
+                color: _hovered
+                    ? AppColors.surfaceLight.withValues(alpha: 0.3)
+                    : null,
                 borderRadius:
                     BorderRadius.circular(ParticleTheme.radiusSmall),
               ),
-              child: Icon(
-                widget.icon,
-                size: 22,
-                color: widget.iconColor ?? AppColors.textPrimary,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    widget.icon,
+                    size: 20,
+                    color: widget.iconColor ?? AppColors.textPrimary,
+                  ),
+                  if (widget.label != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.label!,
+                      style: AppTypography.caption.copyWith(
+                        fontSize: 7,
+                        color: _hovered
+                            ? AppColors.textPrimary
+                            : AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
@@ -309,8 +357,8 @@ class _PausePlayButton extends StatelessWidget {
           child: AnimatedContainer(
             duration: ParticleTheme.fastDuration,
             curve: ParticleTheme.defaultCurve,
-            width: 44,
-            height: 44,
+            width: 52,
+            padding: const EdgeInsets.symmetric(vertical: 6),
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.15),
               borderRadius:
@@ -320,12 +368,25 @@ class _PausePlayButton extends StatelessWidget {
                 width: 1,
               ),
             ),
-            child: Icon(
-              isPaused
-                  ? Icons.play_arrow_rounded
-                  : Icons.pause_rounded,
-              size: 22,
-              color: color,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  isPaused
+                      ? Icons.play_arrow_rounded
+                      : Icons.pause_rounded,
+                  size: 20,
+                  color: color,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isPaused ? 'Play' : 'Pause',
+                  style: AppTypography.caption.copyWith(
+                    fontSize: 7,
+                    color: color,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -357,19 +418,32 @@ class _DayNightButton extends StatelessWidget {
           child: AnimatedContainer(
             duration: ParticleTheme.fastDuration,
             curve: ParticleTheme.defaultCurve,
-            width: 44,
-            height: 44,
+            width: 52,
+            padding: const EdgeInsets.symmetric(vertical: 6),
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.12),
               borderRadius:
                   BorderRadius.circular(ParticleTheme.radiusSmall),
             ),
-            child: Icon(
-              isNight
-                  ? Icons.dark_mode_rounded
-                  : Icons.light_mode_rounded,
-              size: 22,
-              color: color,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  isNight
+                      ? Icons.dark_mode_rounded
+                      : Icons.light_mode_rounded,
+                  size: 20,
+                  color: color,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isNight ? 'Night' : 'Day',
+                  style: AppTypography.caption.copyWith(
+                    fontSize: 7,
+                    color: color,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -387,7 +461,7 @@ class _BrushSizeButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final diameter = 8.0 + (size * 3.0);
+    final diameter = 6.0 + (size * 2.0);
     return Tooltip(
       message: 'Brush: ${size}px',
       child: Material(
@@ -396,29 +470,40 @@ class _BrushSizeButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(ParticleTheme.radiusSmall),
           onTap: onTap,
           child: SizedBox(
-            width: 36,
-            height: 36,
-            child: Center(
-              child: AnimatedContainer(
-                duration: ParticleTheme.fastDuration,
-                curve: ParticleTheme.defaultCurve,
-                width: diameter,
-                height: diameter,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.textPrimary,
-                  border: Border.all(
-                    color: AppColors.primary.withValues(alpha: 0.5),
-                    width: 1.5,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.primary.withValues(alpha: 0.3),
-                      blurRadius: 8,
+            width: 52,
+            height: 40,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                AnimatedContainer(
+                  duration: ParticleTheme.fastDuration,
+                  curve: ParticleTheme.defaultCurve,
+                  width: diameter,
+                  height: diameter,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.textPrimary,
+                    border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.5),
+                      width: 1.5,
                     ),
-                  ],
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: 0.3),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+                const SizedBox(height: 2),
+                Text(
+                  '${size}px',
+                  style: AppTypography.caption.copyWith(
+                    fontSize: 7,
+                    color: AppColors.textDim,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
