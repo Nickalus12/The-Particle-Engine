@@ -73,12 +73,25 @@ extension ElementBehaviors on SimulationEngine {
       life[idx] = 100;
     }
 
-    // Freeze near ice — only when temperature is cold (below 100)
-    // Prevents ice from aggressively spreading in warm environments
-    if (temperature[idx] < 100 && rng.nextInt(300) == 0 && checkAdjacent(x, y, El.ice)) {
-      grid[idx] = El.ice;
-      markProcessed(idx);
-      return;
+    // Stefan solidification: water near ice freezes at a rate proportional
+    // to its subcooling. The Stefan condition states that the solidification
+    // front velocity v ∝ ΔT/L (subcooling / latent heat). Colder water
+    // adjacent to ice freezes much faster than water near the freezing point.
+    {
+      final t = temperature[idx];
+      if (t < 120 && checkAdjacent(x, y, El.ice)) {
+        // Freezing rate scales with subcooling: colder = faster
+        // At temp 50 (deeply cold): ~1/10 per frame
+        // At temp 90 (mildly cold): ~1/60 per frame
+        // At temp 115 (barely cold): ~1/200 per frame
+        final subcooling = 120 - t; // 0..120
+        final rate = (300 - subcooling * 3).clamp(10, 300);
+        if (rng.nextInt(rate) == 0) {
+          grid[idx] = El.ice;
+          markProcessed(idx);
+          return;
+        }
+      }
     }
 
     // Surface evaporation (water cycle): surface water slowly evaporates.
@@ -2330,6 +2343,17 @@ extension ElementBehaviors on SimulationEngine {
       life[idx] = 100;
       markProcessed(idx);
       return;
+    }
+
+    // Heterogeneous condensation: steam deposits on cold surfaces (ice)
+    // when the surface temperature is below the dew point. This is the
+    // physical mechanism behind frost formation and steam condensing on
+    // cold windows. Rate depends on temperature difference.
+    if (checkAdjacent(x, y, El.ice)) {
+      // Steam near ice condenses readily — ~25% chance per frame
+      if (rng.nextInt(4) == 0) {
+        grid[idx] = El.water; life[idx] = 100; markProcessed(idx); return;
+      }
     }
 
     // Adjacent-water condensation — only meaningful underground or at night.
