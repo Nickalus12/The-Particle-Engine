@@ -1,2 +1,7 @@
 numpy
 scipy
+scikit-image
+colour-science
+Pillow
+pytest
+pytest-html
