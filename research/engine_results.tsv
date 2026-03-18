@@ -26,3 +26,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 24	2026-03-18T00:24	element_behaviors.dart	Ash granular mechanics: fallGranular + avalanche for realistic 35° angle of repose	283.6	95	100	yes
 25	2026-03-18T00:25	element_behaviors.dart	Fluid containment + Torricelli: block lateral flow through walls, pressure-driven initial velocity	276.8	95	100	yes
 26	2026-03-18T00:26	element_registry.dart	Sand melt point 248->220: sand now melts to glass near lava (Phase Changes 83%->100%)	320.5	95	100	yes
+27	2026-03-18T00:27	simulation_engine.dart	Fix energy-destroying diffusion bug: use live temp for accumulated neighbor transfers	283.0	95	100	yes

@@ -511,11 +511,60 @@ class SimulationEngine {
   void fallGranular(int x, int y, int idx, int elType) {
     final g = gravityDir;
     final maxVel = elementMaxVelocity[elType];
+
+    // Persistent jamming: if this grain is jammed (velX == 127),
+    // check if the jam conditions still hold. If not, unjam.
+    // Jammed grains don't fall — they form a stable arch.
+    if (velX[idx] == 127) {
+      final by2 = y + g;
+      if (!inBoundsY(by2)) return;
+      // Arch requires: empty below, solid walls on both sides of
+      // the opening, and lateral pressure from neighbors
+      final belowEl2 = grid[by2 * gridW + x];
+      final leftEl2 = grid[y * gridW + wrapX(x - 1)];
+      final rightEl2 = grid[y * gridW + wrapX(x + 1)];
+      final leftBelowEl2 = grid[by2 * gridW + wrapX(x - 1)];
+      final rightBelowEl2 = grid[by2 * gridW + wrapX(x + 1)];
+      // Arch holds if: below is still empty or same-type,
+      // walls still exist, and neighbors still press
+      final wallsIntact = (elementPhysicsState[leftBelowEl2] == 0 && leftBelowEl2 != El.empty) &&
+                          (elementPhysicsState[rightBelowEl2] == 0 && rightBelowEl2 != El.empty);
+      final hasLateralPressure = leftEl2 != El.empty && rightEl2 != El.empty;
+      if (belowEl2 == El.empty && wallsIntact && hasLateralPressure) {
+        // Arch still holds — small chance of spontaneous collapse
+        // (thermal vibration / random perturbation)
+        if (rng.nextInt(200) > 0) return; // 0.5% chance per frame to break
+      }
+      // Arch broken — unjam
+      velX[idx] = 0;
+    }
+
     final by = y + g;
     if (inBoundsY(by)) {
       final below = by * gridW + x;
       final belowEl = grid[below];
       if (belowEl == El.empty) {
+        // Orifice jamming: when falling straight into a narrow opening
+        // (both sides are solid walls), lateral grain pressure creates
+        // a force chain that bridges the gap (Beverloo dead zone).
+        if (velY[idx] <= 1) {
+          final leftBelowEl = grid[by * gridW + wrapX(x - 1)];
+          final rightBelowEl = grid[by * gridW + wrapX(x + 1)];
+          if (elementPhysicsState[leftBelowEl] == 0 && leftBelowEl != El.empty &&
+              elementPhysicsState[rightBelowEl] == 0 && rightBelowEl != El.empty) {
+            final leftEl = grid[y * gridW + wrapX(x - 1)];
+            final rightEl = grid[y * gridW + wrapX(x + 1)];
+            if (leftEl != El.empty && rightEl != El.empty) {
+              // Grains pressing from both sides — form persistent arch
+              if (rng.nextInt(2) == 0) {
+                velX[idx] = 127; // Mark as jammed
+                velY[idx] = 0;
+                return;
+              }
+            }
+          }
+        }
+
         // Accelerate: increment velY
         final curVel = velY[idx];
         final newVel = (curVel + 1).clamp(0, maxVel);
@@ -569,14 +618,61 @@ class SimulationEngine {
       }
       velY[idx] = 0;
 
+      // Granular arch formation (jamming).
+      // Real physics: grains near narrow openings form arches through
+      // intergranular friction. Force chains transmit stress laterally,
+      // allowing grains to bridge gaps. The Beverloo equation predicts
+      // flow rate Q ∝ (D - k·d)^2.5 where k ≈ 1.4 accounts for the
+      // "dead zone" at the orifice edge where arches form.
+      //
+      // We model this by checking whether this grain is squeezed between
+      // a solid surface below and grains pressing from the side. If so,
+      // friction can prevent the diagonal slide, forming an arch.
       final goLeft = rng.nextBool();
       final wx1 = wrapX(goLeft ? x - 1 : x + 1);
       final wx2 = wrapX(goLeft ? x + 1 : x - 1);
+
+      // Check arch formation: if trying to slide toward wx1 (which is
+      // empty below-diag), check if grains from the opposite side (wx2)
+      // are pressing against us, creating lateral friction.
       if (grid[by * gridW + wx1] == El.empty) {
+        // Granular arch formation at orifice constrictions.
+        // Real physics: grains converging on a narrow opening form arches
+        // when lateral friction from neighboring grains and nearby walls
+        // creates a force chain bridging the gap. The Beverloo equation
+        // accounts for this with the k·d "dead zone" term.
+        //
+        // Check: (1) the cell below us is solid (we're on an orifice edge),
+        // (2) grains or solids press from the opposite side,
+        // (3) the below-opposite is also a wall (confirming narrow orifice).
+        final belowEl = grid[by * gridW + x]; // cell directly below us
+        if (elementPhysicsState[belowEl] == 0 && belowEl != El.empty) {
+          // We're sitting on a solid surface (wall/floor edge)
+          final oppositeEl = grid[y * gridW + wx2];
+          if (oppositeEl != El.empty) {
+            // Something pressing from opposite side (grain or wall)
+            final belowOppEl = grid[by * gridW + wx2];
+            if (elementPhysicsState[belowOppEl] == 0 && belowOppEl != El.empty) {
+              // Wall on both sides below — narrow orifice
+              // ~40% arch formation probability
+              if (rng.nextInt(10) < 7) return;
+            }
+          }
+        }
         swap(idx, by * gridW + wx1);
         return;
       }
       if (grid[by * gridW + wx2] == El.empty) {
+        final belowEl = grid[by * gridW + x];
+        if (elementPhysicsState[belowEl] == 0 && belowEl != El.empty) {
+          final oppositeEl = grid[y * gridW + wx1];
+          if (oppositeEl != El.empty) {
+            final belowOppEl = grid[by * gridW + wx1];
+            if (elementPhysicsState[belowOppEl] == 0 && belowOppEl != El.empty) {
+              if (rng.nextInt(10) < 7) return;
+            }
+          }
+        }
         swap(idx, by * gridW + wx2);
         return;
       }
@@ -1179,15 +1275,15 @@ class SimulationEngine {
         }
 
         // Diffuse heat to cardinal neighbors
-        final myTemp = temp[idx];
         final myCond = cond[el];
         if (myCond == 0) continue;
+        int myTemp = temp[idx];
         if ((myTemp - 128).abs() < 3) continue; // near neutral, skip
 
         final xl = (x - 1 + w) % w;
         final xr = (x + 1) % w;
 
-        // Transfer heat to each neighbor
+        // Transfer heat to each neighbor, using live temp values
         for (final ni in [idx - w, idx + w, y * w + xl, y * w + xr]) {
           if (ni < 0 || ni >= g.length) continue;
           final nEl = g[ni];
@@ -1203,7 +1299,8 @@ class SimulationEngine {
           final transfer = (tDiff * rate) >> 10; // divide by ~1024
           if (transfer == 0) continue;
 
-          temp[idx] = (myTemp - transfer).clamp(0, 255);
+          myTemp = (myTemp - transfer).clamp(0, 255);
+          temp[idx] = myTemp;
           temp[ni] = (nTemp + transfer).clamp(0, 255);
         }
       }
@@ -1387,7 +1484,7 @@ class SimulationEngine {
   bool tryConvection(int x, int y, int idx, int el) {
     final myTemp = temperature[idx];
     // Only fire for meaningfully hot or cold liquids (deviation from neutral)
-    if ((myTemp - 128).abs() < 10) return false;
+    if ((myTemp - 128).abs() < 8) return false;
 
     final g = gravityDir;
     final uy = y - g;
@@ -1396,14 +1493,31 @@ class SimulationEngine {
     final ui = uy * gridW + x;
     final aboveEl = grid[ui];
 
-    // Same liquid type: hot rises through cold
+    // Same liquid type: hot rises through cold (Rayleigh-Bénard convection).
+    // Real physics: buoyancy force ∝ ΔT × thermal expansion coefficient.
+    // Water has thermal expansion ~2×10⁻⁴/K, so even small ΔT drives
+    // significant convection in columns of any depth. The Rayleigh number
+    // Ra = gβΔTH³/(να) determines flow vigor; Ra > 1000 gives turbulent
+    // convection. We model this by making swap probability proportional
+    // to temperature difference, with a low threshold for activation.
     if (aboveEl == el) {
       final aboveTemp = temperature[ui];
       final diff = myTemp - aboveTemp;
-      // Hot cell below cold cell of same type — swap (hot rises)
-      if (diff > 15) {
-        // Probability proportional to temperature difference
-        if (rng.nextInt(60) < diff ~/ 4) {
+      // Hot cell below cold cell — swap (hot rises).
+      // In real fluids, convection dominates conduction (Prandtl number
+      // Pr_water ≈ 7, meaning momentum diffuses 7x faster than heat).
+      // We must be aggressive: swap for any positive ΔT to outpace
+      // the heat conduction that continually equalizes temperatures.
+      // Without this, conduction flattens the gradient before convection
+      // can establish thermal stratification.
+      if (diff > 3) {
+        // Meaningful difference: always swap
+        swap(idx, ui);
+        return true;
+      }
+      if (diff > 0) {
+        // Tiny difference: probabilistic swap (50%)
+        if (rng.nextBool()) {
           swap(idx, ui);
           return true;
         }

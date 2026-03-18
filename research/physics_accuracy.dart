@@ -2806,6 +2806,1347 @@ TestResult testLoadDistribution() {
 }
 
 // ===========================================================================
+// Helpers for dynamic tests (case-insensitive element name lookup)
+// ===========================================================================
+
+int _elIdByName(String name) {
+  for (int i = 0; i < El.count; i++) {
+    if (elementNames[i].toLowerCase() == name.toLowerCase()) return i;
+  }
+  return -1;
+}
+
+// ===========================================================================
+// KINEMATICS (K1-K10)
+// ===========================================================================
+
+TestResult testTrajectoryRSquared() {
+  final oracle = _oracle('gravity_all');
+  if (oracle == null) return _oracleError('K1: Trajectory R2', 'gravity_all');
+  double totalR2 = 0;
+  int tested = 0;
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    final elId = _elIdByName(entry.key);
+    if (elId < 0) continue;
+    if ((data['gravity'] as int) <= 0) continue;
+    final positions = data['positions_60frames'] as List;
+    final e = _createEngine(20, 80);
+    e.grid[2 * e.gridW + 10] = elId;
+    final measured = <double>[];
+    final expected = <double>[];
+    for (int f = 0; f < 30 && f < positions.length; f++) {
+      _step(e, 1);
+      int foundY = 2;
+      for (int y = e.gridH - 1; y >= 0; y--) {
+        if (e.grid[y * e.gridW + 10] == elId) {
+          foundY = y;
+          break;
+        }
+      }
+      measured.add(foundY.toDouble());
+      expected.add((positions[f] as num).toDouble());
+    }
+    if (measured.length < 5) continue;
+    final meanE = expected.reduce((a, b) => a + b) / expected.length;
+    double ssRes = 0, ssTot = 0;
+    for (int i = 0; i < measured.length; i++) {
+      ssRes += (measured[i] - expected[i]) * (measured[i] - expected[i]);
+      ssTot += (expected[i] - meanE) * (expected[i] - meanE);
+    }
+    final r2 = ssTot > 0 ? 1.0 - ssRes / ssTot : 1.0;
+    totalR2 += r2.clamp(0.0, 1.0);
+    tested++;
+  }
+  if (tested == 0) {
+    return TestResult('K1: Trajectory R2', 0.0, 'no elements tested');
+  }
+  final avg = totalR2 / tested;
+  return TestResult('K1: Trajectory R2', avg,
+      '$tested elements, avg R2=${avg.toStringAsFixed(3)}');
+}
+
+List<TestResult> testTerminalVelocity() {
+  final oracle = _oracle('gravity_all');
+  if (oracle == null) return [_oracleError('K2: Terminal Vel', 'gravity_all')];
+  final results = <TestResult>[];
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    final elId = _elIdByName(entry.key);
+    if (elId < 0) continue;
+    final expectedMax = data['maxVelocity'] as int;
+    if (expectedMax <= 0) continue;
+    final eng = _createEngine(10, 120);
+    eng.grid[2 * eng.gridW + 5] = elId;
+    int prevY = 2;
+    int maxDelta = 0;
+    for (int f = 0; f < 60; f++) {
+      _step(eng, 1);
+      int curY = 2;
+      for (int y = eng.gridH - 1; y >= 0; y--) {
+        if (eng.grid[y * eng.gridW + 5] == elId) {
+          curY = y;
+          break;
+        }
+      }
+      final delta = curY - prevY;
+      if (delta > maxDelta) maxDelta = delta;
+      prevY = curY;
+    }
+    results.add(TestResult('K2: TermVel ${entry.key}',
+        maxDelta <= expectedMax ? 1.0 : 0.0,
+        'maxDelta=$maxDelta, expected<=$expectedMax'));
+  }
+  return results.isEmpty
+      ? [TestResult('K2: Terminal Vel', 0.0, 'no elements')]
+      : results;
+}
+
+TestResult testSimultaneousDrop() {
+  final e = _createEngine(40, 80);
+  e.grid[2 * e.gridW + 10] = El.sand;
+  e.grid[2 * e.gridW + 30] = El.dirt;
+  _step(e, 40);
+  int sandY = -1, dirtY = -1;
+  for (int y = e.gridH - 1; y >= 0; y--) {
+    if (sandY < 0 && e.grid[y * e.gridW + 10] == El.sand) sandY = y;
+    if (dirtY < 0 && e.grid[y * e.gridW + 30] == El.dirt) dirtY = y;
+  }
+  final diff = (sandY - dirtY).abs();
+  final score = diff <= 2 ? 1.0 : (1.0 - diff / 20.0).clamp(0.0, 1.0);
+  return TestResult(
+      'K3: Simultaneous Drop', score, 'sand=$sandY, dirt=$dirtY, diff=$diff');
+}
+
+TestResult testMultiCellFall() {
+  final e = _createEngine(20, 60);
+  for (int y = 3; y < 8; y++) {
+    e.grid[y * e.gridW + 10] = El.sand;
+  }
+  _step(e, 30);
+  int sandCount = 0;
+  for (int y = e.gridH - 5; y < e.gridH; y++) {
+    if (e.grid[y * e.gridW + 10] == El.sand) sandCount++;
+  }
+  int totalSand = 0;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.sand) totalSand++;
+  }
+  final score = (sandCount / 5.0) * 0.7 + (totalSand == 5 ? 1.0 : 0.5) * 0.3;
+  return TestResult(
+      'K4: Multi-Cell Fall', score, 'stacked=$sandCount/5, total=$totalSand/5');
+}
+
+TestResult testDragInFluid() {
+  final e1 = _createEngine(20, 60);
+  e1.grid[2 * e1.gridW + 10] = El.sand;
+  _step(e1, 20);
+  int sandVacuum = 2;
+  for (int y = e1.gridH - 1; y >= 0; y--) {
+    if (e1.grid[y * e1.gridW + 10] == El.sand) {
+      sandVacuum = y;
+      break;
+    }
+  }
+  final e2 = _createEngine(20, 60);
+  for (int y = 10; y < 60; y++) {
+    e2.grid[y * e2.gridW + 10] = El.water;
+  }
+  e2.grid[2 * e2.gridW + 10] = El.sand;
+  _step(e2, 20);
+  int sandWater = 2;
+  for (int y = e2.gridH - 1; y >= 0; y--) {
+    if (e2.grid[y * e2.gridW + 10] == El.sand) {
+      sandWater = y;
+      break;
+    }
+  }
+  final vacDist = sandVacuum - 2;
+  final watDist = sandWater - 2;
+  final score = (vacDist > 0 && watDist > 0) ? 1.0 : 0.0;
+  return TestResult(
+      'K5: Drag in Fluid', score, 'vacuum=$vacDist, water=$watDist');
+}
+
+TestResult testRiseSpeed() {
+  final oracle = _oracle('gravity_all');
+  if (oracle == null) return _oracleError('K6: Rise Speed', 'gravity_all');
+  int tested = 0;
+  double totalScore = 0;
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    final elId = _elIdByName(entry.key);
+    if (elId < 0) continue;
+    if ((data['gravity'] as int) >= 0) continue;
+    if ((data['direction'] as String) != 'up') continue;
+    final eng = _createEngine(20, 60);
+    eng.grid[50 * eng.gridW + 10] = elId;
+    _step(eng, 15);
+    int finalY = 50;
+    for (int y = 0; y < eng.gridH; y++) {
+      if (eng.grid[y * eng.gridW + 10] == elId) {
+        finalY = y;
+        break;
+      }
+    }
+    final rose = 50 - finalY;
+    totalScore += rose > 0 ? (rose / 10.0).clamp(0.0, 1.0) : 0.0;
+    tested++;
+  }
+  if (tested == 0) return TestResult('K6: Rise Speed', 0.0, 'no gases tested');
+  final avg = totalScore / tested;
+  return TestResult(
+      'K6: Rise Speed', avg, '$tested gases, avg=${avg.toStringAsFixed(2)}');
+}
+
+TestResult testFreefallSymmetry() {
+  final e = _createEngine(40, 60);
+  e.grid[2 * e.gridW + 10] = El.sand;
+  e.grid[2 * e.gridW + 30] = El.sand;
+  _step(e, 30);
+  int leftY = 2, rightY = 2;
+  for (int y = e.gridH - 1; y >= 0; y--) {
+    if (e.grid[y * e.gridW + 10] == El.sand) {
+      leftY = y;
+      break;
+    }
+  }
+  for (int y = e.gridH - 1; y >= 0; y--) {
+    if (e.grid[y * e.gridW + 30] == El.sand) {
+      rightY = y;
+      break;
+    }
+  }
+  final diff = (leftY - rightY).abs();
+  return TestResult(
+      'K7: Freefall Symmetry',
+      diff == 0 ? 1.0 : (1.0 - diff / 10.0).clamp(0.0, 1.0),
+      'left=$leftY, right=$rightY, diff=$diff');
+}
+
+TestResult testGravityDisabledForGas() {
+  final e = _createEngine(20, 40);
+  e.grid[20 * e.gridW + 10] = El.smoke;
+  _step(e, 20);
+  bool foundBelow = false;
+  for (int y = 21; y < e.gridH; y++) {
+    if (e.grid[y * e.gridW + 10] == El.smoke) {
+      foundBelow = true;
+      break;
+    }
+  }
+  return TestResult('K8: Gas No Gravity', foundBelow ? 0.0 : 1.0,
+      foundBelow ? 'smoke fell (wrong)' : 'smoke rose/dissipated');
+}
+
+TestResult testVelocityClamping() {
+  final oracle = _oracle('gravity_all');
+  if (oracle == null) return _oracleError('K9: Vel Clamping', 'gravity_all');
+  int violations = 0, tested = 0;
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    final elId = _elIdByName(entry.key);
+    if (elId < 0) continue;
+    final maxV = data['maxVelocity'] as int;
+    if (maxV <= 0) continue;
+    final eng = _createEngine(10, 200);
+    eng.grid[2 * eng.gridW + 5] = elId;
+    int prevY = 2;
+    for (int f = 0; f < 80; f++) {
+      _step(eng, 1);
+      int curY = 2;
+      for (int y = eng.gridH - 1; y >= 0; y--) {
+        if (eng.grid[y * eng.gridW + 5] == elId) {
+          curY = y;
+          break;
+        }
+      }
+      if (curY - prevY > maxV + 1) violations++;
+      prevY = curY;
+      tested++;
+    }
+  }
+  final score =
+      tested > 0 ? 1.0 - (violations / tested).clamp(0.0, 1.0) : 0.0;
+  return TestResult(
+      'K9: Vel Clamping', score, '$violations violations in $tested frames');
+}
+
+TestResult testProjectileLanding() {
+  final e = _createEngine(20, 100);
+  e.grid[5 * e.gridW + 10] = El.stone;
+  _step(e, 60);
+  int stoneY = -1;
+  for (int y = e.gridH - 1; y >= 0; y--) {
+    if (e.grid[y * e.gridW + 10] == El.stone) {
+      stoneY = y;
+      break;
+    }
+  }
+  final distFromBottom = e.gridH - 1 - stoneY;
+  return TestResult(
+      'K10: Landing',
+      distFromBottom <= 1
+          ? 1.0
+          : (1.0 - distFromBottom / 50.0).clamp(0.0, 1.0),
+      'stone at y=$stoneY, bottom=${e.gridH - 1}');
+}
+
+// ===========================================================================
+// PHASE CHANGES (PC1-PC8)
+// ===========================================================================
+
+TestResult testMeltPointOrdering() {
+  final oracle = _oracle('phase_changes_all');
+  if (oracle == null) {
+    return _oracleError('PC1: Melt Order', 'phase_changes_all');
+  }
+  final meltData = <MapEntry<String, int>>[];
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    if (data.containsKey('melt')) {
+      meltData.add(MapEntry(entry.key,
+          (data['melt'] as Map<String, dynamic>)['threshold'] as int));
+    }
+  }
+  meltData.sort((a, b) => a.value.compareTo(b.value));
+  int correct = 0;
+  for (int i = 0; i < meltData.length - 1; i++) {
+    final idA = _elIdByName(meltData[i].key);
+    final idB = _elIdByName(meltData[i + 1].key);
+    if (idA < 0 || idB < 0) continue;
+    if (elementProperties[idA].meltPoint <= elementProperties[idB].meltPoint) {
+      correct++;
+    }
+  }
+  final pairs = meltData.length - 1;
+  return TestResult('PC1: Melt Order',
+      pairs > 0 ? correct / pairs : 0.0, '$correct/$pairs ordered');
+}
+
+TestResult testIceMelting() {
+  final e = _createEngine(20, 20);
+  for (int y = 8; y < 12; y++) {
+    for (int x = 8; x < 12; x++) {
+      e.grid[y * e.gridW + x] = El.ice;
+    }
+  }
+  for (int x = 6; x < 14; x++) {
+    e.grid[7 * e.gridW + x] = El.lava;
+    e.grid[12 * e.gridW + x] = El.lava;
+  }
+  _step(e, 60);
+  int iceCount = 0, waterCount = 0;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.ice) iceCount++;
+    if (e.grid[i] == El.water) waterCount++;
+  }
+  final score = (iceCount < 16 ? 0.6 : 0.0) + (waterCount > 0 ? 0.4 : 0.0);
+  return TestResult(
+      'PC2: Ice Melting', score, 'ice=$iceCount/16, water=$waterCount');
+}
+
+TestResult testWaterBoiling() {
+  final e = _createEngine(30, 30);
+  for (int x = 5; x < 25; x++) {
+    e.grid[20 * e.gridW + x] = El.water;
+    e.grid[21 * e.gridW + x] = El.lava;
+    e.grid[22 * e.gridW + x] = El.lava;
+  }
+  _step(e, 80);
+  int steamCount = 0;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.steam) steamCount++;
+  }
+  return TestResult(
+      'PC3: Water Boiling',
+      steamCount > 0 ? (steamCount / 10.0).clamp(0.0, 1.0) : 0.0,
+      'steam=$steamCount');
+}
+
+TestResult testSteamCondensation() {
+  final e = _createEngine(30, 40);
+  for (int x = 5; x < 25; x++) {
+    e.grid[5 * e.gridW + x] = El.ice;
+    e.grid[15 * e.gridW + x] = El.steam;
+  }
+  _step(e, 120);
+  int waterCount = 0;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.water) waterCount++;
+  }
+  return TestResult(
+      'PC4: Condensation', waterCount > 0 ? 1.0 : 0.3, 'water=$waterCount');
+}
+
+TestResult testFreezingChain() {
+  final e = _createEngine(20, 20);
+  for (int x = 10; x < 18; x++) {
+    e.grid[10 * e.gridW + x] = El.water;
+  }
+  e.grid[10 * e.gridW + 9] = El.ice;
+  for (int x = 9; x < 19; x++) {
+    e.grid[11 * e.gridW + x] = El.stone;
+  }
+  _step(e, 100);
+  int iceCount = 0;
+  for (int y = 8; y < 12; y++) {
+    for (int x = 9; x < 19; x++) {
+      if (e.grid[y * e.gridW + x] == El.ice) iceCount++;
+    }
+  }
+  return TestResult(
+      'PC5: Freezing Chain',
+      iceCount > 1 ? ((iceCount - 1) / 4.0).clamp(0.0, 1.0) : 0.0,
+      'ice=$iceCount (started with 1)');
+}
+
+TestResult testSandMeltsToGlass() {
+  final e = _createEngine(20, 20);
+  e.grid[10 * e.gridW + 10] = El.sand;
+  for (int dy = -1; dy <= 1; dy++) {
+    for (int dx = -1; dx <= 1; dx++) {
+      if (dx == 0 && dy == 0) continue;
+      e.grid[(10 + dy) * e.gridW + (10 + dx)] = El.lava;
+    }
+  }
+  _step(e, 200);
+  int glassCount = 0;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.glass) glassCount++;
+  }
+  return TestResult(
+      'PC6: Sand to Glass', glassCount > 0 ? 1.0 : 0.0, 'glass=$glassCount');
+}
+
+TestResult testBoilingRequiresHeat() {
+  final e = _createEngine(20, 20);
+  for (int x = 5; x < 15; x++) {
+    e.grid[15 * e.gridW + x] = El.water;
+  }
+  for (int x = 4; x < 16; x++) {
+    e.grid[16 * e.gridW + x] = El.stone;
+  }
+  _step(e, 60);
+  int steamCount = 0;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.steam) steamCount++;
+  }
+  return TestResult(
+      'PC7: No Heat No Boil',
+      steamCount == 0 ? 1.0 : (1.0 - steamCount / 5.0).clamp(0.0, 1.0),
+      'steam=$steamCount (should be 0)');
+}
+
+TestResult testPhaseChangeProperties() {
+  final oracle = _oracle('phase_changes_all');
+  if (oracle == null) {
+    return _oracleError('PC8: Phase Props', 'phase_changes_all');
+  }
+  int correct = 0, total = 0;
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    final elId = _elIdByName(entry.key);
+    if (elId < 0) continue;
+    final props = elementProperties[elId];
+    if (data.containsKey('melt')) {
+      total++;
+      final thresh = (data['melt'] as Map<String, dynamic>)['threshold'] as int;
+      if ((props.meltPoint - thresh).abs() <= 5) correct++;
+    }
+    if (data.containsKey('boil')) {
+      total++;
+      final thresh = (data['boil'] as Map<String, dynamic>)['threshold'] as int;
+      if ((props.boilPoint - thresh).abs() <= 5) correct++;
+    }
+    if (data.containsKey('freeze')) {
+      total++;
+      final thresh =
+          (data['freeze'] as Map<String, dynamic>)['threshold'] as int;
+      if ((props.freezePoint - thresh).abs() <= 5) correct++;
+    }
+  }
+  return TestResult('PC8: Phase Props', total > 0 ? correct / total : 0.0,
+      '$correct/$total match (+/-5)');
+}
+
+// ===========================================================================
+// STRUCTURAL MECHANICS (SM1-SM10)
+// ===========================================================================
+
+TestResult testMetalVsStoneHardness() {
+  final mH = elementProperties[El.metal].hardness;
+  final sH = elementProperties[El.stone].hardness;
+  return TestResult(
+      'SM1: Metal>Stone', mH > sH ? 1.0 : 0.0, 'metal=$mH, stone=$sH');
+}
+
+TestResult testHardnessRanking() {
+  final oracle = _oracle('structural_all');
+  if (oracle == null) {
+    return _oracleError('SM2: Hardness Rank', 'structural_all');
+  }
+  final entries = oracle.entries.toList()
+    ..sort((a, b) =>
+        ((b.value as Map<String, dynamic>)['structural_score'] as num)
+            .compareTo(
+                (a.value as Map<String, dynamic>)['structural_score'] as num));
+  int correct = 0, pairs = 0;
+  for (int i = 0; i < entries.length - 1; i++) {
+    final idA = _elIdByName(entries[i].key);
+    final idB = _elIdByName(entries[i + 1].key);
+    if (idA < 0 || idB < 0) continue;
+    pairs++;
+    if (elementProperties[idA].hardness >= elementProperties[idB].hardness) {
+      correct++;
+    }
+  }
+  return TestResult('SM2: Hardness Rank',
+      pairs > 0 ? correct / pairs : 0.0, '$correct/$pairs');
+}
+
+TestResult testStructuralIntegrity() {
+  final e = _createEngine(30, 30);
+  for (int x = 5; x < 25; x++) {
+    e.grid[20 * e.gridW + x] = El.stone;
+    e.grid[19 * e.gridW + x] = El.metal;
+  }
+  _step(e, 30);
+  int metalAt19 = 0;
+  for (int x = 5; x < 25; x++) {
+    if (e.grid[19 * e.gridW + x] == El.metal) metalAt19++;
+  }
+  return TestResult(
+      'SM3: Structural Hold', metalAt19 / 20.0, '$metalAt19/20 metal');
+}
+
+TestResult testUnsupportedFall() {
+  final e = _createEngine(20, 40);
+  e.grid[10 * e.gridW + 10] = El.stone;
+  _step(e, 30);
+  int stoneY = -1;
+  for (int y = e.gridH - 1; y >= 0; y--) {
+    if (e.grid[y * e.gridW + 10] == El.stone) {
+      stoneY = y;
+      break;
+    }
+  }
+  return TestResult('SM4: Unsupported Fall', stoneY > 10 ? 1.0 : 0.0,
+      'stone at y=$stoneY (started 10)');
+}
+
+TestResult testCorrosionResistanceRanking() {
+  final oracle = _oracle('erosion_all');
+  if (oracle == null) {
+    return _oracleError('SM5: Corrosion Rank', 'erosion_all');
+  }
+  final entries = oracle.entries.toList()
+    ..sort((a, b) =>
+        ((b.value as Map<String, dynamic>)['erosion_resistance_score'] as num)
+            .compareTo((a.value as Map<String, dynamic>)[
+                'erosion_resistance_score'] as num));
+  int correct = 0, pairs = 0;
+  for (int i = 0; i < entries.length - 1; i++) {
+    final idA = _elIdByName(entries[i].key);
+    final idB = _elIdByName(entries[i + 1].key);
+    if (idA < 0 || idB < 0) continue;
+    pairs++;
+    if (elementProperties[idA].corrosionResistance >=
+        elementProperties[idB].corrosionResistance) {
+      correct++;
+    }
+  }
+  return TestResult('SM5: Corrosion Rank',
+      pairs > 0 ? correct / pairs : 0.0, '$correct/$pairs');
+}
+
+TestResult testGlassFragility() {
+  final gH = elementProperties[El.glass].hardness;
+  final mH = elementProperties[El.metal].hardness;
+  final sH = elementProperties[El.stone].hardness;
+  return TestResult('SM6: Glass Fragile', (gH < mH && gH < sH) ? 1.0 : 0.0,
+      'glass=$gH, metal=$mH, stone=$sH');
+}
+
+TestResult testCombustionSelectivity() {
+  final woodF = elementProperties[El.wood].flammable;
+  final stoneF = elementProperties[El.stone].flammable;
+  final metalF = elementProperties[El.metal].flammable;
+  int c = 0;
+  if (woodF) c++;
+  if (!stoneF) c++;
+  if (!metalF) c++;
+  return TestResult(
+      'SM7: Combustion Sel.', c / 3.0, 'wood=$woodF, stone=$stoneF, metal=$metalF');
+}
+
+TestResult testHeatResistance() {
+  final metalMP = elementProperties[El.metal].meltPoint;
+  final iceMP = elementProperties[El.ice].meltPoint;
+  final glassMP = elementProperties[El.glass].meltPoint;
+  int c = 0;
+  if (metalMP > iceMP) c++;
+  if (metalMP >= glassMP) c++;
+  if (glassMP > iceMP) c++;
+  return TestResult('SM8: Heat Resistance', c / 3.0,
+      'metal=$metalMP, glass=$glassMP, ice=$iceMP');
+}
+
+TestResult testPillarLoadBearing() {
+  final e = _createEngine(20, 40);
+  for (int y = 20; y < 35; y++) {
+    e.grid[y * e.gridW + 10] = El.stone;
+  }
+  for (int y = 15; y < 20; y++) {
+    e.grid[y * e.gridW + 10] = El.sand;
+  }
+  e.grid[35 * e.gridW + 10] = El.stone;
+  _step(e, 30);
+  int stoneInPillar = 0;
+  for (int y = 20; y < 35; y++) {
+    if (e.grid[y * e.gridW + 10] == El.stone) stoneInPillar++;
+  }
+  return TestResult(
+      'SM9: Pillar Load', stoneInPillar / 15.0, '$stoneInPillar/15');
+}
+
+TestResult testArchStrengthSM() {
+  final e = _createEngine(40, 30);
+  for (int y = 15; y < 25; y++) {
+    e.grid[y * e.gridW + 10] = El.stone;
+    e.grid[y * e.gridW + 30] = El.stone;
+  }
+  for (int x = 10; x <= 30; x++) {
+    e.grid[15 * e.gridW + x] = El.stone;
+  }
+  _step(e, 30);
+  int bridgeCells = 0;
+  for (int x = 11; x < 30; x++) {
+    if (e.grid[15 * e.gridW + x] == El.stone) bridgeCells++;
+  }
+  return TestResult(
+      'SM10: Arch Strength', bridgeCells / 19.0, '$bridgeCells/19 remain');
+}
+
+// ===========================================================================
+// EROSION & WEATHERING (EW1-EW6)
+// ===========================================================================
+
+TestResult testAcidErosion() {
+  final e = _createEngine(20, 20);
+  for (int y = 10; y < 15; y++) {
+    for (int x = 5; x < 15; x++) {
+      e.grid[y * e.gridW + x] = El.stone;
+    }
+  }
+  for (int x = 5; x < 15; x++) {
+    e.grid[9 * e.gridW + x] = El.acid;
+  }
+  _step(e, 60);
+  int stoneRemaining = 0;
+  for (int y = 10; y < 15; y++) {
+    for (int x = 5; x < 15; x++) {
+      if (e.grid[y * e.gridW + x] == El.stone) stoneRemaining++;
+    }
+  }
+  final dissolved = 50 - stoneRemaining;
+  return TestResult('EW1: Acid Erosion',
+      dissolved > 0 ? (dissolved / 10.0).clamp(0.0, 1.0) : 0.0,
+      '$dissolved/50 dissolved');
+}
+
+TestResult testErosionHardnessCorrelation() {
+  final e1 = _createEngine(20, 20);
+  for (int y = 10; y < 15; y++) {
+    for (int x = 5; x < 15; x++) {
+      e1.grid[y * e1.gridW + x] = El.wood;
+    }
+  }
+  for (int x = 5; x < 15; x++) {
+    e1.grid[9 * e1.gridW + x] = El.acid;
+  }
+  _step(e1, 60);
+  int woodRemaining = 0;
+  for (int i = 0; i < e1.grid.length; i++) {
+    if (e1.grid[i] == El.wood) woodRemaining++;
+  }
+  final e2 = _createEngine(20, 20);
+  for (int y = 10; y < 15; y++) {
+    for (int x = 5; x < 15; x++) {
+      e2.grid[y * e2.gridW + x] = El.metal;
+    }
+  }
+  for (int x = 5; x < 15; x++) {
+    e2.grid[9 * e2.gridW + x] = El.acid;
+  }
+  _step(e2, 60);
+  int metalRemaining = 0;
+  for (int i = 0; i < e2.grid.length; i++) {
+    if (e2.grid[i] == El.metal) metalRemaining++;
+  }
+  return TestResult('EW2: Hardness Corr.',
+      metalRemaining >= woodRemaining ? 1.0 : 0.3,
+      'wood=$woodRemaining, metal=$metalRemaining');
+}
+
+TestResult testSedimentDeposition() {
+  final e = _createEngine(20, 40);
+  for (int y = 10; y < 35; y++) {
+    for (int x = 5; x < 15; x++) {
+      e.grid[y * e.gridW + x] = El.water;
+    }
+  }
+  for (int x = 4; x < 16; x++) {
+    e.grid[35 * e.gridW + x] = El.stone;
+  }
+  for (int x = 7; x < 13; x++) {
+    e.grid[5 * e.gridW + x] = El.sand;
+  }
+  _step(e, 60);
+  int sandNearBottom = 0;
+  for (int y = 30; y < 36; y++) {
+    for (int x = 4; x < 16; x++) {
+      if (e.grid[y * e.gridW + x] == El.sand) sandNearBottom++;
+    }
+  }
+  return TestResult('EW3: Sediment Deposit',
+      sandNearBottom > 0 ? (sandNearBottom / 6.0).clamp(0.0, 1.0) : 0.0,
+      'sand near bottom=$sandNearBottom');
+}
+
+TestResult testChannelCarving() {
+  final e = _createEngine(20, 30);
+  for (int y = 10; y < 25; y++) {
+    for (int x = 3; x < 17; x++) {
+      e.grid[y * e.gridW + x] = El.dirt;
+    }
+  }
+  for (int y = 5; y < 10; y++) {
+    e.grid[y * e.gridW + 10] = El.acid;
+  }
+  _step(e, 80);
+  int emptiedCells = 0;
+  for (int y = 10; y < 25; y++) {
+    if (e.grid[y * e.gridW + 10] != El.dirt) emptiedCells++;
+  }
+  return TestResult('EW4: Channel Carving',
+      emptiedCells > 0 ? (emptiedCells / 8.0).clamp(0.0, 1.0) : 0.0,
+      '$emptiedCells cells carved');
+}
+
+TestResult testWeatheringByWater() {
+  final e = _createEngine(20, 20);
+  for (int y = 10; y < 15; y++) {
+    for (int x = 5; x < 15; x++) {
+      e.grid[y * e.gridW + x] = El.stone;
+    }
+  }
+  for (int x = 5; x < 15; x++) {
+    e.grid[9 * e.gridW + x] = El.water;
+  }
+  for (int x = 4; x < 16; x++) {
+    e.grid[15 * e.gridW + x] = El.stone;
+  }
+  _step(e, 60);
+  int stoneRemaining = 0;
+  for (int y = 10; y < 15; y++) {
+    for (int x = 5; x < 15; x++) {
+      if (e.grid[y * e.gridW + x] == El.stone) stoneRemaining++;
+    }
+  }
+  return TestResult(
+      'EW5: Water No Erode', stoneRemaining / 50.0, 'stone=$stoneRemaining/50');
+}
+
+TestResult testDeltaFormation() {
+  final e = _createEngine(40, 40);
+  for (int x = 0; x < 40; x++) {
+    e.grid[35 * e.gridW + x] = El.stone;
+  }
+  for (int y = 10; y < 35; y++) {
+    for (int x = 18; x < 22; x++) {
+      e.grid[y * e.gridW + x] = El.water;
+    }
+  }
+  for (int x = 18; x < 22; x++) {
+    e.grid[5 * e.gridW + x] = El.sand;
+  }
+  _step(e, 60);
+  int sandCells = 0;
+  int sandXMin = 40, sandXMax = 0;
+  for (int y = 30; y < 36; y++) {
+    for (int x = 0; x < 40; x++) {
+      if (e.grid[y * e.gridW + x] == El.sand) {
+        sandCells++;
+        if (x < sandXMin) sandXMin = x;
+        if (x > sandXMax) sandXMax = x;
+      }
+    }
+  }
+  final spread = sandCells > 0 ? sandXMax - sandXMin : 0;
+  return TestResult('EW6: Delta Formation',
+      sandCells > 0 ? (spread / 6.0).clamp(0.0, 1.0) : 0.0,
+      'spread=$spread, cells=$sandCells');
+}
+
+// ===========================================================================
+// ECOSYSTEM (EC1-EC8)
+// ===========================================================================
+
+TestResult testPlantGrowth() {
+  final e = _createEngine(30, 30);
+  for (int x = 5; x < 25; x++) {
+    e.grid[25 * e.gridW + x] = El.dirt;
+  }
+  e.grid[24 * e.gridW + 15] = El.seed;
+  for (int x = 10; x < 20; x++) {
+    e.grid[23 * e.gridW + x] = El.water;
+  }
+  _step(e, 100);
+  int plantCount = 0;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.plant) plantCount++;
+  }
+  return TestResult('EC1: Plant Growth',
+      plantCount > 0 ? (plantCount / 3.0).clamp(0.0, 1.0) : 0.0,
+      'plant=$plantCount');
+}
+
+TestResult testSeedSproutingRequiresWater() {
+  final e = _createEngine(20, 20);
+  e.grid[10 * e.gridW + 10] = El.seed;
+  _step(e, 60);
+  int plantCount = 0;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.plant) plantCount++;
+  }
+  return TestResult(
+      'EC2: Seed Needs Water',
+      plantCount == 0 ? 1.0 : (1.0 - plantCount / 3.0).clamp(0.0, 1.0),
+      'plant from isolated seed=$plantCount');
+}
+
+TestResult testFireConsumesWood() {
+  final e = _createEngine(30, 30);
+  for (int y = 10; y < 15; y++) {
+    for (int x = 10; x < 15; x++) {
+      e.grid[y * e.gridW + x] = El.wood;
+    }
+  }
+  e.grid[10 * e.gridW + 9] = El.fire;
+  _step(e, 200);
+  int woodRemaining = 0;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.wood) woodRemaining++;
+  }
+  final consumed = 25 - woodRemaining;
+  return TestResult('EC3: Fire Eats Wood',
+      consumed > 0 ? (consumed / 15.0).clamp(0.0, 1.0) : 0.0,
+      '$consumed/25 consumed');
+}
+
+TestResult testDecayChainCompleteness() {
+  final oracle = _oracle('decay_chains');
+  if (oracle == null) return _oracleError('EC4: Decay Chain', 'decay_chains');
+  int correct = 0, total = 0;
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    if (!data.containsKey('chain')) continue;
+    final chain = data['chain'] as List;
+    if (chain.length < 2) continue;
+    final sourceId = _elIdByName(chain[0] as String);
+    if (sourceId < 0) continue;
+    final expectedDecay = chain[1] as String;
+    final actualDecayId = elementProperties[sourceId].decaysInto;
+    final actualDecay = actualDecayId > 0
+        ? elementNames[actualDecayId].toLowerCase()
+        : 'empty';
+    total++;
+    if (actualDecay == expectedDecay) correct++;
+  }
+  return TestResult('EC4: Decay Chains', total > 0 ? correct / total : 0.0,
+      '$correct/$total match');
+}
+
+TestResult testLightningConduction() {
+  final wC = elementProperties[El.water].conductivity;
+  final mC = elementProperties[El.metal].conductivity;
+  final sC = elementProperties[El.stone].conductivity;
+  int c = 0;
+  if (mC > wC) c++;
+  if (wC > sC) c++;
+  if (mC > 0.5) c++;
+  return TestResult(
+      'EC5: Conductivity', c / 3.0, 'metal=$mC, water=$wC, stone=$sC');
+}
+
+TestResult testMudDrying() {
+  final e = _createEngine(20, 20);
+  for (int x = 5; x < 15; x++) {
+    e.grid[15 * e.gridW + x] = El.mud;
+  }
+  for (int x = 4; x < 16; x++) {
+    e.grid[16 * e.gridW + x] = El.stone;
+  }
+  _step(e, 30);
+  int mudCount = 0;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.mud) mudCount++;
+  }
+  return TestResult(
+      'EC6: Mud Persists', mudCount > 0 ? 1.0 : 0.0, 'mud=$mudCount');
+}
+
+TestResult testWaterCycle() {
+  final e = _createEngine(40, 60);
+  for (int x = 5; x < 35; x++) {
+    e.grid[50 * e.gridW + x] = El.water;
+    e.grid[51 * e.gridW + x] = El.stone;
+    e.grid[52 * e.gridW + x] = El.lava;
+    e.grid[5 * e.gridW + x] = El.ice;
+  }
+  _step(e, 120);
+  int steamCount = 0, waterCount = 0;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.steam) steamCount++;
+    if (e.grid[i] == El.water) waterCount++;
+  }
+  return TestResult(
+      'EC7: Water Cycle',
+      (steamCount > 0 ? 0.5 : 0.0) + (waterCount > 0 ? 0.5 : 0.0),
+      'steam=$steamCount, water=$waterCount');
+}
+
+TestResult testTNTExplosion() {
+  final e = _createEngine(40, 40);
+  for (int y = 15; y < 25; y++) {
+    for (int x = 15; x < 25; x++) {
+      e.grid[y * e.gridW + x] = El.dirt;
+    }
+  }
+  e.grid[20 * e.gridW + 20] = El.tnt;
+  e.grid[20 * e.gridW + 19] = El.fire;
+  _step(e, 30);
+  int dirtRemaining = 0;
+  for (int y = 15; y < 25; y++) {
+    for (int x = 15; x < 25; x++) {
+      if (e.grid[y * e.gridW + x] == El.dirt) dirtRemaining++;
+    }
+  }
+  final destroyed = 99 - dirtRemaining;
+  return TestResult('EC8: TNT Explosion',
+      destroyed > 0 ? (destroyed / 30.0).clamp(0.0, 1.0) : 0.0,
+      '$destroyed/99 dirt destroyed');
+}
+
+// ===========================================================================
+// DYNAMIC TESTS (D1-D16)
+// ===========================================================================
+
+List<TestResult> testGravityAll() {
+  final oracle = _oracle('gravity_all');
+  if (oracle == null) return [_oracleError('D1: Gravity All', 'gravity_all')];
+  final results = <TestResult>[];
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    final elId = _elIdByName(entry.key);
+    if (elId < 0) continue;
+    final match = (data['gravity'] as int) == elementProperties[elId].gravity;
+    results.add(TestResult('D1: grav ${entry.key}', match ? 1.0 : 0.0,
+        'expected=${data['gravity']}, actual=${elementProperties[elId].gravity}'));
+  }
+  return results.isEmpty
+      ? [TestResult('D1: Gravity All', 0.0, '0 elements')]
+      : results;
+}
+
+List<TestResult> testDensityPairs() {
+  final oracle = _oracle('density_pairs');
+  if (oracle == null) {
+    return [_oracleError('D2: Density Pairs', 'density_pairs')];
+  }
+  final results = <TestResult>[];
+  int checked = 0;
+  for (final entry in oracle.entries) {
+    if (checked >= 30) break;
+    final data = entry.value as Map<String, dynamic>;
+    final heavier = data['heavier'] as String;
+    final idH = _elIdByName(heavier);
+    if (idH < 0) continue;
+    final parts = entry.key.split('_vs_');
+    if (parts.length != 2) continue;
+    final otherName = parts[0] == heavier ? parts[1] : parts[0];
+    final idO = _elIdByName(otherName);
+    if (idO < 0) continue;
+    final correct = elementDensity[idH] > elementDensity[idO];
+    results.add(TestResult('D2: $heavier>$otherName', correct ? 1.0 : 0.0,
+        '$heavier=${elementDensity[idH]} vs $otherName=${elementDensity[idO]}'));
+    checked++;
+  }
+  return results.isEmpty
+      ? [TestResult('D2: Density Pairs', 0.0, '0 pairs')]
+      : results;
+}
+
+List<TestResult> testPhaseChangesAll() {
+  final oracle = _oracle('phase_changes_all');
+  if (oracle == null) {
+    return [_oracleError('D3: Phase All', 'phase_changes_all')];
+  }
+  final results = <TestResult>[];
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    final elId = _elIdByName(entry.key);
+    if (elId < 0) continue;
+    final props = elementProperties[elId];
+    if (data.containsKey('melt')) {
+      final becomes =
+          (data['melt'] as Map<String, dynamic>)['becomes'] as String;
+      final becomesId = _elIdByName(becomes);
+      results.add(TestResult(
+          'D3: ${entry.key} melts',
+          (props.meltsInto == becomesId && props.meltPoint > 0) ? 1.0 : 0.0,
+          'meltsInto=${props.meltsInto}==$becomesId, mp=${props.meltPoint}'));
+    }
+    if (data.containsKey('boil')) {
+      final becomes =
+          (data['boil'] as Map<String, dynamic>)['becomes'] as String;
+      final becomesId = _elIdByName(becomes);
+      results.add(TestResult(
+          'D3: ${entry.key} boils',
+          (props.boilsInto == becomesId && props.boilPoint > 0) ? 1.0 : 0.0,
+          'boilsInto=${props.boilsInto}==$becomesId, bp=${props.boilPoint}'));
+    }
+    if (data.containsKey('freeze')) {
+      final becomes =
+          (data['freeze'] as Map<String, dynamic>)['becomes'] as String;
+      final becomesId = _elIdByName(becomes);
+      results.add(TestResult(
+          'D3: ${entry.key} freezes',
+          (props.freezesInto == becomesId && props.freezePoint > 0) ? 1.0 : 0.0,
+          'freezesInto=${props.freezesInto}==$becomesId, fp=${props.freezePoint}'));
+    }
+  }
+  return results.isEmpty
+      ? [TestResult('D3: Phase All', 0.0, '0 checked')]
+      : results;
+}
+
+List<TestResult> testBuoyancyAll() {
+  final oracle = _oracle('buoyancy_all');
+  if (oracle == null) {
+    return [_oracleError('D4: Buoyancy All', 'buoyancy_all')];
+  }
+  final results = <TestResult>[];
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    final elId = _elIdByName(entry.key);
+    if (elId < 0) continue;
+    final agreement = data['buoyancy_agreement'] as bool;
+    final realSink = data['real_should_sink'] == true;
+    final engSink = data['engine_should_sink'] == true;
+    results.add(TestResult('D4: buoy ${entry.key}', agreement ? 1.0 : 0.0,
+        'real=${realSink ? "sinks" : "floats"}, engine=${engSink ? "sinks" : "floats"}'));
+  }
+  return results.isEmpty
+      ? [TestResult('D4: Buoyancy All', 0.0, '0 checked')]
+      : results;
+}
+
+List<TestResult> testFlammableAll() {
+  final oracle = _oracle('flammable_all');
+  if (oracle == null) {
+    return [_oracleError('D5: Flammable All', 'flammable_all')];
+  }
+  final results = <TestResult>[];
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    final elId = _elIdByName(entry.key);
+    if (elId < 0) continue;
+    final match =
+        (data['flammable'] as bool) == elementProperties[elId].flammable;
+    results.add(TestResult('D5: flam ${entry.key}', match ? 1.0 : 0.0,
+        'oracle=${data['flammable']}, engine=${elementProperties[elId].flammable}'));
+  }
+  return results.isEmpty
+      ? [TestResult('D5: Flammable All', 0.0, '0 checked')]
+      : results;
+}
+
+TestResult testConductionAll() {
+  final oracle = _oracle('conduction_all');
+  if (oracle == null) return _oracleError('D6: Conduction', 'conduction_all');
+  final ordering = oracle['ordering'] as List;
+  int correct = 0, pairs = 0;
+  for (int i = 0; i < ordering.length - 1; i++) {
+    final idA = _elIdByName(ordering[i] as String);
+    final idB = _elIdByName(ordering[i + 1] as String);
+    if (idA < 0 || idB < 0) continue;
+    pairs++;
+    if (elementProperties[idA].heatConductivity >=
+        elementProperties[idB].heatConductivity) {
+      correct++;
+    }
+  }
+  return TestResult('D6: Conduction Order',
+      pairs > 0 ? correct / pairs : 0.0, '$correct/$pairs in order');
+}
+
+TestResult testViscosityAll() {
+  final oracle = _oracle('viscosity_all');
+  if (oracle == null) return _oracleError('D7: Viscosity', 'viscosity_all');
+  final ordering = oracle['ordering_least_to_most_viscous'] as List;
+  int correct = 0, pairs = 0;
+  for (int i = 0; i < ordering.length - 1; i++) {
+    final idA = _elIdByName(ordering[i] as String);
+    final idB = _elIdByName(ordering[i + 1] as String);
+    if (idA < 0 || idB < 0) continue;
+    pairs++;
+    if (elementProperties[idA].viscosity <= elementProperties[idB].viscosity) {
+      correct++;
+    }
+  }
+  return TestResult('D7: Viscosity Order',
+      pairs > 0 ? correct / pairs : 0.0, '$correct/$pairs in order');
+}
+
+List<TestResult> testReactionsAll() {
+  final oracle = _oracle('reactions_all');
+  if (oracle == null) {
+    return [_oracleError('D8: Reactions All', 'reactions_all')];
+  }
+  final results = <TestResult>[];
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    final sourceId = _elIdByName(data['source'] as String);
+    final targetId = _elIdByName(data['target'] as String);
+    if (sourceId < 0 || targetId < 0) continue;
+    final hasReaction =
+        ReactionRegistry.reactionsBetween(sourceId, targetId).isNotEmpty;
+    results.add(TestResult('D8: ${data['source']}+${data['target']}',
+        hasReaction ? 1.0 : 0.0, hasReaction ? 'registered' : 'MISSING'));
+  }
+  return results.isEmpty
+      ? [TestResult('D8: Reactions All', 0.0, '0 checked')]
+      : results;
+}
+
+List<TestResult> testStructuralAll() {
+  final oracle = _oracle('structural_all');
+  if (oracle == null) {
+    return [_oracleError('D9: Structural All', 'structural_all')];
+  }
+  final results = <TestResult>[];
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    final elId = _elIdByName(entry.key);
+    if (elId < 0) continue;
+    final oH = data['hardness'] as int;
+    final eH = elementProperties[elId].hardness;
+    final diff = (oH - eH).abs();
+    results.add(TestResult('D9: struct ${entry.key}',
+        diff == 0 ? 1.0 : (1.0 - diff / 50.0).clamp(0.0, 1.0),
+        'oracle=$oH, engine=$eH'));
+  }
+  return results.isEmpty
+      ? [TestResult('D9: Structural All', 0.0, '0 checked')]
+      : results;
+}
+
+List<TestResult> testErosionAll() {
+  final oracle = _oracle('erosion_all');
+  if (oracle == null) {
+    return [_oracleError('D10: Erosion All', 'erosion_all')];
+  }
+  final results = <TestResult>[];
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    final elId = _elIdByName(entry.key);
+    if (elId < 0) continue;
+    final oCR = data['corrosion_resistance'] as int;
+    final eCR = elementProperties[elId].corrosionResistance;
+    final diff = (oCR - eCR).abs();
+    results.add(TestResult('D10: erode ${entry.key}',
+        diff == 0 ? 1.0 : (1.0 - diff / 50.0).clamp(0.0, 1.0),
+        'oracle=$oCR, engine=$eCR'));
+  }
+  return results.isEmpty
+      ? [TestResult('D10: Erosion All', 0.0, '0 checked')]
+      : results;
+}
+
+List<TestResult> testGranularAll() {
+  final oracle = _oracle('granular_all');
+  if (oracle == null) {
+    return [_oracleError('D11: Granular All', 'granular_all')];
+  }
+  final results = <TestResult>[];
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    final elId = _elIdByName(entry.key);
+    if (elId < 0) continue;
+    final oState = data['state'] as String;
+    final eState = elementProperties[elId].state;
+    final match = (oState == 'granular' && eState == PhysicsState.granular) ||
+        (oState == 'powder' && eState == PhysicsState.powder);
+    results.add(TestResult('D11: gran ${entry.key}', match ? 1.0 : 0.0,
+        'oracle=$oState, engine=$eState'));
+  }
+  return results.isEmpty
+      ? [TestResult('D11: Granular All', 0.0, '0 checked')]
+      : results;
+}
+
+TestResult testConservationUnified() {
+  final oracle = _oracle('conservation');
+  if (oracle == null) return _oracleError('D12: Conservation', 'conservation');
+  final e = _createEngine(30, 30);
+  for (int x = 0; x < 30; x++) {
+    e.grid[x] = El.stone;
+    e.grid[29 * e.gridW + x] = El.stone;
+  }
+  for (int y = 0; y < 30; y++) {
+    e.grid[y * e.gridW] = El.stone;
+    e.grid[y * e.gridW + 29] = El.stone;
+  }
+  int initialCount = 0;
+  for (int y = 5; y < 15; y++) {
+    for (int x = 5; x < 25; x++) {
+      e.grid[y * e.gridW + x] = El.sand;
+      initialCount++;
+    }
+  }
+  _step(e, 100);
+  int finalCount = 0;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.sand) finalCount++;
+  }
+  final drift = (finalCount - initialCount).abs() / initialCount;
+  final tolerance =
+      ((oracle['mass'] as Map<String, dynamic>)['tolerance_percent'] as num)
+              .toDouble() /
+          100.0;
+  return TestResult(
+      'D12: Conservation',
+      drift <= tolerance ? 1.0 : (1.0 - drift).clamp(0.0, 1.0),
+      'initial=$initialCount, final=$finalCount, drift=${(drift * 100).toStringAsFixed(1)}%');
+}
+
+TestResult testTorricelliAll() {
+  final oracle = _oracle('torricelli');
+  if (oracle == null) return _oracleError('D13: Torricelli', 'torricelli');
+  final velocities = oracle['expected_velocity_cells_per_frame'] as List;
+  int monotonic = 0, pairs = 0;
+  for (int i = 0; i < velocities.length - 1; i++) {
+    pairs++;
+    if ((velocities[i + 1] as num).toDouble() >=
+        (velocities[i] as num).toDouble()) {
+      monotonic++;
+    }
+  }
+  return TestResult('D13: Torricelli',
+      pairs > 0 ? monotonic / pairs : 0.0, '$monotonic/$pairs monotonic');
+}
+
+TestResult testPressureDepthAll() {
+  final oracle = _oracle('pressure_depth');
+  if (oracle == null) {
+    return _oracleError('D14: Pressure Depth', 'pressure_depth');
+  }
+  final pressures = oracle['expected_pressure'] as List;
+  int monotonic = 0, pairs = 0;
+  for (int i = 0; i < pressures.length - 1; i++) {
+    pairs++;
+    if ((pressures[i + 1] as num).toDouble() >=
+        (pressures[i] as num).toDouble()) {
+      monotonic++;
+    }
+  }
+  return TestResult('D14: P vs Depth',
+      pairs > 0 ? monotonic / pairs : 0.0, '$monotonic/$pairs monotonic');
+}
+
+List<TestResult> testCoolingAll() {
+  final oracle = _oracle('cooling_all');
+  if (oracle == null) {
+    return [_oracleError('D15: Cooling All', 'cooling_all')];
+  }
+  final results = <TestResult>[];
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    final elId = _elIdByName(entry.key);
+    if (elId < 0) continue;
+    final oracleK = (data['k'] as num).toDouble();
+    final engineHC = elementProperties[elId].heatConductivity;
+    results.add(TestResult('D15: cool ${entry.key}',
+        (oracleK > 0 && engineHC > 0) ? 1.0 : 0.5,
+        'k=${oracleK.toStringAsFixed(4)}, hc=$engineHC'));
+  }
+  return results.isEmpty
+      ? [TestResult('D15: Cooling All', 0.0, '0 checked')]
+      : results;
+}
+
+List<TestResult> testEquilibriumAll() {
+  final oracle = _oracle('equilibrium');
+  if (oracle == null) {
+    return [_oracleError('D16: Equilibrium', 'equilibrium')];
+  }
+  final results = <TestResult>[];
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    final material = data['material'] as String?;
+    if (material == null) continue;
+    final elId = _elIdByName(material);
+    if (elId < 0) continue;
+    final nHot = data['n_hot'] as int;
+    final tHot = data['T_hot'] as int;
+    final nCold = data['n_cold'] as int;
+    final tCold = data['T_cold'] as int;
+    final expectedEq = (data['expected_T_eq'] as num).toDouble();
+    final w = 20;
+    final h = ((nHot + nCold) / w).ceil() + 10;
+    final eng = _createEngine(w, h);
+    int placed = 0;
+    for (int y = 2; y < h - 2 && placed < nHot; y++) {
+      for (int x = 1; x < w - 1 && placed < nHot; x++) {
+        eng.grid[y * w + x] = elId;
+        eng.temperature[y * w + x] = tHot;
+        placed++;
+      }
+    }
+    placed = 0;
+    for (int y = h ~/ 2; y < h - 2 && placed < nCold; y++) {
+      for (int x = 1; x < w - 1 && placed < nCold; x++) {
+        final idx = y * w + x;
+        if (eng.grid[idx] == El.empty) {
+          eng.grid[idx] = elId;
+          eng.temperature[idx] = tCold;
+          placed++;
+        }
+      }
+    }
+    _step(eng, 200);
+    double totalTemp = 0;
+    int count = 0;
+    for (int i = 0; i < eng.grid.length; i++) {
+      if (eng.grid[i] == elId) {
+        totalTemp += eng.temperature[i];
+        count++;
+      }
+    }
+    if (count == 0) continue;
+    final avgTemp = totalTemp / count;
+    final error = (avgTemp - expectedEq).abs() / max(expectedEq, 1.0);
+    results.add(TestResult('D16: eq $material', (1.0 - error).clamp(0.0, 1.0),
+        'avg=${avgTemp.toStringAsFixed(1)}, expected=${expectedEq.toStringAsFixed(1)}'));
+  }
+  return results.isEmpty
+      ? [TestResult('D16: Equilibrium', 0.0, '0 checked')]
+      : results;
+}
+
+// ===========================================================================
 // MAIN -- Run all tests and print categorized report
 // ===========================================================================
 
@@ -2826,7 +4167,7 @@ void main() {
   print('============================================================');
   print('');
   print('Comparing cellular automaton behavior against real-world');
-  print('physics equations across 30 tests in 9 categories.');
+  print('physics equations across 100+ tests in 14 categories.');
   print('');
 
   // -- Load ground truth oracle (REQUIRED) --
@@ -2838,7 +4179,8 @@ void main() {
     print('  No fallback constants are used.');
     exit(1);
   }
-  print('  [oracle] Loaded ground_truth.json with ${_groundTruth!.length} categories');
+  print(
+      '  [oracle] Loaded ground_truth.json with ${_groundTruth!.length} categories');
   print('');
 
   // -- Run all tests grouped by category --
@@ -2892,6 +4234,76 @@ void main() {
       testCapillaryWicking(),
       testExplosionInverseSquare(),
     ]),
+    // --- NEW CATEGORIES ---
+    TestCategory('Kinematics', [
+      testTrajectoryRSquared(),
+      ...testTerminalVelocity(),
+      testSimultaneousDrop(),
+      testMultiCellFall(),
+      testDragInFluid(),
+      testRiseSpeed(),
+      testFreefallSymmetry(),
+      testGravityDisabledForGas(),
+      testVelocityClamping(),
+      testProjectileLanding(),
+    ]),
+    TestCategory('Phase Changes', [
+      testMeltPointOrdering(),
+      testIceMelting(),
+      testWaterBoiling(),
+      testSteamCondensation(),
+      testFreezingChain(),
+      testSandMeltsToGlass(),
+      testBoilingRequiresHeat(),
+      testPhaseChangeProperties(),
+    ]),
+    TestCategory('Structural Mechanics', [
+      testMetalVsStoneHardness(),
+      testHardnessRanking(),
+      testStructuralIntegrity(),
+      testUnsupportedFall(),
+      testCorrosionResistanceRanking(),
+      testGlassFragility(),
+      testCombustionSelectivity(),
+      testHeatResistance(),
+      testPillarLoadBearing(),
+      testArchStrengthSM(),
+    ]),
+    TestCategory('Erosion & Weathering', [
+      testAcidErosion(),
+      testErosionHardnessCorrelation(),
+      testSedimentDeposition(),
+      testChannelCarving(),
+      testWeatheringByWater(),
+      testDeltaFormation(),
+    ]),
+    TestCategory('Ecosystem', [
+      testPlantGrowth(),
+      testSeedSproutingRequiresWater(),
+      testFireConsumesWood(),
+      testDecayChainCompleteness(),
+      testLightningConduction(),
+      testMudDrying(),
+      testWaterCycle(),
+      testTNTExplosion(),
+    ]),
+    // --- DYNAMIC ORACLE TESTS ---
+    TestCategory('Dynamic: Gravity', testGravityAll()),
+    TestCategory('Dynamic: Density', testDensityPairs()),
+    TestCategory('Dynamic: Phase', testPhaseChangesAll()),
+    TestCategory('Dynamic: Buoyancy', testBuoyancyAll()),
+    TestCategory('Dynamic: Flammable', testFlammableAll()),
+    TestCategory('Dynamic: Conduction', [testConductionAll()]),
+    TestCategory('Dynamic: Viscosity', [testViscosityAll()]),
+    TestCategory('Dynamic: Reactions', testReactionsAll()),
+    TestCategory('Dynamic: Structural', testStructuralAll()),
+    TestCategory('Dynamic: Erosion', testErosionAll()),
+    TestCategory('Dynamic: Granular', testGranularAll()),
+    TestCategory('Dynamic: Conservation', [testConservationUnified()]),
+    TestCategory('Dynamic: Torricelli', [testTorricelliAll()]),
+    TestCategory('Dynamic: Pressure', [testPressureDepthAll()]),
+    TestCategory('Dynamic: Cooling', testCoolingAll()),
+    TestCategory('Dynamic: Equilibrium', testEquilibriumAll()),
   ];
 
   // -- Print results --
@@ -2907,7 +4319,7 @@ void main() {
 
     for (final r in cat.results) {
       final pct = (r.score * 100).toStringAsFixed(0).padLeft(4);
-      print('  ${r.name.padRight(24)} $pct%');
+      print('  ${r.name.padRight(28)} $pct%');
       print('    ${r.detail}');
     }
     print('');
@@ -2925,12 +4337,14 @@ void main() {
   print('');
   for (final cat in categories) {
     final pct = (categoryScores[cat.name]! * 100).toStringAsFixed(0);
-    print('  ${cat.name.padRight(24)} ${pct.padLeft(4)}%');
+    final count = cat.results.length;
+    print('  ${cat.name.padRight(28)} ${pct.padLeft(4)}%  ($count tests)');
   }
 
   final overall = grandTotal / grandCount * 100;
   print('');
-  print('  ${"OVERALL ACCURACY".padRight(24)} ${overall.toStringAsFixed(1).padLeft(5)}%');
+  print(
+      '  ${"OVERALL ACCURACY".padRight(28)} ${overall.toStringAsFixed(1).padLeft(5)}%');
   print('');
   print('------------------------------------------------------------');
   print('');
