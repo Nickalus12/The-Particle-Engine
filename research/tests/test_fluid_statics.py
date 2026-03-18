@@ -1,6 +1,18 @@
-"""Fluid statics tests: Pascal's law, buoyancy, density ordering."""
+"""Fluid statics tests: Pascal's law, buoyancy, density ordering, density pairs."""
 
+import itertools
+
+import numpy as np
 import pytest
+
+# All elements with known densities (from element_registry.dart)
+ELEMENT_DENSITIES = {
+    "sand": 150, "water": 100, "fire": 5, "ice": 90, "seed": 130,
+    "stone": 255, "tnt": 140, "rainbow": 8, "mud": 120, "steam": 3,
+    "ant": 80, "oil": 80, "acid": 110, "glass": 220, "dirt": 145,
+    "plant": 60, "lava": 200, "snow": 50, "wood": 85, "metal": 240,
+    "smoke": 4, "bubble": 2, "ash": 30,
+}
 
 
 class TestPascalPressure:
@@ -99,3 +111,82 @@ class TestDensityOrdering:
         if entry is None:
             pytest.skip(f"No density pair data for {heavier} vs {lighter}")
         assert entry["heavier"] == heavier
+
+
+def _density_pairs():
+    """Generate all element pairs where a has strictly greater density than b."""
+    elements = sorted(ELEMENT_DENSITIES.keys())
+    pairs = []
+    for a, b in itertools.combinations(elements, 2):
+        da, db = ELEMENT_DENSITIES[a], ELEMENT_DENSITIES[b]
+        if da == db:
+            continue
+        if da > db:
+            pairs.append((a, b))
+        else:
+            pairs.append((b, a))
+    return pairs
+
+
+class TestComprehensiveDensityPairs:
+    """Every pair of elements with different densities should have correct ordering."""
+
+    @pytest.mark.physics
+    @pytest.mark.parametrize("heavier,lighter", _density_pairs())
+    def test_density_pair(self, ground_truth, heavier, lighter):
+        """Heavier element should sink below lighter in the oracle."""
+        gt = ground_truth.get("density_pairs", {})
+        key = f"{heavier}_vs_{lighter}"
+        if key not in gt:
+            key = f"{lighter}_vs_{heavier}"
+        entry = gt.get(key)
+        if entry is None:
+            pytest.skip(f"No density pair data for {heavier} vs {lighter}")
+        assert entry["heavier"] == heavier, (
+            f"Expected {heavier} (d={ELEMENT_DENSITIES[heavier]}) to be heavier "
+            f"than {lighter} (d={ELEMENT_DENSITIES[lighter]}), "
+            f"but oracle says {entry['heavier']}"
+        )
+
+
+class TestLiveDensityOrdering:
+    """Verify density ordering in actual simulation frame."""
+
+    @pytest.mark.physics
+    def test_water_below_oil(self, simulation_frame):
+        """Water (d=100) should be below oil (d=80) in the simulation."""
+        grid = simulation_frame["grid"]
+        elements = simulation_frame["meta"]["elements"]
+        water_id = elements.get("Water")
+        oil_id = elements.get("Oil")
+        if water_id is None or oil_id is None:
+            pytest.skip("Missing Water or Oil element")
+        water_ys = np.where(grid == water_id)[0]
+        oil_ys = np.where(grid == oil_id)[0]
+        if len(water_ys) == 0 or len(oil_ys) == 0:
+            pytest.skip("Not enough water or oil in frame")
+        water_avg = float(np.mean(water_ys))
+        oil_avg = float(np.mean(oil_ys))
+        # Higher y = lower on screen. Water should have higher avg y (below oil).
+        assert water_avg > oil_avg, (
+            f"Water avg_y={water_avg:.1f} should be below oil avg_y={oil_avg:.1f}"
+        )
+
+    @pytest.mark.physics
+    def test_lava_below_water(self, simulation_frame):
+        """Lava (d=200) should be below water (d=100) in the simulation."""
+        grid = simulation_frame["grid"]
+        elements = simulation_frame["meta"]["elements"]
+        water_id = elements.get("Water")
+        lava_id = elements.get("Lava")
+        if water_id is None or lava_id is None:
+            pytest.skip("Missing Water or Lava element")
+        water_ys = np.where(grid == water_id)[0]
+        lava_ys = np.where(grid == lava_id)[0]
+        if len(water_ys) == 0 or len(lava_ys) == 0:
+            pytest.skip("Not enough water or lava in frame")
+        water_avg = float(np.mean(water_ys))
+        lava_avg = float(np.mean(lava_ys))
+        assert lava_avg > water_avg, (
+            f"Lava avg_y={lava_avg:.1f} should be below water avg_y={water_avg:.1f}"
+        )
