@@ -37,3 +37,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 35	2026-03-18T00:35	simulation_engine.dart	Radiant heat warms all non-metallic surfaces (IR absorption, not conduction-gated)	277.8	95	100	yes
 36	2026-03-18T00:36	element_behaviors.dart	Snow latent heat melt (fire extinguish) + mud drying rate 1/4 + proximity ranges (CR1 snow/mud+fire 0%->100%)	293.3	95	100	yes
 37	2026-03-18T00:37	element_behaviors.dart	Coulomb friction avalanche: 2/3 probability gate + reduced extended slide (Angle of Repose 66%->96%, Hourglass 60%->100%)	288.2	95	100	yes
+38	2026-03-18T00:38	element_behaviors.dart	Steam enclosure detection (3-cell scan) + sand→mud rate 1/10 + trapped steam persistence (CR21/CR23 0%->100%, CR 80%->88%)	287.4	90	100	yes

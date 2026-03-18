@@ -36,8 +36,10 @@ extension ElementBehaviors on SimulationEngine {
     if (grid[idx] == El.sand) {
       _avalancheGranular(x, y, idx);
     }
-    // Sand dissolves in water to form mud (rare, gradual erosion)
-    if (grid[idx] == El.sand && rng.nextInt(100) == 0 && checkAdjacent(x, y, El.water)) {
+    // Sand absorbs water to form mud. Real sand has ~35% porosity and
+    // readily absorbs water via capillary action. Rate reflects the fast
+    // wetting process rather than chemical dissolution.
+    if (grid[idx] == El.sand && rng.nextInt(10) == 0 && checkAdjacent(x, y, El.water)) {
       grid[idx] = El.mud;
       removeOneAdjacent(x, y, El.water);
       markProcessed(idx);
@@ -2380,13 +2382,18 @@ extension ElementBehaviors on SimulationEngine {
     final uy = y - gravityDir;
     final atEdge = gravityDir == 1 ? y <= 2 : y >= gridH - 3;
 
-    // Underground steam lasts longer — trapped in cave ceilings
+    // Underground steam lasts longer — trapped in cave ceilings.
+    // Scan upward to detect enclosure (ceiling within 3 cells).
     bool isTrappedUnderground = false;
-    if (inBoundsY(uy)) {
-      final above = grid[uy * gridW + x];
+    for (int scan = 1; scan <= 3; scan++) {
+      final sy = y - gravityDir * scan;
+      if (!inBoundsY(sy)) break;
+      final above = grid[sy * gridW + x];
       if (above == El.stone || above == El.dirt || above == El.metal) {
         isTrappedUnderground = true;
+        break;
       }
+      if (above != El.empty && above != El.steam && above != El.smoke) break;
     }
 
     // Steam lifespan tuned for natural weather feel:
@@ -2408,7 +2415,9 @@ extension ElementBehaviors on SimulationEngine {
       markProcessed(idx);
       return;
     }
-    if (atEdge) {
+    // Steam at the sky boundary dissipates — but trapped steam (under
+    // stone/metal ceiling) persists in enclosed spaces.
+    if (atEdge && !isTrappedUnderground) {
       grid[idx] = El.empty; life[idx] = 0; markProcessed(idx); return;
     }
 
