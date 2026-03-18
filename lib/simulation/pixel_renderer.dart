@@ -385,18 +385,22 @@ class PixelRenderer {
                   emptyB = (emptyB + dustBright - 5).clamp(0, 50);
                 }
               } else {
-                // Day sky: beautiful blue gradient from light top to deeper blue
-                final skyFrac = y / h; // 0 at top, 1 at bottom
-                // Top of sky: light azure, bottom: deeper blue
-                emptyR = (135 - (skyFrac * 100).round()).clamp(25, 140);
-                emptyG = (195 - (skyFrac * 100).round()).clamp(80, 200);
-                emptyB = (255 - (skyFrac * 40).round()).clamp(200, 255);
+                // Day sky: blue gradient (integer math, no float division)
+                // skyFrac256 = y * 256 / h; avoids float division
+                final skyFrac256 = y * 256 ~/ h; // [0, 255]
+                emptyR = (135 - (skyFrac256 * 100 >> 8)).clamp(25, 140);
+                emptyG = (195 - (skyFrac256 * 100 >> 8)).clamp(80, 200);
+                emptyB = (255 - (skyFrac256 * 40 >> 8)).clamp(200, 255);
 
-                // Night dimming
+                // Night dimming — sky dims heavily (0.9 for R/G, 0.85 for B)
                 if (t > 0.0) {
-                  emptyR = (emptyR * (1.0 - t * 0.9)).round().clamp(0, 255);
-                  emptyG = (emptyG * (1.0 - t * 0.9)).round().clamp(0, 255);
-                  emptyB = (emptyB * (1.0 - t * 0.85)).round().clamp(0, 255);
+                  // nightBoost = (t * 30).round(), so t ≈ nightBoost / 30
+                  // skyDimRG = 256 * (1 - t * 0.9) ≈ 256 - nightBoost * 256*0.9/30
+                  final skyDimRG = (256 - nightBoost * 77 ~/ 10).clamp(0, 256);
+                  final skyDimB = (256 - nightBoost * 218 ~/ 30).clamp(0, 256);
+                  emptyR = (emptyR * skyDimRG) >> 8;
+                  emptyG = (emptyG * skyDimRG) >> 8;
+                  emptyB = (emptyB * skyDimB) >> 8;
                 }
               }
 
@@ -834,11 +838,13 @@ class PixelRenderer {
               _inlineB = (200 + shimmer ~/ 3).clamp(180, 230);
               _inlineA = 235;
             } else {
-              // Surface water reflects sky color — blend water blue with sky tint
-              // Sky color shifts from azure (day) to dark blue (night)
-              final skyReflectR = (135 * (1.0 - dayNightT * 0.85)).round();
-              final skyReflectG = (195 * (1.0 - dayNightT * 0.7)).round();
-              final skyReflectB = (255 * (1.0 - dayNightT * 0.3)).round();
+              // Surface water reflects sky color
+              // Integer night dimming: dayNightT is [0, 1.0]
+              final dnt256 = (dayNightT * 256).round(); // [0, 256]
+              final skyDimRG = 256 - (dnt256 * 218 >> 8); // ~(1 - t*0.85)*256
+              final skyReflectR = (135 * skyDimRG) >> 8;
+              final skyReflectG = (195 * skyDimRG) >> 8;
+              final skyReflectB = (255 * (256 - (dnt256 * 77 >> 8))) >> 8; // ~(1-t*0.3)*255
               // Blend ~25% sky reflection into surface water
               _inlineR = (55 + shimmer + (skyReflectR * 60) ~/ 256).clamp(35, 140);
               _inlineG = (185 + shimmer + (skyReflectG * 30) ~/ 256).clamp(165, 245);
