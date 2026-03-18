@@ -76,9 +76,13 @@ class TestDecomposition:
     )
     def test_decay_product(self, ground_truth, element, expected_decay):
         """Elements with decayRate should decay into expected product."""
-        # This comes from the ELEMENTS table in the oracle
-        # We verify via the flammable_all or element properties
-        gt = ground_truth.get("reactions_all", {})
-        # Decay is handled by element properties, not reactions
-        # Just verify the oracle has the element data
-        pytest.skip("Decay is element property, not reaction - verified in oracle")
+        dc = ground_truth.get("decay_chains", {})
+        chain_data = dc.get(element)
+        assert chain_data is not None, f"No decay chain for {element}"
+        chain = chain_data["chain"]
+        # The element should decay into the expected product (next in chain)
+        assert len(chain) >= 2, f"{element} chain too short: {chain}"
+        assert chain[1] == expected_decay, (
+            f"{element} should decay to {expected_decay}, "
+            f"got chain: {chain}"
+        )

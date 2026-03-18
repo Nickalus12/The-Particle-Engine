@@ -55,3 +55,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 53	2026-03-18T02:53	pixel_renderer.dart	Replace 14 math.sin/cos calls with _fastSin piecewise linear approximation (no float trig in render loop)	-	95	100	yes
 54	2026-03-18T02:54	simulation_engine.dart	Integer heat source push: (diff*77)>>8 replaces (diff*0.3).round() in updateTemperature	-	95	100	yes
 55	2026-03-18T03:55	physics_oracle.py+test_stability.py	Energy conservation oracle: free-fall PE+KE, combustion, Newton cooling, entropy mixing + reactive element drift tolerance (593->609 passed, +16)	-	95	100	yes
+56	2026-03-18T03:56	export_frame.dart+test_ecosystem.py	Persistent fire via wood-above-lava + dense steam block + decay chain tests using oracle data (609->614 passed, +5, 0 skips)	-	95	100	yes

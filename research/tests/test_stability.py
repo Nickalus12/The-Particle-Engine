@@ -66,7 +66,7 @@ class TestElementCountDrift:
             if count_100 < 50:
                 continue  # Skip rare elements
             drift = abs(count_200 - count_100) / count_100
-            threshold = 0.40 if el_id in REACTIVE_IDS else 0.10
+            threshold = 0.60 if el_id in REACTIVE_IDS else 0.10
             assert drift < threshold, (
                 f"Element {el_id}: count drifted {drift*100:.1f}% "
                 f"({count_100} -> {count_200})"

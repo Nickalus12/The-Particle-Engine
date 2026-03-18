@@ -107,12 +107,14 @@ void _fillTestWorld(SimulationEngine e) {
     }
   }
 
-  // Steam
-  for (int i = 0; i < 5; i++) {
-    final x = rng.nextInt(w);
-    final y = rng.nextInt(h ~/ 3);
-    if (e.grid[y * w + x] == El.empty) {
-      e.grid[y * w + x] = El.steam;
+  // Steam cluster (enough cells for visual tests)
+  // Place a dense block that survives 100 frames despite condensation
+  for (int sy = 8; sy < 14; sy++) {
+    for (int sx = (w * 0.05).round(); sx < (w * 0.08).round(); sx++) {
+      if (e.grid[sy * w + sx] == El.empty) {
+        e.grid[sy * w + sx] = El.steam;
+        e.temperature[sy * w + sx] = 200; // well above condensation point
+      }
     }
   }
 
@@ -172,5 +174,30 @@ void _fillTestWorld(SimulationEngine e) {
     }
   }
 
+  // Wood touching lava: lava heats wood -> auto-ignition -> persistent fire+smoke
+  // Place wood layer directly above lava pocket (y=0.8 region)
+  {
+    final lavaTop = (h * 0.8).round();
+    for (int x = (w * 0.6).round(); x < (w * 0.7).round(); x++) {
+      // Wood layer just above lava (2 cells thick)
+      for (int ty = 1; ty <= 2; ty++) {
+        final wy = lavaTop - ty;
+        if (wy >= 0) {
+          final idx = wy * w + x;
+          e.grid[idx] = El.wood;
+          e.temperature[idx] = 200; // pre-heated by proximity to lava
+        }
+      }
+    }
+  }
+
+  // Rainbow cell (decays to empty, placed high)
+  {
+    final rx = (w * 0.7).round();
+    final ry = 5;
+    e.grid[ry * w + rx] = El.rainbow;
+  }
+
   e.markAllDirty();
 }
+
