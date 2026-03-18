@@ -7,28 +7,6 @@ import 'image_builder_stub.dart'
 import 'element_registry.dart';
 import 'simulation_engine.dart';
 
-/// Fast sine approximation using integer-only math.
-/// Returns value in [-1.0, 1.0] range. Accurate within ~2% for visual effects.
-@pragma('vm:prefer-inline')
-double _fastSin(double x) {
-  // Normalize to [0, 4) representing quadrants (period = 4 = 2*pi equivalent)
-  // Input x is in radians, period ~6.283
-  // Map to [0, 256) integer range for lookup
-  int ix = ((x * 40.743) % 256).toInt(); // 256 / 6.283 ≈ 40.743
-  if (ix < 0) ix += 256;
-
-  // Piecewise linear approximation using quadrants
-  if (ix < 64) {
-    return ix / 64.0; // 0 to 1
-  } else if (ix < 128) {
-    return (128 - ix) / 64.0; // 1 to 0
-  } else if (ix < 192) {
-    return -(ix - 128) / 64.0; // 0 to -1
-  } else {
-    return -(256 - ix) / 64.0; // -1 to 0
-  }
-}
-
 /// Pure-integer sine approximation. Input: integer phase [0..255] wrapping.
 /// Returns value in [0..256] where 128 = zero-crossing.
 /// Equivalent to `(_fastSin(phase * 2*pi/256) * 128 + 128).round()`.
@@ -138,10 +116,14 @@ class PixelRenderer {
     for (final exp in engine.recentExplosions) {
       final count = (exp.radius * 3).clamp(6, 30);
       for (int i = 0; i < count; i++) {
-        final angle = rng.nextDouble() * 6.2832;
-        final dist = exp.radius * 0.3 + rng.nextDouble() * exp.radius * 0.8;
-        final px = exp.x + (dist * _fastSin(angle + 1.5708)).round();
-        final py = exp.y + (dist * _fastSin(angle)).round();
+        // Integer angle: phase256 in [0, 255] maps to [0, 2*pi)
+        final phase256 = rng.nextInt(256);
+        final dist = (exp.radius * 77 + rng.nextInt(exp.radius * 205)) >> 8;
+        // cos(angle) ≈ sin(angle + pi/2) → phase + 64
+        final sinV = _fastSinI(phase256) - 128; // [-128, 128]
+        final cosV = _fastSinI(phase256 + 64) - 128; // [-128, 128]
+        final px = exp.x + (dist * cosV) ~/ 128;
+        final py = exp.y + (dist * sinV) ~/ 128;
         const pr = 255;
         final pg = 150 + rng.nextInt(105);
         final pb = rng.nextInt(100);
@@ -731,40 +713,43 @@ class PixelRenderer {
         _inlineA = 255;
 
       case El.rainbow:
-        final hue =
-            ((engine.rainbowHue + life[idx] * 7) % 360).toDouble();
-        final h6 = hue / 60.0;
-        final hi = h6.floor() % 6;
-        final f = h6 - h6.floor();
+        // Integer HSV-to-RGB: no float math in hot render path
+        // hue in [0, 360), sector = hue ~/ 60, f256 = fractional part scaled to [0, 255]
+        final hue = (engine.rainbowHue + life[idx] * 7) % 360;
+        final hi = hue ~/ 60; // sector [0..5]
+        // f256 = ((hue % 60) * 256) ~/ 60 — fractional part in [0, 255]
+        final f256 = ((hue - hi * 60) * 256) ~/ 60;
         const v = 255;
-        const p = 51;
-        final q = (v * (1.0 - 0.8 * f)).round();
-        final t2 = (v * (1.0 - 0.8 * (1.0 - f))).round();
+        const p2 = 51; // v * (1 - 0.8) = 255 * 0.2
+        // q = v * (1 - 0.8*f) = 255 - 204*f256/256
+        final q = 255 - ((204 * f256) >> 8);
+        // t2 = v * (1 - 0.8*(1-f)) = 51 + 204*f256/256
+        final t2 = 51 + ((204 * f256) >> 8);
         _inlineA = 255;
         switch (hi) {
           case 0:
             _inlineR = v;
             _inlineG = t2;
-            _inlineB = p;
+            _inlineB = p2;
           case 1:
             _inlineR = q;
             _inlineG = v;
-            _inlineB = p;
+            _inlineB = p2;
           case 2:
-            _inlineR = p;
+            _inlineR = p2;
             _inlineG = v;
             _inlineB = t2;
           case 3:
-            _inlineR = p;
+            _inlineR = p2;
             _inlineG = q;
             _inlineB = v;
           case 4:
             _inlineR = t2;
-            _inlineG = p;
+            _inlineG = p2;
             _inlineB = v;
           default:
             _inlineR = v;
-            _inlineG = p;
+            _inlineG = p2;
             _inlineB = q;
         }
 
