@@ -1849,29 +1849,24 @@ extension ElementBehaviors on SimulationEngine {
       grid[idx] = El.ice; life[idx] = 0; markProcessed(idx); return;
     }
 
-    // Snow falls every frame (gravity), but diagonal spread is gentle
-    final by = y + gravityDir;
-    if (inBoundsY(by) && grid[by * gridW + x] == El.empty) { swap(idx, by * gridW + x); return; }
+    // Snow falls with velocity accumulation (granular mechanics).
+    // Reaches terminal velocity (maxVelocity=2) via drag.
+    fallGranular(x, y, idx, El.snow);
+    if (grid[idx] != El.snow) return; // fell or displaced
 
     // Wind-driven horizontal drift while falling
+    final by = y + gravityDir;
     if (windForce != 0 && rng.nextInt(2) == 0) {
       final windX = wrapX(x + windForce.sign);
       if (inBoundsY(by) && grid[by * gridW + windX] == El.empty) {
         swap(idx, by * gridW + windX);
         return;
       }
-      // Pure horizontal drift in wind
       if (grid[y * gridW + windX] == El.empty) {
         swap(idx, y * gridW + windX);
         return;
       }
     }
-
-    final dl = rng.nextBool();
-    final sx1 = wrapX(dl ? x - 1 : x + 1);
-    final sx2 = wrapX(dl ? x + 1 : x - 1);
-    if (inBoundsY(by) && grid[by * gridW + sx1] == El.empty) { swap(idx, by * gridW + sx1); return; }
-    if (inBoundsY(by) && grid[by * gridW + sx2] == El.empty) { swap(idx, by * gridW + sx2); return; }
 
     if (grid[idx] == El.snow && rng.nextInt(3) == 0) {
       _avalancheGranular(x, y, idx);
@@ -2247,12 +2242,10 @@ extension ElementBehaviors on SimulationEngine {
       velX[idx] = 0;
     }
 
-    // Granular fall: ash falls slowly (every 2 frames) using standard
-    // granular mechanics for proper diagonal spreading and realistic
-    // angle of repose (~35°). The 1/2 rate keeps ash's floaty character.
-    if (life[idx] % 2 == 0) {
-      fallGranular(x, y, idx, El.ash);
-    }
+    // Granular fall with velocity accumulation. Ash reaches terminal
+    // velocity (maxVelocity=2) via Stokes drag, matching the expected
+    // constant-velocity free fall for light particles in air.
+    fallGranular(x, y, idx, El.ash);
     // Avalanche: spread piles even when not falling
     if (rng.nextInt(3) == 0) {
       _avalancheGranular(x, y, idx);

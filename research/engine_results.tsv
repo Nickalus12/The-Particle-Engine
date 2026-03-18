@@ -39,3 +39,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 37	2026-03-18T00:37	element_behaviors.dart	Coulomb friction avalanche: 2/3 probability gate + reduced extended slide (Angle of Repose 66%->96%, Hourglass 60%->100%)	288.2	95	100	yes
 38	2026-03-18T00:38	element_behaviors.dart	Steam enclosure detection (3-cell scan) + sand→mud rate 1/10 + trapped steam persistence (CR21/CR23 0%->100%, CR 80%->88%)	287.4	90	100	yes
 39	2026-03-18T00:39	element_behaviors.dart	Stefan solidification rate increase: threshold 126, rate 1/30-1/5 (PC5 Freezing Chain 0%->75%, Phase Changes 64%->87%)	300.3	90	100	yes
+40	2026-03-18T00:40	element_behaviors.dart	Snow/ash velocity accumulation via fallGranular (K13 5%->100%, K14 0%->100%)	289.0	90	100	yes
