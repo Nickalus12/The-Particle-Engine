@@ -2120,8 +2120,11 @@ extension ElementBehaviors on SimulationEngine {
     final uy = y - gravityDir;
 
     if (inWater) {
-      if (life[idx] % 3 == 0 && inBoundsY(uy)) {
-        final wobble = rng.nextInt(3) - 1;
+      if (life[idx] % 2 == 0 && inBoundsY(uy)) {
+        // Buoyancy-driven rise: predominantly straight up with rare
+        // lateral wobble. Small bubbles (Re < 200) rise in straight
+        // paths; wobble only appears at larger Re from vortex shedding.
+        final wobble = rng.nextInt(20) == 0 ? (rng.nextBool() ? 1 : -1) : 0;
         final riseX = wrapX(x + wobble);
 
         final ai = uy * gridW + riseX;
