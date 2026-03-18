@@ -212,39 +212,45 @@ class PixelRenderer {
         final scaledG = (emG * emission * glowMul / 255.0).round();
         final scaledB = (emB * emission * glowMul / 255.0).round();
 
-        // High-emission elements (lightning) get larger radius
-        if (emission > 200) glowRadius = 4;
+        // Lava gets larger glow for atmospheric molten look
+        if (el == El.lava) {
+          glowRadius = 5;
+        } else if (el == El.fire) {
+          glowRadius = 4;
+        } else if (emission > 200) {
+          glowRadius = 5;
+        }
 
         for (int dy = -glowRadius; dy <= glowRadius; dy++) {
           final ny = ey + dy;
           if (ny < 0 || ny >= h) continue;
           for (int dx = -glowRadius; dx <= glowRadius; dx++) {
-            final nx = ex + dx;
-            if (nx < 0 || nx >= w) continue;
+            var nx = ex + dx;
+            if (nx < 0) nx += w;
+            if (nx >= w) nx -= w;
             final dist = dx.abs() + dy.abs();
             if (dist == 0) continue;
             final ni = ny * w + nx;
-            if (g[ni] != El.empty) continue;
 
-            // Intensity falloff by distance
-            int fr, fg, fb;
-            if (dist <= 1) {
-              fr = scaledR;
-              fg = scaledG;
-              fb = scaledB;
-            } else if (dist <= 2) {
-              fr = scaledR * 2 ~/ 3;
-              fg = scaledG * 2 ~/ 3;
-              fb = scaledB * 2 ~/ 3;
-            } else if (dist <= 3) {
-              fr = scaledR ~/ 3;
-              fg = scaledG ~/ 3;
-              fb = scaledB ~/ 3;
-            } else {
-              fr = scaledR ~/ 5;
-              fg = scaledG ~/ 5;
-              fb = scaledB ~/ 5;
-            }
+            // Glow affects empty cells at full strength, and adds subtle
+            // warm tint to nearby non-empty cells (prevents dark halos)
+            final neighborEl = g[ni];
+            final isTarget = neighborEl == El.empty;
+            final isTintable = !isTarget && neighborEl != el &&
+                neighborEl != El.fire && neighborEl != El.lava &&
+                neighborEl != El.lightning;
+            if (!isTarget && !isTintable) continue;
+
+            // Smooth quadratic falloff
+            final distFrac = dist / (glowRadius + 1);
+            final falloff = ((1.0 - distFrac * distFrac) * 256).round().clamp(0, 256);
+            // Non-empty cells get reduced glow to avoid washing out element color
+            final tintScale = isTintable ? 96 : 256;
+
+            final fr = (scaledR * falloff * tintScale) ~/ (256 * 256);
+            final fg = (scaledG * falloff * tintScale) ~/ (256 * 256);
+            final fb = (scaledB * falloff * tintScale) ~/ (256 * 256);
+
             glowR8[ni] = (glowR8[ni] + fr).clamp(0, 255);
             glowG8[ni] = (glowG8[ni] + fg).clamp(0, 255);
             glowB8[ni] = (glowB8[ni] + fb).clamp(0, 255);
@@ -458,6 +464,18 @@ class PixelRenderer {
             b = _inlineB;
             a = _inlineA;
 
+            // Apply glow tint from nearby emissive sources to non-empty cells
+            if (_glowBuffersValid) {
+              final gr = glowR8[i];
+              final gg = glowG8[i];
+              final gb = glowB8[i];
+              if (gr > 0 || gg > 0 || gb > 0) {
+                r = (r + gr).clamp(0, 255);
+                g2 = (g2 + gg).clamp(0, 255);
+                b = (b + gb).clamp(0, 255);
+              }
+            }
+
             // Atmospheric depth darkening for underground elements
             if (y > 10) {
               final undergroundCheck = _isUnderground(x, y, w, g);
@@ -508,9 +526,10 @@ class PixelRenderer {
     }
 
     for (final p in _microParticles) {
-      final px = p[0];
+      var px = p[0] % w;
+      if (px < 0) px += w;
       final py = p[1];
-      if (px < 0 || px >= w || py < 0 || py >= h) continue;
+      if (py < 0 || py >= h) continue;
       final pi4 = (py * w + px) * 4;
       pxBuf[pi4] = (pxBuf[pi4] + p[2]).clamp(0, 255);
       pxBuf[pi4 + 1] = (pxBuf[pi4 + 1] + p[3]).clamp(0, 255);
@@ -1071,27 +1090,42 @@ class PixelRenderer {
         }
 
       case El.mud:
-        final variation = ((idx * 7 + y * 3) % 11) - 5;
-        final v = ((idx % 5) * 5 + variation).clamp(0, 30);
-        _inlineR = (139 - v).clamp(100, 150);
-        _inlineG = (105 - v).clamp(70, 120);
-        _inlineB = 20;
         _inlineA = 255;
+        // Rich brown earth tones with smooth spatial variation
+        final mudSpatial = _spatialBlend(x, y, 5);
+        final mudVar = (mudSpatial * 20) ~/ 256 - 10;
+        final mudWarmth = _spatialBlend(x + 77, y + 33, 7);
+        final warmShift = (mudWarmth * 12) ~/ 256 - 6;
+        // Subtle wetness sheen on surface
+        final isMudTop = y > 0 && grid[(y - 1) * w + x] != El.mud;
+        final wetBoost = isMudTop ? 10 : 0;
+        _inlineR = (115 + mudVar + warmShift + wetBoost).clamp(85, 145);
+        _inlineG = (75 + mudVar ~/ 2 + warmShift ~/ 2 + wetBoost ~/ 2).clamp(50, 105);
+        _inlineB = (32 + mudVar ~/ 3 + wetBoost ~/ 3).clamp(15, 50);
 
       case El.oil:
         _inlineA = 255;
-        final isTop = y > 0 && grid[(y - 1) * w + x] != El.oil;
-        if (isTop) {
-          final shimmer =
-              (math.sin(frameCount * 0.2 + x * 0.5) * 12 + 12).round();
-          _inlineR = 68 + shimmer;
-          _inlineG = 50 + shimmer;
-          _inlineB = 38 + shimmer ~/ 2;
+        final isOilTop = y > 0 && grid[(y - 1) * w + x] != El.oil;
+        if (isOilTop) {
+          // Iridescent surface shimmer -- rainbow oil slick effect
+          final shimmer1 = math.sin(frameCount * 0.15 + x * 0.7) * 0.5 + 0.5;
+          final shimmer2 = math.sin(frameCount * 0.12 + x * 1.1 + 1.2) * 0.5 + 0.5;
+          final iridPhase = ((x * 37 + frameCount * 2) % 120) / 120.0;
+          // Rainbow phase for iridescence
+          final iridR = (math.sin(iridPhase * 6.28) * 20 + 20).round();
+          final iridG = (math.sin(iridPhase * 6.28 + 2.09) * 15 + 10).round();
+          final iridB = (math.sin(iridPhase * 6.28 + 4.19) * 20 + 15).round();
+          final shimVal = (shimmer1 * 14 + shimmer2 * 8).round();
+          _inlineR = (60 + shimVal + iridR).clamp(45, 110);
+          _inlineG = (45 + shimVal + iridG).clamp(32, 85);
+          _inlineB = (35 + shimVal ~/ 2 + iridB).clamp(25, 75);
         } else {
-          final variation = ((idx * 7 + y * 3) % 11) - 5;
-          _inlineR = (50 + variation).clamp(30, 70);
-          _inlineG = (37 + variation).clamp(20, 55);
-          _inlineB = (28 + variation).clamp(10, 45);
+          // Deep oil body: dark with subtle spatial variation
+          final oilSpatial = _spatialBlend(x, y, 5);
+          final oilVar = (oilSpatial * 14) ~/ 256 - 7;
+          _inlineR = (42 + oilVar).clamp(28, 58);
+          _inlineG = (32 + oilVar).clamp(18, 48);
+          _inlineB = (25 + oilVar).clamp(12, 40);
         }
 
       case El.acid:
@@ -1260,27 +1294,18 @@ class PixelRenderer {
         _inlineB = (smokeBase + variation + wispVal ~/ 3).clamp(95, 180);
 
       case El.bubble:
-        final bubblePhase = (frameCount * 3 + idx * 17) % 60;
-        final bright = (frameCount + idx) % 8 < 3 ? 30 : 0;
-        final variation = ((idx * 7 + y * 3) % 11) - 5;
-        if (bubblePhase < 15) {
-          _inlineR = (200 + bright + variation).clamp(170, 240);
-          _inlineG = (180 + bright + variation).clamp(155, 220);
-          _inlineB = (240 + bright).clamp(220, 255);
-        } else if (bubblePhase < 30) {
-          _inlineR = (150 + bright + variation).clamp(130, 195);
-          _inlineG = (230 + bright + variation).clamp(210, 255);
-          _inlineB = (245 + bright).clamp(230, 255);
-        } else if (bubblePhase < 45) {
-          _inlineR = (220 + bright + variation).clamp(195, 255);
-          _inlineG = (220 + bright + variation).clamp(195, 255);
-          _inlineB = (180 + bright).clamp(160, 220);
-        } else {
-          _inlineR = (173 + bright + variation).clamp(150, 220);
-          _inlineG = (216 + bright + variation).clamp(190, 255);
-          _inlineB = (230 + bright).clamp(210, 255);
-        }
-        _inlineA = 170;
+        // Iridescent soap-bubble feel with shifting rainbow highlight
+        final bubbleTime = frameCount * 0.08 + idx * 0.5;
+        final iridShift = math.sin(bubbleTime) * 0.5 + 0.5;
+        final iridShift2 = math.sin(bubbleTime * 0.7 + 1.5) * 0.5 + 0.5;
+        // Specular highlight that moves across the bubble
+        final highlight = (frameCount + idx * 7) % 40 < 4 ? 40 : 0;
+        // Base: light cyan-white with rainbow shimmer
+        _inlineR = (180 + (iridShift * 50).round() + highlight).clamp(165, 255);
+        _inlineG = (210 + (iridShift2 * 35).round() + highlight).clamp(195, 255);
+        _inlineB = (240 + highlight).clamp(230, 255);
+        // Very translucent to show what's behind
+        _inlineA = (120 + (iridShift * 30).round()).clamp(100, 160);
 
       case El.ash:
         final variation = ((idx * 7 + y * 3) % 11) - 5;

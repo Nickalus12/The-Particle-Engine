@@ -119,6 +119,12 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
       if (_simAccumulator >= _simInterval) {
         simulation.step(elementBehavior);
         creatures.tick(simulation);
+        // Pheromone system for ant AI (extension methods on SimulationEngine)
+        if (simulation.colonyX >= 0) {
+          if (simulation.frameCount % 8 == 0) simulation.evaporatePheromones();
+          if (simulation.frameCount % 4 == 0) simulation.diffusePheromones();
+          if (simulation.frameCount % 16 == 0) simulation.updateColonyCentroid();
+        }
         _simAccumulator -= _simInterval;
         // Prevent spiral of death if frames are very slow.
         if (_simAccumulator > _simInterval * 3) {

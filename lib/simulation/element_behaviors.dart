@@ -2301,6 +2301,7 @@ extension ElementBehaviors on SimulationEngine {
   }
 
   /// Diffuse pheromones to cardinal neighbors (restricted to dirty chunks).
+  /// Wraps horizontally for cylinder topology.
   void diffusePheromones() {
     final w = gridW;
     final h = gridH;
@@ -2319,19 +2320,21 @@ extension ElementBehaviors on SimulationEngine {
       for (int cx = 0; cx < cols; cx++) {
         if (dc[chunkRowBase + cx] == 0) continue;
 
-        final xStart = (cx * 16).clamp(1, w - 2);
-        final xEnd = ((cx + 1) * 16).clamp(1, w - 2);
+        final xStart = cx * 16;
+        final xEnd = ((cx + 1) * 16).clamp(0, w);
 
         for (int y = yStart; y < yEnd; y++) {
           final row = y * w;
           for (int x = xStart; x < xEnd; x++) {
             final i = row + x;
+            final xl = row + wrapX(x - 1);
+            final xr = row + wrapX(x + 1);
             final fv = pf[i];
             if (fv > 2) {
               final spread = fv >> 3;
               if (spread > 0) {
-                if (g[i - 1] == El.empty) pf[i - 1] = (pf[i - 1] + spread).clamp(0, 255);
-                if (g[i + 1] == El.empty) pf[i + 1] = (pf[i + 1] + spread).clamp(0, 255);
+                if (g[xl] == El.empty) pf[xl] = (pf[xl] + spread).clamp(0, 255);
+                if (g[xr] == El.empty) pf[xr] = (pf[xr] + spread).clamp(0, 255);
                 if (g[i - w] == El.empty) pf[i - w] = (pf[i - w] + spread).clamp(0, 255);
                 if (g[i + w] == El.empty) pf[i + w] = (pf[i + w] + spread).clamp(0, 255);
               }
@@ -2340,8 +2343,8 @@ extension ElementBehaviors on SimulationEngine {
             if (hv > 2) {
               final spread = hv >> 3;
               if (spread > 0) {
-                if (g[i - 1] == El.empty) ph[i - 1] = (ph[i - 1] + spread).clamp(0, 255);
-                if (g[i + 1] == El.empty) ph[i + 1] = (ph[i + 1] + spread).clamp(0, 255);
+                if (g[xl] == El.empty) ph[xl] = (ph[xl] + spread).clamp(0, 255);
+                if (g[xr] == El.empty) ph[xr] = (ph[xr] + spread).clamp(0, 255);
                 if (g[i - w] == El.empty) ph[i - w] = (ph[i - w] + spread).clamp(0, 255);
                 if (g[i + w] == El.empty) ph[i + w] = (ph[i + w] + spread).clamp(0, 255);
               }

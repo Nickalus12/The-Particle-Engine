@@ -40,6 +40,10 @@ class SandboxComponent extends PositionComponent
 
   final Stopwatch _updateStopwatch = Stopwatch();
 
+  /// Last grid position painted at, for Bresenham line interpolation.
+  int? _lastPaintX;
+  int? _lastPaintY;
+
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
@@ -119,12 +123,16 @@ class SandboxComponent extends PositionComponent
 
   @override
   void onTapDown(TapDownEvent event) {
+    _lastPaintX = null;
+    _lastPaintY = null;
     paintAt(event.localPosition);
   }
 
   @override
   void onDragStart(DragStartEvent event) {
     super.onDragStart(event);
+    _lastPaintX = null;
+    _lastPaintY = null;
     paintAt(event.localPosition);
   }
 
@@ -133,9 +141,66 @@ class SandboxComponent extends PositionComponent
     paintAt(event.localEndPosition);
   }
 
+  @override
+  void onDragEnd(DragEndEvent event) {
+    super.onDragEnd(event);
+    _lastPaintX = null;
+    _lastPaintY = null;
+  }
+
   void paintAt(Vector2 position) {
     final cx = (position.x / cellSize).floor();
     final cy = (position.y / cellSize).floor();
+
+    // Bresenham line from last paint position to current for gap-free strokes.
+    if (_lastPaintX != null && _lastPaintY != null) {
+      final x0 = _lastPaintX!;
+      final y0 = _lastPaintY!;
+      if (x0 != cx || y0 != cy) {
+        _paintLine(x0, y0, cx, cy);
+        _lastPaintX = cx;
+        _lastPaintY = cy;
+        return;
+      }
+    }
+
+    _paintCell(cx, cy);
+    _lastPaintX = cx;
+    _lastPaintY = cy;
+  }
+
+  /// Paint along a Bresenham line from (x0,y0) to (x1,y1), skipping (x0,y0)
+  /// since it was already painted on the previous event.
+  void _paintLine(int x0, int y0, int x1, int y1) {
+    int dx = (x1 - x0).abs();
+    int dy = -(y1 - y0).abs();
+    int sx = x0 < x1 ? 1 : -1;
+    int sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+
+    int px = x0;
+    int py = y0;
+    bool first = true;
+    while (true) {
+      if (!first) {
+        _paintCell(px, py);
+      }
+      first = false;
+      if (px == x1 && py == y1) break;
+      final e2 = 2 * err;
+      if (e2 >= dy) {
+        err += dy;
+        px += sx;
+      }
+      if (e2 <= dx) {
+        err += dx;
+        py += sy;
+      }
+    }
+  }
+
+  /// Paint a single brush stamp at grid position (cx, cy).
+  void _paintCell(int cx, int cy) {
     final isEraser = selectedElement == El.eraser || selectedElement == El.empty;
     final paintEl = isEraser ? El.empty : selectedElement;
 

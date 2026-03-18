@@ -279,16 +279,19 @@ class SimulationEngine {
     final tmpLife = life[a];
     final tmpVx = velX[a];
     final tmpVy = velY[a];
+    final tmpTemp = temperature[a];
 
     grid[a] = grid[b];
     life[a] = life[b];
     velX[a] = velX[b];
     velY[a] = velY[b];
+    temperature[a] = temperature[b];
 
     grid[b] = tmpEl;
     life[b] = tmpLife;
     velX[b] = tmpVx;
     velY[b] = tmpVy;
+    temperature[b] = tmpTemp;
 
     final clockBit = simClock ? 0x80 : 0;
     flags[a] = clockBit;
@@ -301,7 +304,10 @@ class SimulationEngine {
 
   /// Wrap an x coordinate for horizontal cylinder topology.
   @pragma('vm:prefer-inline')
-  int wrapX(int x) => x < 0 ? gridW + (x % gridW) : x % gridW;
+  int wrapX(int x) {
+    final r = x % gridW;
+    return r < 0 ? r + gridW : r;
+  }
 
   @pragma('vm:prefer-inline')
   bool inBounds(int x, int y) =>
@@ -892,6 +898,7 @@ class SimulationEngine {
   // =========================================================================
 
   /// Returns OR'd category bitmask of all elements within [radius] of (x,y).
+  /// Wraps horizontally for cylinder topology.
   @pragma('vm:prefer-inline')
   int senseCategories(int x, int y, int radius) {
     int result = 0;
@@ -900,8 +907,6 @@ class SimulationEngine {
     final h = gridH;
     final cat = elCategory;
     const maxEl = maxElements;
-    final x0 = (x - radius).clamp(0, w - 1);
-    final x1 = (x + radius).clamp(0, w - 1);
     final y0 = (y - radius).clamp(0, h - 1);
     final y1 = (y + radius).clamp(0, h - 1);
     final r2 = radius * radius;
@@ -909,9 +914,9 @@ class SimulationEngine {
       final dy = sy - y;
       final dy2 = dy * dy;
       final rowOff = sy * w;
-      for (int sx = x0; sx <= x1; sx++) {
-        final dx = sx - x;
+      for (int dx = -radius; dx <= radius; dx++) {
         if (dx * dx + dy2 > r2) continue;
+        final sx = wrapX(x + dx);
         final el = g[rowOff + sx];
         if (el > 0 && el < maxEl) {
           result |= cat[el];
@@ -923,6 +928,7 @@ class SimulationEngine {
 
   /// Fast danger check: returns true if any element with [ElCat.danger] is
   /// within [radius] of (x,y). Short-circuits on first hit.
+  /// Wraps horizontally for cylinder topology.
   @pragma('vm:prefer-inline')
   bool senseDanger(int x, int y, int radius) {
     final g = grid;
@@ -930,8 +936,6 @@ class SimulationEngine {
     final h = gridH;
     final cat = elCategory;
     const maxEl = maxElements;
-    final x0 = (x - radius).clamp(0, w - 1);
-    final x1 = (x + radius).clamp(0, w - 1);
     final y0 = (y - radius).clamp(0, h - 1);
     final y1 = (y + radius).clamp(0, h - 1);
     final r2 = radius * radius;
@@ -939,9 +943,9 @@ class SimulationEngine {
       final dy = sy - y;
       final dy2 = dy * dy;
       final rowOff = sy * w;
-      for (int sx = x0; sx <= x1; sx++) {
-        final dx = sx - x;
+      for (int dx = -radius; dx <= radius; dx++) {
         if (dx * dx + dy2 > r2) continue;
+        final sx = wrapX(x + dx);
         final el = g[rowOff + sx];
         if (el > 0 && el < maxEl && (cat[el] & ElCat.danger) != 0) {
           return true;
@@ -952,14 +956,13 @@ class SimulationEngine {
   }
 
   /// Count occurrences of [elementType] within [radius] of (x,y).
+  /// Wraps horizontally for cylinder topology.
   @pragma('vm:prefer-inline')
   int countNearby(int x, int y, int radius, int elementType) {
     int count = 0;
     final g = grid;
     final w = gridW;
     final h = gridH;
-    final x0 = (x - radius).clamp(0, w - 1);
-    final x1 = (x + radius).clamp(0, w - 1);
     final y0 = (y - radius).clamp(0, h - 1);
     final y1 = (y + radius).clamp(0, h - 1);
     final r2 = radius * radius;
@@ -967,9 +970,9 @@ class SimulationEngine {
       final dy = sy - y;
       final dy2 = dy * dy;
       final rowOff = sy * w;
-      for (int sx = x0; sx <= x1; sx++) {
-        final dx = sx - x;
+      for (int dx = -radius; dx <= radius; dx++) {
         if (dx * dx + dy2 > r2) continue;
+        final sx = wrapX(x + dx);
         if (g[rowOff + sx] == elementType) count++;
       }
     }
@@ -977,6 +980,7 @@ class SimulationEngine {
   }
 
   /// Count elements matching [categoryMask] within [radius] of (x,y).
+  /// Wraps horizontally for cylinder topology.
   @pragma('vm:prefer-inline')
   int countNearbyByCategory(int x, int y, int radius, int categoryMask) {
     int count = 0;
@@ -985,8 +989,6 @@ class SimulationEngine {
     final h = gridH;
     final cat = elCategory;
     const maxEl = maxElements;
-    final x0 = (x - radius).clamp(0, w - 1);
-    final x1 = (x + radius).clamp(0, w - 1);
     final y0 = (y - radius).clamp(0, h - 1);
     final y1 = (y + radius).clamp(0, h - 1);
     final r2 = radius * radius;
@@ -994,9 +996,9 @@ class SimulationEngine {
       final dy = sy - y;
       final dy2 = dy * dy;
       final rowOff = sy * w;
-      for (int sx = x0; sx <= x1; sx++) {
-        final dx = sx - x;
+      for (int dx = -radius; dx <= radius; dx++) {
         if (dx * dx + dy2 > r2) continue;
+        final sx = wrapX(x + dx);
         final el = g[rowOff + sx];
         if (el > 0 && el < maxEl && (cat[el] & categoryMask) != 0) {
           count++;
@@ -1008,6 +1010,7 @@ class SimulationEngine {
 
   /// Find direction toward nearest element matching [categoryMask].
   /// Returns encoded value: (dx + 1) * 3 + (dy + 1), or -1 if not found.
+  /// Wraps horizontally for cylinder topology.
   int findNearestDirection(int x, int y, int radius, int categoryMask) {
     final g = grid;
     final w = gridW;
@@ -1018,8 +1021,6 @@ class SimulationEngine {
     int bestDx = 0;
     int bestDy = 0;
     bool found = false;
-    final x0 = (x - radius).clamp(0, w - 1);
-    final x1 = (x + radius).clamp(0, w - 1);
     final y0 = (y - radius).clamp(0, h - 1);
     final y1 = (y + radius).clamp(0, h - 1);
     final r2 = radius * radius;
@@ -1027,11 +1028,11 @@ class SimulationEngine {
       final dy = sy - y;
       final dy2 = dy * dy;
       final rowOff = sy * w;
-      for (int sx = x0; sx <= x1; sx++) {
-        final dx = sx - x;
+      for (int dx = -radius; dx <= radius; dx++) {
         final d2 = dx * dx + dy2;
         if (d2 > r2 || d2 == 0) continue;
         if (d2 >= bestDist) continue;
+        final sx = wrapX(x + dx);
         final el = g[rowOff + sx];
         if (el > 0 && el < maxEl && (cat[el] & categoryMask) != 0) {
           bestDist = d2;
@@ -1048,6 +1049,7 @@ class SimulationEngine {
   }
 
   /// Scan along direction (dx,dy) from (x,y) for [distance] steps.
+  /// Wraps horizontally for cylinder topology; stops at vertical bounds.
   List<int> scanLine(int x, int y, int dx, int dy, int distance) {
     final result = <int>[];
     final g = grid;
@@ -1056,7 +1058,8 @@ class SimulationEngine {
     int cx = x + dx;
     int cy = y + dy;
     for (int i = 0; i < distance; i++) {
-      if (cx < 0 || cx >= w || cy < 0 || cy >= h) break;
+      if (cy < 0 || cy >= h) break;
+      cx = wrapX(cx);
       result.add(g[cy * w + cx]);
       cx += dx;
       cy += dy;
@@ -1315,6 +1318,11 @@ class SimulationEngine {
 
     processExplosions();
 
+    // Apply wind force to movable elements
+    if (windForce != 0 && frameCount % 2 == 0) {
+      applyWind();
+    }
+
     // Update temperature system every 3 frames for performance
     if (frameCount % 3 == 0) {
       updateTemperature();
@@ -1334,7 +1342,7 @@ class SimulationEngine {
     final w = gridW;
 
     final leftToRight = frameCount.isEven;
-    final yStart = gravityDir == 1 ? gridH - 2 : 1;
+    final yStart = gravityDir == 1 ? gridH - 1 : 0;
     final yEnd = gravityDir == 1 ? -1 : gridH;
     final yStep = gravityDir == 1 ? -1 : 1;
     for (int y = yStart; y != yEnd; y += yStep) {
