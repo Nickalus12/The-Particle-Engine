@@ -54,3 +54,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 52	2026-03-18T02:52	simulation_engine.dart+export_frame.dart+physics_oracle.py+test_*.py	Deterministic RNG seed, fire+wood oracle fix, oil-above-water layout, dart path fix (4 failures->0)	-	95	100	yes
 53	2026-03-18T02:53	pixel_renderer.dart	Replace 14 math.sin/cos calls with _fastSin piecewise linear approximation (no float trig in render loop)	-	95	100	yes
 54	2026-03-18T02:54	simulation_engine.dart	Integer heat source push: (diff*77)>>8 replaces (diff*0.3).round() in updateTemperature	-	95	100	yes
+55	2026-03-18T03:55	physics_oracle.py+test_stability.py	Energy conservation oracle: free-fall PE+KE, combustion, Newton cooling, entropy mixing + reactive element drift tolerance (593->609 passed, +16)	-	95	100	yes

@@ -269,7 +269,7 @@
     }),
     'fire_wood': dict({
       'source_becomes': None,
-      'target_becomes': None,
+      'target_becomes': 'fire',
     }),
     'ice_fire': dict({
       'source_becomes': 'water',
