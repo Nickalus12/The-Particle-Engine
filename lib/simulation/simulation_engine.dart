@@ -889,13 +889,14 @@ class SimulationEngine {
   /// Propagation strength decays by (1 - conductivity) per hop.
   void conductElectricity(int startX, int startY) {
     final visited = <int>{};
+    // Use index pointer instead of removeAt(0) for O(1) dequeue
     final queue = <int>[startY * gridW + startX];
     final strengths = <int, int>{startY * gridW + startX: 255};
+    int head = 0;
     int count = 0;
-    while (queue.isNotEmpty && count < 300) {
-      final curIdx = queue.removeAt(0);
-      if (visited.contains(curIdx)) continue;
-      visited.add(curIdx);
+    while (head < queue.length && count < 300) {
+      final curIdx = queue[head++];
+      if (!visited.add(curIdx)) continue;
       final el = grid[curIdx];
       final cond = el < maxElements ? elementConductivity[el] : 0;
       if (cond == 0) continue;
@@ -933,7 +934,8 @@ class SimulationEngine {
             // Conductive neighbor: propagate
             if (!strengths.containsKey(ni) || strengths[ni]! < newStrength) {
               strengths[ni] = newStrength;
-              if (!queue.contains(ni)) queue.add(ni);
+              // visited check is sufficient; no need for queue.contains
+              queue.add(ni);
             }
           } else if (neighborEl == El.tnt) {
             pendingExplosions.add(Explosion(nx, ny, calculateTNTRadius(nx, ny)));
@@ -945,7 +947,7 @@ class SimulationEngine {
               markProcessed(ni);
             } else if (neighborEl == El.ice) {
               grid[ni] = El.water;
-              life[ni] = 150;
+              life[ni] = 0;
               markProcessed(ni);
             } else if (neighborEl == El.plant || neighborEl == El.seed ||
                 neighborEl == El.oil || neighborEl == El.wood) {
@@ -1373,6 +1375,93 @@ class SimulationEngine {
 
     swap(idx, ui);
     return true;
+  }
+
+  // =========================================================================
+  // Convection currents — hot liquids rise, cold liquids sink
+  // =========================================================================
+
+  /// Apply convection to a liquid cell: if this cell is hotter than the one
+  /// above it (same liquid type), swap them so hot rises. Returns true if moved.
+  @pragma('vm:prefer-inline')
+  bool tryConvection(int x, int y, int idx, int el) {
+    final myTemp = temperature[idx];
+    // Only fire for meaningfully hot or cold liquids (deviation from neutral)
+    if ((myTemp - 128).abs() < 10) return false;
+
+    final g = gravityDir;
+    final uy = y - g;
+    if (!inBoundsY(uy)) return false;
+
+    final ui = uy * gridW + x;
+    final aboveEl = grid[ui];
+
+    // Same liquid type: hot rises through cold
+    if (aboveEl == el) {
+      final aboveTemp = temperature[ui];
+      final diff = myTemp - aboveTemp;
+      // Hot cell below cold cell of same type — swap (hot rises)
+      if (diff > 15) {
+        // Probability proportional to temperature difference
+        if (rng.nextInt(60) < diff ~/ 4) {
+          swap(idx, ui);
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // Different liquid: hot liquid rises through cooler heavier liquid
+    // only if temperature makes it effectively lighter
+    final aboveState = elementPhysicsState[aboveEl];
+    if (aboveState != PhysicsState.liquid.index) return false;
+
+    final myDensity = elementDensity[el];
+    final aboveDensity = elementDensity[aboveEl];
+    // Normally heavier — but heat reduces effective density
+    // Each 10 degrees above neutral reduces effective density by ~5
+    final heatReduction = ((myTemp - 128).clamp(0, 127)) ~/ 2;
+    final effectiveDensity = (myDensity - heatReduction).clamp(0, 255);
+
+    if (effectiveDensity < aboveDensity) {
+      final clockBit = simClock ? 0x80 : 0;
+      if ((flags[ui] & 0x80) != clockBit) {
+        swap(idx, ui);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // =========================================================================
+  // Radiant heat — hot elements warm nearby air cells
+  // =========================================================================
+
+  /// Emit radiant heat from a hot element to surrounding empty (air) cells.
+  /// Creates visible heat zones around lava, fire, etc.
+  void emitRadiantHeat(int x, int y, int idx, int radius, int intensity) {
+    final w = gridW;
+    final h = gridH;
+    final r2 = radius * radius;
+    for (int dy = -radius; dy <= radius; dy++) {
+      final ny = y + dy;
+      if (ny < 0 || ny >= h) continue;
+      for (int dx = -radius; dx <= radius; dx++) {
+        final d2 = dx * dx + dy * dy;
+        if (d2 == 0 || d2 > r2) continue;
+        final nx = wrapX(x + dx);
+        final ni = ny * w + nx;
+        final el = grid[ni];
+        // Warm empty air cells and low-conductivity elements
+        if (el == El.empty || elementHeatCond[el] < 20) {
+          final falloff = intensity * (r2 - d2) ~/ r2;
+          final current = temperature[ni];
+          if (current < 128 + falloff) {
+            temperature[ni] = (current + (falloff ~/ 3).clamp(1, 15)).clamp(0, 255);
+          }
+        }
+      }
+    }
   }
 
   // =========================================================================

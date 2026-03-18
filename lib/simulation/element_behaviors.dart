@@ -69,45 +69,28 @@ extension ElementBehaviors on SimulationEngine {
       life[idx] = 100;
     }
 
-    // Freeze near ice (legacy — kept as supplement to temperature system)
-    if (rng.nextInt(60) == 0 && checkAdjacent(x, y, El.ice)) {
+    // Freeze near ice — only when temperature is cold (below 100)
+    // Prevents ice from aggressively spreading in warm environments
+    if (temperature[idx] < 100 && rng.nextInt(300) == 0 && checkAdjacent(x, y, El.ice)) {
       grid[idx] = El.ice;
       markProcessed(idx);
       return;
     }
 
-    // Evaporation near heat (legacy — kept as supplement to temperature system)
-    final evapChance = isNight ? 30 : 15;
-    if (rng.nextInt(evapChance) == 0) {
-      for (int dy = -2; dy <= 2; dy++) {
-        for (int dx = -2; dx <= 2; dx++) {
-          if (dx == 0 && dy == 0) continue;
-          final nx = wrapX(x + dx);
-          final ny = y + dy;
-          if (!inBoundsY(ny)) continue;
-          final neighbor = grid[ny * gridW + nx];
-          if (neighbor == El.fire || neighbor == El.lava) {
-            grid[idx] = El.steam;
-            life[idx] = 0;
-            markProcessed(idx);
-            return;
-          }
-        }
-      }
-    }
-
     // Surface evaporation (water cycle): surface water slowly evaporates
-    // Surface = no water directly above, sky/empty above.
+    // Surface = no water directly above.
+    // Near-heat evaporation is handled by the temperature system (checkTemperatureReaction).
     {
       final aboveY = y - g;
       final isSurface = !inBoundsY(aboveY) ||
           (grid[aboveY * gridW + x] != El.water);
       if (isSurface) {
-        // Check temperature for accelerated evaporation
+        // Check temperature for evaporation — much slower natural rates
+        // to avoid ugly white dot spam across the surface.
         final temp = temperature[idx];
-        final evapRate = temp > 150
-            ? 60   // Near fire/lava: fast evaporation
-            : (isNight ? 400 : 200); // Normal: slow, slower at night
+        final evapRate = temp > 180
+            ? 120   // Very hot: moderate evaporation
+            : (temp > 150 ? 300 : (isNight ? 2000 : 800)); // Warm / Normal / Night
         if (rng.nextInt(evapRate) == 0) {
           grid[idx] = El.steam;
           life[idx] = 0;
@@ -427,6 +410,79 @@ extension ElementBehaviors on SimulationEngine {
 
     if (rng.nextInt(4) == 0) velX[idx] = 0;
 
+    // Convection: hot water rises through cold water above
+    if (!isSpecialState && frameCount % 2 == 0) {
+      if (tryConvection(x, y, idx, El.water)) return;
+    }
+
+    // Erosion: flowing water with momentum picks up dirt/sand particles
+    // Sediment is encoded in life >= 140 (special state: 140-199 = carrying sediment)
+    // 140-159 = carrying dirt, 160-179 = carrying sand
+    if (!isSpecialState && velX[idx] != 0 && frameCount % 6 == 0) {
+      // Check below for erodible material
+      final erosionDir = velX[idx] > 0 ? 1 : -1;
+      final downY = y + gravityDir;
+      if (inBoundsY(downY)) {
+        // Erode material in the direction of flow, below the water
+        for (final edy in [0, 1]) {
+          final ey = downY + edy * gravityDir;
+          if (!inBoundsY(ey)) continue;
+          final ex = wrapX(x + erosionDir);
+          final ei = ey * gridW + ex;
+          final eEl = grid[ei];
+          if (eEl == El.dirt && rng.nextInt(20) == 0) {
+            grid[ei] = El.empty;
+            life[ei] = 0;
+            markProcessed(ei);
+            // Become sediment-carrying water
+            life[idx] = 145; // carrying dirt
+            markDirty(x, y);
+            break;
+          } else if (eEl == El.sand && rng.nextInt(30) == 0) {
+            grid[ei] = El.empty;
+            life[ei] = 0;
+            markProcessed(ei);
+            life[idx] = 165; // carrying sand
+            markDirty(x, y);
+            break;
+          }
+        }
+      }
+    }
+
+    // Sediment deposition: carrying water drops sediment when it slows down
+    if (isSpecialState && lifeVal >= 140 && lifeVal < 200) {
+      final carryingDirt = lifeVal < 160;
+      // Deposit when velocity is zero (water stopped flowing) or randomly
+      if (velX[idx] == 0 || rng.nextInt(40) == 0) {
+        final depY = y + gravityDir;
+        if (inBoundsY(depY)) {
+          final depI = depY * gridW + x;
+          if (grid[depI] == El.empty) {
+            grid[depI] = carryingDirt ? El.dirt : El.sand;
+            life[depI] = 0;
+            markProcessed(depI);
+            life[idx] = 100; // back to normal water
+            markDirty(x, y);
+          } else if (grid[depI] != El.water) {
+            // Can't deposit below — try sides
+            for (final sideDir in [1, -1]) {
+              final sx = wrapX(x + sideDir);
+              final si = depY * gridW + sx;
+              if (grid[si] == El.empty) {
+                grid[si] = carryingDirt ? El.dirt : El.sand;
+                life[si] = 0;
+                markProcessed(si);
+                life[idx] = 100;
+                markDirty(x, y);
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
     // Underground water seepage: water slowly percolates through dirt
     if (!isSpecialState && frameCount % 8 == 0 && rng.nextInt(12) == 0) {
       final by2 = y + gravityDir;
@@ -518,16 +574,36 @@ extension ElementBehaviors on SimulationEngine {
     final burnoutLife = nearOil ? 70 + rng.nextInt(50) : 40 + rng.nextInt(40);
 
     if (life[idx] > burnoutLife) {
-      grid[idx] = El.ash;
-      life[idx] = 0;
-      markProcessed(idx);
+      // Fire burns out — always produce smoke, sometimes ash
       final uy = y - gravityDir;
-      if (rng.nextBool() && inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
+      if (rng.nextInt(3) > 0) {
+        // 2/3 chance: become smoke directly (fire rises into smoke naturally)
+        grid[idx] = El.smoke;
+        life[idx] = 0;
+        markProcessed(idx);
+      } else {
+        // 1/3 chance: leave ash behind
+        grid[idx] = El.ash;
+        life[idx] = 0;
+        markProcessed(idx);
+      }
+      // Spawn extra smoke above
+      if (inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
         grid[uy * gridW + x] = El.smoke;
         life[uy * gridW + x] = 0;
         markProcessed(uy * gridW + x);
       }
       return;
+    }
+
+    // Intermittent smoke while burning (visible plume)
+    if (rng.nextInt(12) == 0) {
+      final uy = y - gravityDir;
+      if (inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
+        grid[uy * gridW + x] = El.smoke;
+        life[uy * gridW + x] = 0;
+        markProcessed(uy * gridW + x);
+      }
     }
 
     for (int dy = -1; dy <= 1; dy++) {
@@ -614,15 +690,40 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
+    // Radiant heat: fire warms nearby air cells (smaller radius than lava)
+    if (frameCount % 10 == 0) {
+      emitRadiantHeat(x, y, idx, 2, 25);
+    }
+
+    // Movement: fire rises with horizontal flickering for a dancing flame effect
     final uy = y - gravityDir;
+    // Flicker: alternate between rising straight and drifting sideways
+    final flicker = rng.nextInt(4); // 0-1 = straight up, 2 = drift left, 3 = drift right
+    if (flicker <= 1) {
+      // Rise straight up
+      if (inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
+        swap(idx, uy * gridW + x);
+        return;
+      }
+    }
+    // Drift diagonally upward
+    final drift = flicker == 2 ? -1 : (flicker == 3 ? 1 : (rng.nextBool() ? -1 : 1));
+    final driftX = wrapX(x + drift);
+    if (inBoundsY(uy) && grid[uy * gridW + driftX] == El.empty) {
+      swap(idx, uy * gridW + driftX);
+      return;
+    }
+    // Fallback: try straight up if diagonal failed
     if (inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
       swap(idx, uy * gridW + x);
       return;
     }
-    final drift = rng.nextInt(3) - 1;
-    final driftX = wrapX(x + drift);
-    if (inBoundsY(uy) && grid[uy * gridW + driftX] == El.empty) {
-      swap(idx, uy * gridW + driftX);
+    // Lateral shimmy when trapped (fire dances sideways)
+    if (rng.nextInt(3) == 0) {
+      final sideX = wrapX(x + (rng.nextBool() ? 1 : -1));
+      if (grid[y * gridW + sideX] == El.empty) {
+        swap(idx, y * gridW + sideX);
+      }
     }
   }
 
@@ -889,20 +990,47 @@ extension ElementBehaviors on SimulationEngine {
       // by not falling through to fallGranularDisplace when fully surrounded
     }
 
-    // Water erosion: dirt with water flowing over it slowly erodes
-    if (frameCount % 20 == 0 && rng.nextInt(15) == 0) {
-      // Check for water flowing above or beside this dirt
+    // Water erosion: dirt with water flowing over it erodes
+    // Enhanced: checks for flowing water (with momentum) for stronger erosion
+    if (frameCount % 12 == 0 && rng.nextInt(10) == 0) {
       int waterFlowCount = 0;
+      bool hasFlowingWater = false;
       for (int dx2 = -1; dx2 <= 1; dx2++) {
         final nx = wrapX(x + dx2);
         final uy = y - gravityDir;
-        if (inBoundsY(uy) && grid[uy * gridW + nx] == El.water) {
-          waterFlowCount++;
+        if (inBoundsY(uy)) {
+          final wi = uy * gridW + nx;
+          if (grid[wi] == El.water) {
+            waterFlowCount++;
+            // Check if the water has lateral momentum (flowing)
+            if (velX[wi] != 0) hasFlowingWater = true;
+          }
         }
       }
-      if (waterFlowCount >= 2 && velY[idx] < 3) {
-        // Erode: turn to mud or empty based on moisture
-        if (life[idx] >= 3) {
+      if (velY[idx] < 3) {
+        if (hasFlowingWater && rng.nextInt(8) == 0) {
+          // Flowing water erodes more aggressively — dirt becomes empty
+          // and the water picks it up as sediment
+          grid[idx] = El.empty;
+          life[idx] = 0;
+          velY[idx] = 0;
+          markProcessed(idx);
+          // Try to make an adjacent water cell carry the sediment
+          final uy = y - gravityDir;
+          if (inBoundsY(uy)) {
+            for (int dx2 = -1; dx2 <= 1; dx2++) {
+              final nx = wrapX(x + dx2);
+              final wi = uy * gridW + nx;
+              if (grid[wi] == El.water && life[wi] < 140) {
+                life[wi] = 145; // carrying dirt
+                markDirty(nx, uy);
+                break;
+              }
+            }
+          }
+          return;
+        } else if (waterFlowCount >= 2 && life[idx] >= 3) {
+          // Static water still erodes saturated dirt into mud
           grid[idx] = El.mud;
           life[idx] = 0;
           velY[idx] = 0;
@@ -1288,6 +1416,17 @@ extension ElementBehaviors on SimulationEngine {
       return;
     }
 
+    // Convection: hot lava rises through cooler lava above
+    if (frameCount % 3 == 0) {
+      if (tryConvection(x, y, idx, El.lava)) return;
+    }
+
+    // Radiant heat: lava warms nearby air cells in a radius
+    // Creates visible heat zones and drives convection in adjacent liquids
+    if (frameCount % 8 == 0) {
+      emitRadiantHeat(x, y, idx, 3, 40);
+    }
+
     // Volcanic gas emission
     final uy = y - g;
     if (inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
@@ -1446,6 +1585,16 @@ extension ElementBehaviors on SimulationEngine {
           grid[ni] = El.glass; life[ni] = 0; markProcessed(ni);
           queueReactionFlash(nx, ny, 255, 200, 100, 3);
         }
+        // Lava melts metal over time (metal meltPoint=240, lava baseTemp=250)
+        if (neighbor == El.metal && rng.nextInt(80) == 0) {
+          grid[ni] = El.lava; life[ni] = 0; markProcessed(ni);
+          queueReactionFlash(nx, ny, 255, 120, 30, 5);
+        }
+        // Lava dries mud into dirt
+        if (neighbor == El.mud && rng.nextInt(10) == 0) {
+          grid[ni] = El.dirt; life[ni] = 0; markProcessed(ni);
+          queueReactionFlash(nx, ny, 180, 140, 80, 2);
+        }
       }
     }
 
@@ -1471,13 +1620,15 @@ extension ElementBehaviors on SimulationEngine {
 
     final dl = rng.nextBool();
     // Viscous diagonal and lateral flow — uses property viscosity (lava=4)
-    final visc = elementViscosity[El.lava];
-    if (frameCount % visc != 0) return;
-
+    // Diagonal fall always allowed (not gated by viscosity)
     final lx1 = wrapX(dl ? x - 1 : x + 1);
     final lx2 = wrapX(dl ? x + 1 : x - 1);
     if (inBoundsY(by) && grid[by * gridW + lx1] == El.empty) { swap(idx, by * gridW + lx1); return; }
     if (inBoundsY(by) && grid[by * gridW + lx2] == El.empty) { swap(idx, by * gridW + lx2); return; }
+
+    // Lateral flow — viscosity gates how often lava spreads sideways
+    final visc = elementViscosity[El.lava];
+    if (frameCount % visc != 0) return;
 
     // Surface tension: isolated lava resists lateral flow
     final lavaSt = elementSurfaceTension[El.lava];
@@ -1494,10 +1645,18 @@ extension ElementBehaviors on SimulationEngine {
       if (lavaN <= 1 && rng.nextBool()) return;
     }
 
-    // Very slow lateral flow
-    if (frameCount % (visc + 1) == 0) {
-      if (grid[y * gridW + lx1] == El.empty) { swap(idx, y * gridW + lx1); return; }
-      if (grid[y * gridW + lx2] == El.empty) { swap(idx, y * gridW + lx2); }
+    // Lateral flow: spread 1-2 cells when on solid ground
+    if (grid[y * gridW + lx1] == El.empty) { swap(idx, y * gridW + lx1); return; }
+    if (grid[y * gridW + lx2] == El.empty) { swap(idx, y * gridW + lx2); return; }
+    // Extended lateral flow for pooling lava
+    final lx3 = wrapX(dl ? x - 2 : x + 2);
+    final lx4 = wrapX(dl ? x + 2 : x - 2);
+    if (grid[y * gridW + lx1] == El.lava && grid[y * gridW + lx3] == El.empty) {
+      swap(idx, y * gridW + lx3);
+      return;
+    }
+    if (grid[y * gridW + lx2] == El.lava && grid[y * gridW + lx4] == El.empty) {
+      swap(idx, y * gridW + lx4);
     }
   }
 
@@ -1548,21 +1707,34 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
-    // Snow compression into ice
-    final ug = -gravityDir;
+    // Snow compression into ice — needs significant weight (5+ snow above)
     int snowAbove = 0;
-    for (int d = 1; d <= 4; d++) {
-      final cy = y + ug * d;
+    for (int d = 1; d <= 6; d++) {
+      final cy = y - gravityDir * d;
       if (!inBoundsY(cy)) break;
       if (grid[cy * gridW + x] == El.snow) { snowAbove++; } else { break; }
     }
-    if (snowAbove >= 3) {
+    if (snowAbove >= 5) {
       grid[idx] = El.ice; life[idx] = 0; markProcessed(idx); return;
     }
 
     // Snow falls every frame (gravity), but diagonal spread is gentle
     final by = y + gravityDir;
     if (inBoundsY(by) && grid[by * gridW + x] == El.empty) { swap(idx, by * gridW + x); return; }
+
+    // Wind-driven horizontal drift while falling
+    if (windForce != 0 && rng.nextInt(2) == 0) {
+      final windX = wrapX(x + windForce.sign);
+      if (inBoundsY(by) && grid[by * gridW + windX] == El.empty) {
+        swap(idx, by * gridW + windX);
+        return;
+      }
+      // Pure horizontal drift in wind
+      if (grid[y * gridW + windX] == El.empty) {
+        swap(idx, y * gridW + windX);
+        return;
+      }
+    }
 
     final dl = rng.nextBool();
     final sx1 = wrapX(dl ? x - 1 : x + 1);
@@ -1646,6 +1818,32 @@ extension ElementBehaviors on SimulationEngine {
       if (velY[idx] < 3 || rng.nextInt(5) == 0) {
         life[idx] = 1; velY[idx] = 0;
         queueReactionFlash(x, y, 255, 150, 30, 3);
+      }
+    }
+
+    // Petrification: waterlogged wood (velY >= 2) near stone slowly turns to stone.
+    // Simulates mineral-rich water slowly replacing organic material.
+    if (velY[idx] >= 2 && life[idx] == 0 && frameCount % 30 == 0) {
+      bool nearStone = false;
+      bool nearWater = false;
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = wrapX(x + dx);
+          final ny = y + dy;
+          if (!inBoundsY(ny)) continue;
+          final n = grid[ny * gridW + nx];
+          if (n == El.stone) nearStone = true;
+          if (n == El.water) nearWater = true;
+        }
+      }
+      if (nearStone && nearWater && rng.nextInt(80) == 0) {
+        grid[idx] = El.stone;
+        life[idx] = 0;
+        velX[idx] = 0;
+        velY[idx] = 0;
+        markProcessed(idx);
+        queueReactionFlash(x, y, 160, 160, 180, 3);
       }
     }
   }
@@ -1960,9 +2158,10 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
+    // Steam dissipates quickly in open air — no lingering white dots
     final steamLife = isTrappedUnderground
-        ? (isNight ? 120 + rng.nextInt(60) : 160 + rng.nextInt(80))
-        : (isNight ? 40 + rng.nextInt(20) : 80 + rng.nextInt(40));
+        ? (isNight ? 100 + rng.nextInt(50) : 140 + rng.nextInt(60))
+        : (isNight ? 20 + rng.nextInt(15) : 35 + rng.nextInt(25));
 
     if (life[idx] > steamLife) {
       if (!atEdge && rng.nextInt(isNight ? 2 : 3) == 0) {
@@ -1981,14 +2180,15 @@ extension ElementBehaviors on SimulationEngine {
     // has a chance to condense into water droplets (rain).
     final topThreshold = gravityDir == 1 ? gridH ~/ 10 : gridH - (gridH ~/ 10);
     final isAtAltitude = gravityDir == 1 ? y < topThreshold : y > topThreshold;
-    if (isAtAltitude && rng.nextInt(isNight ? 80 : 150) == 0) {
+    if (isAtAltitude && rng.nextInt(isNight ? 200 : 400) == 0) {
       grid[idx] = El.water;
       life[idx] = 100;
       markProcessed(idx);
       return;
     }
 
-    final condenseChance = isNight ? 15 : 30;
+    // Adjacent-water condensation — rare, only matters for water cycle
+    final condenseChance = isNight ? 60 : 120;
     if (rng.nextInt(condenseChance) == 0 && checkAdjacent(x, y, El.water)) {
       grid[idx] = El.water; life[idx] = 100; markProcessed(idx); return;
     }
@@ -2042,27 +2242,14 @@ extension ElementBehaviors on SimulationEngine {
     final by = y + gravityDir;
     final uy = y - gravityDir;
 
-    // Density-based buoyancy: oil floats up through heavier liquids (water)
-    if (tryBuoyancy(x, y, idx, El.oil)) return;
-
     // Fall through empty
     if (inBoundsY(by) && grid[by * gridW + x] == El.empty) { swap(idx, by * gridW + x); return; }
 
-    // Legacy buoyancy through water (kept for reliable behavior)
-    final notProcessed = (simClock ? 0x80 : 0);
-    if (inBoundsY(by) && grid[by * gridW + x] == El.water &&
-        (flags[by * gridW + x] & 0x80) != notProcessed) {
-      final bi = by * gridW + x;
-      final waterMass = life[bi];
-      grid[bi] = El.oil; life[bi] = life[idx];
-      grid[idx] = El.water; life[idx] = waterMass < 20 ? 100 : waterMass;
-      markProcessed(bi); markProcessed(idx);
-      return;
-    }
-
-    // Upward buoyancy through water
+    // Buoyancy: oil (density 80) rises through water (density 100)
+    // Upward buoyancy takes priority — oil should float to the surface
+    final clockBit = simClock ? 0x80 : 0;
     if (inBoundsY(uy) && grid[uy * gridW + x] == El.water &&
-        (flags[uy * gridW + x] & 0x80) != notProcessed) {
+        (flags[uy * gridW + x] & 0x80) != clockBit) {
       final ui2 = uy * gridW + x;
       final waterMass = life[ui2];
       grid[ui2] = El.oil; life[ui2] = life[idx];
@@ -2071,22 +2258,20 @@ extension ElementBehaviors on SimulationEngine {
       return;
     }
 
+    // Downward displacement through water (oil sinking past water it just displaced)
+    if (inBoundsY(by) && grid[by * gridW + x] == El.water &&
+        (flags[by * gridW + x] & 0x80) != clockBit) {
+      final bi = by * gridW + x;
+      final waterMass = life[bi];
+      grid[bi] = El.oil; life[bi] = life[idx];
+      grid[idx] = El.water; life[idx] = waterMass < 20 ? 100 : waterMass;
+      markProcessed(bi); markProcessed(idx);
+      return;
+    }
+
     final dl = rng.nextBool();
     final ox1 = wrapX(dl ? x - 1 : x + 1);
     final ox2 = wrapX(dl ? x + 1 : x - 1);
-
-    // Diagonal buoyancy
-    for (final sx in [ox1, ox2]) {
-      if (inBoundsY(by) && grid[by * gridW + sx] == El.water &&
-          (flags[by * gridW + sx] & 0x80) != notProcessed) {
-        final si = by * gridW + sx;
-        final waterMass = life[si];
-        grid[si] = El.oil; life[si] = life[idx];
-        grid[idx] = El.water; life[idx] = waterMass < 20 ? 100 : waterMass;
-        markProcessed(si); markProcessed(idx);
-        return;
-      }
-    }
 
     if (inBoundsY(by) && grid[by * gridW + ox1] == El.empty) { swap(idx, by * gridW + ox1); return; }
     if (inBoundsY(by) && grid[by * gridW + ox2] == El.empty) { swap(idx, by * gridW + ox2); return; }
@@ -2133,15 +2318,26 @@ extension ElementBehaviors on SimulationEngine {
         final ni = ny * gridW + nx;
         final neighbor = grid[ni];
 
-        // Hardness-driven acid dissolving: probability = (255 - hardness) / 255 * baseChance
-        final neighborHardness = neighbor < maxElements ? elementHardness[neighbor] : 0;
-        if (neighborHardness > 0 && neighbor != El.empty && neighbor != El.water &&
-            neighbor != El.fire && neighbor != El.acid && neighbor != El.lava) {
-          final dissolveProb = ((255 - neighborHardness) * 10) ~/ 255 + 3; // 3-13 range
-          if (rng.nextInt(dissolveProb * 3) == 0) {
+        // Corrosion-resistance-driven dissolving
+        // Higher corrosionResistance = harder to dissolve
+        // Acid survives dissolving soft materials, consumed by hard ones
+        if (neighbor != El.empty && neighbor != El.water &&
+            neighbor != El.fire && neighbor != El.acid && neighbor != El.lava &&
+            neighbor != El.smoke && neighbor != El.steam && neighbor != El.bubble) {
+          final resistance = neighbor < maxElements ? elementCorrosionResistance[neighbor] : 0;
+          // Base dissolve chance: soft (0 resist) = 1/6, hard (90 resist) = 1/30
+          final dissolveChance = 6 + (resistance * 24) ~/ 90;
+          if (rng.nextInt(dissolveChance) == 0) {
             grid[ni] = El.empty; life[ni] = 0; markProcessed(ni);
-            grid[idx] = El.empty; life[idx] = 0;
             queueReactionFlash(nx, ny, 60, 230, 60, 4);
+            // Acid is consumed only when dissolving hard materials
+            if (resistance > 40) {
+              grid[idx] = El.empty; life[idx] = 0;
+              return;
+            }
+            // Soft materials: acid survives but loses some life
+            life[idx] = (life[idx] + 20).clamp(0, 255);
+            markDirty(x, y);
             return;
           }
         }
@@ -2150,16 +2346,6 @@ extension ElementBehaviors on SimulationEngine {
         }
         if (neighbor == El.water && rng.nextInt(8) == 0) {
           grid[idx] = El.water; life[idx] = 100; markProcessed(idx); return;
-        }
-        if ((neighbor == El.plant || neighbor == El.seed) && rng.nextInt(3) == 0) {
-          grid[ni] = El.empty; life[ni] = 0; markProcessed(ni);
-          queueReactionFlash(nx, ny, 40, 200, 40, 2);
-        }
-        if (neighbor == El.wood && rng.nextInt(12) == 0) {
-          grid[ni] = El.empty; life[ni] = 0; markProcessed(ni);
-          grid[idx] = El.empty; life[idx] = 0;
-          queueReactionFlash(nx, ny, 60, 220, 40, 4);
-          return;
         }
         if (neighbor == El.ice && rng.nextInt(8) == 0) {
           grid[ni] = El.water; life[ni] = 80; markProcessed(ni);
@@ -2198,8 +2384,53 @@ extension ElementBehaviors on SimulationEngine {
     // Temperature-driven melting (stone -> lava at extreme heat)
     if (checkTemperatureReaction(x, y, idx, El.stone)) return;
 
-    // Gravity: stone falls when unsupported, sinks through lighter liquids
-    if (fallSolid(x, y, idx, El.stone)) return;
+    // Structural integrity: stone only falls if it lacks solid support.
+    // Check below, left, and right for any solid/structural neighbor.
+    // If at least one structural neighbor exists, stone holds in place.
+    final g = gravityDir;
+    final by = y + g;
+    final belowEmpty = !inBoundsY(by) || grid[by * gridW + x] == El.empty
+        || grid[by * gridW + x] == El.water || grid[by * gridW + x] == El.oil;
+
+    if (belowEmpty) {
+      // Check for lateral structural support
+      final lx = wrapX(x - 1);
+      final rx = wrapX(x + 1);
+      final leftSupport = grid[y * gridW + lx];
+      final rightSupport = grid[y * gridW + rx];
+
+      // Stone, metal, dirt, wood, glass all provide structural support
+      bool hasSupport(int el) =>
+          el == El.stone || el == El.metal || el == El.dirt ||
+          el == El.wood || el == El.glass || el == El.ice;
+
+      final supported = hasSupport(leftSupport) || hasSupport(rightSupport);
+
+      if (supported) {
+        // Check diagonal support too — need at least one solid below-adjacent
+        final blx = inBoundsY(by) ? grid[by * gridW + lx] : 0;
+        final brx = inBoundsY(by) ? grid[by * gridW + rx] : 0;
+        if (hasSupport(blx) || hasSupport(brx)) {
+          // Fully supported — don't fall. But if the support structure
+          // is thin (only 1 side), there's a small chance of crumbling.
+          final bothSides = hasSupport(leftSupport) && hasSupport(rightSupport);
+          if (bothSides || rng.nextInt(60) != 0) {
+            // Hold position — structural integrity intact
+          } else {
+            // Thin support crumbles occasionally
+            if (fallSolid(x, y, idx, El.stone)) return;
+          }
+        } else {
+          // Lateral support but no diagonal — weaker, crumble faster
+          if (rng.nextInt(8) == 0) {
+            if (fallSolid(x, y, idx, El.stone)) return;
+          }
+        }
+      } else {
+        // No support at all — fall immediately
+        if (fallSolid(x, y, idx, El.stone)) return;
+      }
+    }
 
     final heat = velX[idx];
 
@@ -2228,6 +2459,35 @@ extension ElementBehaviors on SimulationEngine {
       final nearHeat = checkAdjacent(x, y, El.lava) || checkAdjacent(x, y, El.fire);
       if (!nearHeat) {
         velX[idx] = (heat - 1).clamp(0, 5);
+        markDirty(x, y);
+      }
+    }
+
+    // Water weathering: exposed stone near water slowly erodes over time.
+    // Surface stone (life[idx] == 0, meaning depth=0) exposed to water weathers.
+    // Uses velY to track weathering progress (0-5). At 5, stone crumbles to sand.
+    if (life[idx] == 0 && frameCount % 40 == 0 && checkAdjacent(x, y, El.water)) {
+      final weathering = velY[idx].clamp(0, 5);
+      if (weathering < 5) {
+        if (rng.nextInt(60) == 0) {
+          velY[idx] = (weathering + 1);
+          markDirty(x, y);
+        }
+      } else if (rng.nextInt(20) == 0) {
+        // Fully weathered — crumble to sand
+        grid[idx] = El.sand;
+        life[idx] = 0;
+        velX[idx] = 0;
+        velY[idx] = 0;
+        markProcessed(idx);
+        queueReactionFlash(x, y, 180, 170, 140, 2);
+        return;
+      }
+    }
+    // Weathering resets when stone dries out (no water contact)
+    if (life[idx] == 0 && velY[idx] > 0 && !checkAdjacent(x, y, El.water)) {
+      if (frameCount % 80 == 0) {
+        velY[idx] = (velY[idx] - 1).clamp(0, 5);
         markDirty(x, y);
       }
     }
