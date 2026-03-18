@@ -618,17 +618,6 @@ class SimulationEngine {
       }
       velY[idx] = 0;
 
-      // Static friction on solid surfaces: a grain resting on a flat
-      // solid surface (stone, metal, etc.) stays put. A flat surface means
-      // the solid extends on both sides — i.e., both diagonal-below cells
-      // are also non-empty. If either diagonal-below is empty, the grain
-      // is at an edge and gravity can pull it off.
-      if (elementPhysicsState[belowEl] == PhysicsState.solid.index) {
-        final lb = grid[by * gridW + wrapX(x - 1)];
-        final rb = grid[by * gridW + wrapX(x + 1)];
-        if (lb != El.empty && rb != El.empty) return; // flat solid — stay
-      }
-
       // Granular arch formation (jamming).
       // Real physics: grains near narrow openings form arches through
       // intergranular friction. Force chains transmit stress laterally,
@@ -859,14 +848,6 @@ class SimulationEngine {
           }
         }
         return;
-      }
-
-      // Static friction on flat solid surfaces
-      final belowElD = grid[by * gridW + x];
-      if (elementPhysicsState[belowElD] == PhysicsState.solid.index) {
-        final lbD = grid[by * gridW + wrapX(x - 1)];
-        final rbD = grid[by * gridW + wrapX(x + 1)];
-        if (lbD != El.empty && rbD != El.empty) return;
       }
 
       final goLeft = rng.nextBool();

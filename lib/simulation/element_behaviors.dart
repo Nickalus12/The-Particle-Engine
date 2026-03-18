@@ -2981,16 +2981,6 @@ extension ElementBehaviors on SimulationEngine {
     final by = y + g;
     if (!inBoundsY(by) || grid[by * gridW + x] == El.empty) return;
 
-    // Static friction on flat solid surfaces: grains on a flat solid
-    // surface don't avalanche. A surface is flat when both diagonal-below
-    // cells are occupied (no edge to slide off).
-    final belowEl = grid[by * gridW + x];
-    if (elementPhysicsState[belowEl] == PhysicsState.solid.index) {
-      final lb = grid[by * gridW + wrapX(x - 1)];
-      final rb = grid[by * gridW + wrapX(x + 1)];
-      if (lb != El.empty && rb != El.empty) return;
-    }
-
     final goLeft = rng.nextBool();
     final dir1 = goLeft ? -1 : 1;
     final dir2 = goLeft ? 1 : -1;

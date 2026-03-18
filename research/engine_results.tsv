@@ -44,3 +44,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 42	2026-03-18T00:42	element_behaviors.dart+simulation_engine.dart	Phase change thermodynamics: Stefan nucleation + adiabatic steam condensation + Hertz-Knudsen lifespan (PC3 20%->100%, PC4 30%->50%, PC5 0%->50%, Phase Changes 53%->80%)	282.0	90	100	yes
 43	2026-03-18T00:43	element_behaviors.dart	Pascal hydraulic displacement: pressure-driven water transfer through filled channels (Connected Vessels 13%->87%, Fluid Dynamics 56%->80%)	268.0	90	100	yes
 44	2026-03-18T00:44	element_behaviors.dart+element_registry.dart	Ecosystem: faster pilot flame ignition + contact pyrolysis + grass growth rate (EC1 33%->100%, EC3 0%->100%, Ecosystem 79%->100%)	260.0	90	100	yes
+45	2026-03-18T01:45	element_behaviors.dart+simulation_engine.dart	Revert broken flat-surface friction from merge (broke hourglass flow, Granular 45%->70%)	191.0	90	100	yes
