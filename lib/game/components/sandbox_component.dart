@@ -79,7 +79,7 @@ class SandboxComponent extends PositionComponent
         _decoding = true;
         renderer.buildImage().then((image) {
           _gridImage?.dispose();
-          _gridImage = image;
+          _gridImage = image as ui.Image;
           _decoding = false;
         });
       }

@@ -152,7 +152,7 @@ class _ToolBarState extends State<ToolBar>
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
               child: Container(
-                width: 68,
+                width: 80,
                 decoration: ParticleTheme.glassDecoration(
                   borderRadius: ParticleTheme.radiusLarge,
                 ),
@@ -295,7 +295,7 @@ class _ToolButtonState extends State<_ToolButton> {
             onTap: widget.onTap,
             child: AnimatedContainer(
               duration: ParticleTheme.fastDuration,
-              width: 52,
+              width: 62,
               padding: const EdgeInsets.symmetric(vertical: 4),
               decoration: BoxDecoration(
                 color: _hovered
@@ -309,7 +309,7 @@ class _ToolButtonState extends State<_ToolButton> {
                 children: [
                   Icon(
                     widget.icon,
-                    size: 20,
+                    size: 24,
                     color: widget.iconColor ?? AppColors.textPrimary,
                   ),
                   if (widget.label != null) ...[
@@ -317,7 +317,7 @@ class _ToolButtonState extends State<_ToolButton> {
                     Text(
                       widget.label!,
                       style: AppTypography.caption.copyWith(
-                        fontSize: 7,
+                        fontSize: 9,
                         color: _hovered
                             ? AppColors.textPrimary
                             : AppColors.textSecondary,
@@ -357,7 +357,7 @@ class _PausePlayButton extends StatelessWidget {
           child: AnimatedContainer(
             duration: ParticleTheme.fastDuration,
             curve: ParticleTheme.defaultCurve,
-            width: 52,
+            width: 62,
             padding: const EdgeInsets.symmetric(vertical: 6),
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.15),
@@ -375,14 +375,14 @@ class _PausePlayButton extends StatelessWidget {
                   isPaused
                       ? Icons.play_arrow_rounded
                       : Icons.pause_rounded,
-                  size: 20,
+                  size: 24,
                   color: color,
                 ),
                 const SizedBox(height: 2),
                 Text(
                   isPaused ? 'Play' : 'Pause',
                   style: AppTypography.caption.copyWith(
-                    fontSize: 7,
+                    fontSize: 9,
                     color: color,
                   ),
                 ),
@@ -418,7 +418,7 @@ class _DayNightButton extends StatelessWidget {
           child: AnimatedContainer(
             duration: ParticleTheme.fastDuration,
             curve: ParticleTheme.defaultCurve,
-            width: 52,
+            width: 62,
             padding: const EdgeInsets.symmetric(vertical: 6),
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.12),
@@ -432,14 +432,14 @@ class _DayNightButton extends StatelessWidget {
                   isNight
                       ? Icons.dark_mode_rounded
                       : Icons.light_mode_rounded,
-                  size: 20,
+                  size: 24,
                   color: color,
                 ),
                 const SizedBox(height: 2),
                 Text(
                   isNight ? 'Night' : 'Day',
                   style: AppTypography.caption.copyWith(
-                    fontSize: 7,
+                    fontSize: 9,
                     color: color,
                   ),
                 ),
@@ -470,7 +470,7 @@ class _BrushSizeButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(ParticleTheme.radiusSmall),
           onTap: onTap,
           child: SizedBox(
-            width: 52,
+            width: 62,
             height: 40,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -499,7 +499,7 @@ class _BrushSizeButton extends StatelessWidget {
                 Text(
                   '${size}px',
                   style: AppTypography.caption.copyWith(
-                    fontSize: 7,
+                    fontSize: 9,
                     color: AppColors.textDim,
                   ),
                 ),

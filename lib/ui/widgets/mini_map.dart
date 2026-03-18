@@ -93,9 +93,9 @@ class _MiniMapState extends State<MiniMap>
     return FadeTransition(
       opacity: _fadeController,
       child: Align(
-        alignment: Alignment.topLeft,
+        alignment: Alignment.bottomCenter,
         child: Padding(
-          padding: const EdgeInsets.only(top: 12, left: 12),
+          padding: const EdgeInsets.only(bottom: 12),
           child: GestureDetector(
             onTapDown: _handleTap,
             child: ClipRRect(

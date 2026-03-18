@@ -248,11 +248,37 @@ class ParticleEngineGame extends FlameGame
     const zoomSensitivity = 0.05;
 
     if (scrollDelta != 0) {
+      final oldZoom = camera.viewfinder.zoom;
       final zoomChange = scrollDelta > 0 ? -zoomSensitivity : zoomSensitivity;
       final newZoom =
-          (camera.viewfinder.zoom + zoomChange * camera.viewfinder.zoom)
-              .clamp(minZoom, maxZoom);
+          (oldZoom + zoomChange * oldZoom).clamp(minZoom, maxZoom);
+
+      // Zoom toward the mouse cursor position for a natural feel.
+      // Convert the screen-space cursor position to world coordinates before
+      // and after the zoom change, then shift the camera by the difference.
+      final cursorScreen = info.eventPosition.global;
+      final viewportSize = camera.viewport.size;
+
+      // Cursor offset from viewport center in screen pixels.
+      final offsetX = cursorScreen.x - viewportSize.x / 2;
+      final offsetY = cursorScreen.y - viewportSize.y / 2;
+
+      // World-space position under cursor before zoom.
+      final worldBeforeX = camera.viewfinder.position.x + offsetX / oldZoom;
+      final worldBeforeY = camera.viewfinder.position.y + offsetY / oldZoom;
+
       camera.viewfinder.zoom = newZoom;
+
+      // World-space position under cursor after zoom (same screen point).
+      final worldAfterX = camera.viewfinder.position.x + offsetX / newZoom;
+      final worldAfterY = camera.viewfinder.position.y + offsetY / newZoom;
+
+      // Shift camera so the world point under the cursor stays put.
+      camera.viewfinder.position += Vector2(
+        worldBeforeX - worldAfterX,
+        worldBeforeY - worldAfterY,
+      );
+
       clampCameraPosition();
     }
   }
@@ -321,24 +347,37 @@ class ParticleEngineGame extends FlameGame
   // World boundary clamping
   // ---------------------------------------------------------------------------
 
-  /// Keep the camera so the viewport never extends beyond the world.
-  /// With Anchor.center, position is the center of the visible area.
-  /// The visible half-size depends on the fixed resolution and current zoom.
+  /// Keep the camera bounded.
+  /// Horizontal: wraps when zoomed in (>= 1.5x) so scrolling past the right
+  /// edge shows the left side seamlessly. At lower zoom the whole world fits
+  /// on screen, so X is clamped instead to avoid jitter.
+  /// Vertical: always clamped (no vertical wrapping — ground/sky are fixed).
   void clampCameraPosition() {
     final zoom = camera.viewfinder.zoom;
     final halfW = cameraWidth / (2.0 * zoom);
     final halfH = cameraHeight / (2.0 * zoom);
 
     final pos = camera.viewfinder.position;
-    final minX = halfW;
-    final maxX = cameraWidth - halfW;
+
+    // -- Horizontal --
+    double x;
+    if (zoom >= 1.5) {
+      // Wrap X into [0, cameraWidth) for seamless horizontal scrolling.
+      x = pos.x % cameraWidth;
+      if (x < 0) x += cameraWidth;
+    } else {
+      // At low zoom the entire world is visible — clamp to avoid jitter.
+      final minX = halfW;
+      final maxX = cameraWidth - halfW;
+      x = minX < maxX ? pos.x.clamp(minX, maxX) : cameraWidth / 2;
+    }
+
+    // -- Vertical (always clamped) --
     final minY = halfH;
     final maxY = cameraHeight - halfH;
+    final y = minY < maxY ? pos.y.clamp(minY, maxY) : cameraHeight / 2;
 
-    camera.viewfinder.position = Vector2(
-      minX < maxX ? pos.x.clamp(minX, maxX) : cameraWidth / 2,
-      minY < maxY ? pos.y.clamp(minY, maxY) : cameraHeight / 2,
-    );
+    camera.viewfinder.position = Vector2(x, y);
   }
 
   // ---------------------------------------------------------------------------

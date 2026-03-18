@@ -104,18 +104,18 @@ class ParticleTheme {
   static BoxDecoration glassDecoration({
     double borderRadius = radiusMedium,
     Color? color,
-    double borderOpacity = 0.15,
+    double borderOpacity = 0.25,
   }) {
     return BoxDecoration(
       color: color ?? AppColors.glass,
       borderRadius: BorderRadius.circular(borderRadius),
       border: Border.all(
         color: Colors.white.withValues(alpha: borderOpacity),
-        width: 0.5,
+        width: 1.0,
       ),
       boxShadow: const [
         BoxShadow(
-          color: Color(0x29000000),
+          color: Color(0x40000000),
           blurRadius: 20,
           offset: Offset(0, 4),
         ),

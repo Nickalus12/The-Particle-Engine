@@ -1,7 +1,8 @@
-import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
-import 'dart:ui' as ui;
+
+import 'image_builder_stub.dart'
+    if (dart.library.ui) 'image_builder_ui.dart' as image_builder;
 
 import 'element_registry.dart';
 import 'simulation_engine.dart';
@@ -504,9 +505,9 @@ class PixelRenderer {
                       30 + rng.nextInt(30), 3 + rng.nextInt(3));
                 }
               } else if (el == El.steam) {
-                if (rng.nextInt(200) < 1 && y > 1) {
+                if (rng.nextInt(400) < 1 && y > 1) {
                   spawnParticle(x + rng.nextInt(3) - 1, y - 1,
-                      220, 220, 240, 3 + rng.nextInt(2));
+                      180, 185, 200, 2 + rng.nextInt(2));
                 }
               }
             }
@@ -595,19 +596,9 @@ class PixelRenderer {
     }
   }
 
-  Future<ui.Image> buildImage() async {
-    // decodeImageFromPixels copies the byte data synchronously before
-    // returning, so a single buffer is safe. The _decoding guard in
-    // SandboxComponent prevents concurrent calls.
-    final completer = Completer<ui.Image>();
-    ui.decodeImageFromPixels(
-      _pixels,
-      engine.gridW,
-      engine.gridH,
-      ui.PixelFormat.rgba8888,
-      (image) => completer.complete(image),
-    );
-    return completer.future;
+  Future<Object> buildImage() async {
+    return image_builder.buildImageFromPixels(
+        _pixels, engine.gridW, engine.gridH);
   }
 
   int _inlineR = 0;

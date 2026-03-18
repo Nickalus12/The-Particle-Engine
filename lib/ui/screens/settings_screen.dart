@@ -210,12 +210,30 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: AppTypography.label.copyWith(
-        color: AppColors.textDim,
-        letterSpacing: 2.0,
-      ),
+    return Row(
+      children: [
+        Container(
+          width: 3,
+          height: 12,
+          margin: const EdgeInsets.only(right: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(2),
+            gradient: const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [AppColors.primary, AppColors.accent],
+            ),
+          ),
+        ),
+        Text(
+          text,
+          style: AppTypography.label.copyWith(
+            color: AppColors.textDim,
+            letterSpacing: 2.5,
+            fontSize: 10,
+          ),
+        ),
+      ],
     );
   }
 }

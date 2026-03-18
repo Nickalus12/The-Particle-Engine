@@ -227,20 +227,55 @@ class _HomeScreenState extends State<HomeScreen>
           // Animated particle background
           const Positioned.fill(child: _ParticleBackground()),
 
-          // Subtle radial gradient overlay for depth
+          // Layered radial gradient overlays for cinematic depth
           Positioned.fill(
             child: IgnorePointer(
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: RadialGradient(
-                    center: const Alignment(-0.3, -0.2),
-                    radius: 1.2,
+                    center: const Alignment(-0.5, -0.3),
+                    radius: 1.4,
                     colors: [
-                      AppColors.primary.withValues(alpha: 0.03),
+                      AppColors.primary.withValues(alpha: 0.05),
                       Colors.transparent,
-                      AppColors.accent.withValues(alpha: 0.02),
+                      AppColors.accent.withValues(alpha: 0.03),
                     ],
-                    stops: const [0.0, 0.5, 1.0],
+                    stops: const [0.0, 0.45, 1.0],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Secondary warm glow near bottom-right
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: const Alignment(0.6, 0.5),
+                    radius: 0.8,
+                    colors: [
+                      AppColors.primary.withValues(alpha: 0.025),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Vignette edges for cinematic framing
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment.center,
+                    radius: 1.0,
+                    colors: [
+                      Colors.transparent,
+                      AppColors.background.withValues(alpha: 0.5),
+                    ],
+                    stops: const [0.5, 1.0],
                   ),
                 ),
               ),
@@ -349,15 +384,36 @@ class _HomeScreenState extends State<HomeScreen>
                 );
               },
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
+            // Decorative accent line
+            Opacity(
+              opacity: _subtitleOpacity.value,
+              child: Container(
+                width: 60,
+                height: 1.5,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(1),
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.primary.withValues(alpha: 0.0),
+                      AppColors.primary.withValues(alpha: 0.6),
+                      AppColors.accent.withValues(alpha: 0.6),
+                      AppColors.accent.withValues(alpha: 0.0),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
             // Subtitle
             Opacity(
               opacity: _subtitleOpacity.value,
               child: Text(
                 'Elements, creatures & ecosystems',
                 style: AppTypography.body.copyWith(
-                  color: AppColors.textDim,
-                  fontSize: 14,
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                  letterSpacing: 1.5,
                 ),
               ),
             ),
@@ -517,7 +573,7 @@ class _MenuButtonState extends State<_MenuButton>
                       ? [
                           BoxShadow(
                             color: accentColor.withValues(
-                                alpha: _hovered ? 0.2 : 0.1),
+                                alpha: _hovered ? 0.25 : 0.12),
                             blurRadius: _hovered ? 30 : 20,
                           ),
                         ]
@@ -532,23 +588,67 @@ class _MenuButtonState extends State<_MenuButton>
                           : null,
                 ),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      widget.icon,
-                      size: 22,
-                      color: widget.isPrimary
-                          ? AppColors.primary
-                          : AppColors.textPrimary,
+                    // Left accent stripe for primary button
+                    if (widget.isPrimary)
+                      Container(
+                        width: 3,
+                        height: 28,
+                        margin: const EdgeInsets.only(left: 2),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(2),
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              AppColors.primary.withValues(alpha: _hovered ? 0.9 : 0.6),
+                              AppColors.accent.withValues(alpha: _hovered ? 0.7 : 0.4),
+                            ],
+                          ),
+                        ),
+                      ),
+                    Expanded(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            widget.icon,
+                            size: 20,
+                            color: widget.isPrimary
+                                ? AppColors.primary
+                                : _hovered
+                                    ? AppColors.textPrimary
+                                    : AppColors.textSecondary,
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            widget.label,
+                            style: AppTypography.button.copyWith(
+                              fontSize: 15,
+                              letterSpacing: widget.isPrimary ? 0.8 : 0.3,
+                              color: widget.isPrimary
+                                  ? AppColors.primary
+                                  : _hovered
+                                      ? AppColors.textPrimary
+                                      : AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(width: 12),
-                    Text(
-                      widget.label,
-                      style: AppTypography.button.copyWith(
-                        fontSize: 15,
-                        color: widget.isPrimary
-                            ? AppColors.primary
-                            : AppColors.textPrimary,
+                    // Right arrow hint on hover
+                    AnimatedOpacity(
+                      duration: ParticleTheme.fastDuration,
+                      opacity: _hovered ? 0.5 : 0.0,
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 16),
+                        child: Icon(
+                          Icons.arrow_forward_ios_rounded,
+                          size: 12,
+                          color: widget.isPrimary
+                              ? AppColors.primary
+                              : AppColors.textDim,
+                        ),
                       ),
                     ),
                   ],
@@ -607,10 +707,15 @@ class _ParticleBackgroundState extends State<_ParticleBackground>
   }
 
   static Color _pickColor(Random rng) {
+    // Element-inspired colors for a thematic particle field
     final colors = [
-      AppColors.primary,
-      AppColors.accent,
-      AppColors.textDim,
+      AppColors.primary,              // Engine red
+      AppColors.accent,               // Purple accent
+      const Color(0xFFD9C390),        // Sand gold
+      const Color(0xFF2E9AFF),        // Water blue
+      const Color(0xFFFF5010),        // Lava orange
+      const Color(0xFF28B040),        // Plant green
+      AppColors.textDim,              // Neutral motes
     ];
     return colors[rng.nextInt(colors.length)];
   }

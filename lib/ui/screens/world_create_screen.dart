@@ -290,64 +290,141 @@ class _PresetGrid extends StatelessWidget {
       runSpacing: 10,
       children: _WorldPreset.values.map((preset) {
         final isActive = preset == selected;
-        return GestureDetector(
+        return _PresetCard(
+          preset: preset,
+          isActive: isActive,
           onTap: () => onSelected(preset),
-          child: AnimatedContainer(
-            duration: ParticleTheme.fastDuration,
-            width: 150,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: isActive
-                  ? preset.color.withValues(alpha: 0.12)
-                  : AppColors.glass,
-              borderRadius:
-                  BorderRadius.circular(ParticleTheme.radiusMedium),
-              border: Border.all(
-                color: isActive
-                    ? preset.color.withValues(alpha: 0.5)
-                    : AppColors.glassBorder,
-                width: isActive ? 1.0 : 0.5,
-              ),
-              boxShadow: isActive
-                  ? [
-                      BoxShadow(
-                        color: preset.color.withValues(alpha: 0.15),
-                        blurRadius: 16,
-                      ),
-                    ]
-                  : null,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  preset.icon,
-                  size: 24,
-                  color: isActive ? preset.color : AppColors.textDim,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  preset.label,
-                  style: AppTypography.subheading.copyWith(
-                    color: isActive
-                        ? AppColors.textPrimary
-                        : AppColors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  preset.description,
-                  style: AppTypography.caption.copyWith(
-                    color: AppColors.textDim,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
         );
       }).toList(),
+    );
+  }
+}
+
+class _PresetCard extends StatefulWidget {
+  const _PresetCard({
+    required this.preset,
+    required this.isActive,
+    required this.onTap,
+  });
+
+  final _WorldPreset preset;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  @override
+  State<_PresetCard> createState() => _PresetCardState();
+}
+
+class _PresetCardState extends State<_PresetCard> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final preset = widget.preset;
+    final isActive = widget.isActive;
+    final isHighlighted = isActive || _hovered;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: ParticleTheme.fastDuration,
+          curve: ParticleTheme.defaultCurve,
+          width: 155,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: isActive
+                ? preset.color.withValues(alpha: 0.10)
+                : _hovered
+                    ? AppColors.glass.withValues(alpha: 0.18)
+                    : AppColors.glass,
+            borderRadius:
+                BorderRadius.circular(ParticleTheme.radiusMedium),
+            border: Border.all(
+              color: isActive
+                  ? preset.color.withValues(alpha: 0.5)
+                  : _hovered
+                      ? AppColors.glassBorder.withValues(alpha: 0.4)
+                      : AppColors.glassBorder,
+              width: isActive ? 1.0 : 0.5,
+            ),
+            boxShadow: isActive
+                ? [
+                    BoxShadow(
+                      color: preset.color.withValues(alpha: 0.18),
+                      blurRadius: 20,
+                      spreadRadius: -2,
+                    ),
+                  ]
+                : null,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Icon with colored background pill
+              AnimatedContainer(
+                duration: ParticleTheme.fastDuration,
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: isHighlighted
+                      ? preset.color.withValues(alpha: 0.15)
+                      : AppColors.surfaceLight.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isHighlighted
+                        ? preset.color.withValues(alpha: 0.3)
+                        : Colors.white.withValues(alpha: 0.06),
+                    width: 0.5,
+                  ),
+                ),
+                child: Icon(
+                  preset.icon,
+                  size: 20,
+                  color: isHighlighted ? preset.color : AppColors.textDim,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                preset.label,
+                style: AppTypography.subheading.copyWith(
+                  fontSize: 14,
+                  color: isHighlighted
+                      ? AppColors.textPrimary
+                      : AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                preset.description,
+                style: AppTypography.caption.copyWith(
+                  color: isHighlighted
+                      ? AppColors.textSecondary
+                      : AppColors.textDim,
+                  height: 1.3,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              // Active indicator accent line
+              if (isActive) ...[
+                const SizedBox(height: 8),
+                Container(
+                  width: 24,
+                  height: 2,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(1),
+                    color: preset.color.withValues(alpha: 0.6),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

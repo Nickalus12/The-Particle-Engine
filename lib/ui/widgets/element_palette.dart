@@ -12,11 +12,11 @@ import 'element_info_card.dart';
 
 /// Element category for grouping in the palette.
 enum ElementCategory {
-  solids('Solids', AppColors.categorySolids, Icons.square_rounded),
+  solids('Solids', AppColors.categorySolids, Icons.landscape_rounded),
   liquids('Liquids', AppColors.categoryLiquids, Icons.water_drop_rounded),
-  energy('Energy', AppColors.categoryEnergy, Icons.bolt_rounded),
-  life('Life', AppColors.categoryLife, Icons.eco_rounded),
-  tools('Tools', AppColors.categoryTools, Icons.build_rounded);
+  energy('Energy', AppColors.categoryEnergy, Icons.local_fire_department_rounded),
+  life('Life', AppColors.categoryLife, Icons.park_rounded),
+  tools('Tools', AppColors.categoryTools, Icons.auto_fix_high_rounded);
 
   const ElementCategory(this.label, this.color, this.icon);
   final String label;
@@ -178,7 +178,7 @@ class _ElementPaletteState extends State<ElementPalette>
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
               child: Container(
-                width: 68,
+                width: 80,
                 constraints: BoxConstraints(
                   maxHeight: MediaQuery.of(context).size.height - 16,
                 ),
@@ -404,17 +404,48 @@ class _CategoryHeaderState extends State<_CategoryHeader> {
             ),
             child: Column(
               children: [
-                Icon(
-                  cat.icon,
-                  size: 18,
-                  color: isActive ? cat.color : AppColors.textDim,
+                AnimatedContainer(
+                  duration: ParticleTheme.fastDuration,
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: isActive
+                        ? cat.color.withValues(alpha: 0.25)
+                        : _hovered
+                            ? cat.color.withValues(alpha: 0.1)
+                            : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isActive
+                          ? cat.color.withValues(alpha: 0.6)
+                          : Colors.transparent,
+                      width: 1.5,
+                    ),
+                    boxShadow: isActive
+                        ? [
+                            BoxShadow(
+                              color: cat.color.withValues(alpha: 0.3),
+                              blurRadius: 8,
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Icon(
+                    cat.icon,
+                    size: 20,
+                    color: isActive
+                        ? cat.color
+                        : _hovered
+                            ? cat.color.withValues(alpha: 0.7)
+                            : AppColors.textSecondary,
+                  ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 3),
                 Text(
                   cat.label,
                   style: AppTypography.caption.copyWith(
-                    fontSize: 8,
-                    color: isActive ? cat.color : AppColors.textDim,
+                    fontSize: 9,
+                    color: isActive ? cat.color : AppColors.textSecondary,
                     fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
                   ),
                 ),
@@ -495,46 +526,58 @@ class _ElementTileState extends State<_ElementTile> {
               AnimatedContainer(
                 duration: ParticleTheme.fastDuration,
                 curve: ParticleTheme.defaultCurve,
-                width: isHighlighted ? 30 : 26,
-                height: isHighlighted ? 30 : 26,
+                width: isHighlighted ? 38 : 34,
+                height: isHighlighted ? 38 : 34,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: Colors.white.withValues(
-                      alpha: isHighlighted ? 0.3 : 0.1,
-                    ),
-                    width: 1,
+                    color: isSelected
+                        ? color
+                        : _hovered
+                            ? color.withValues(alpha: 0.5)
+                            : Colors.white.withValues(alpha: 0.15),
+                    width: isSelected ? 2 : 1,
                   ),
                   boxShadow: [
                     BoxShadow(
                       color: color.withValues(
-                        alpha: isHighlighted ? 0.6 : 0.2,
+                        alpha: isSelected ? 0.7 : isHighlighted ? 0.4 : 0.1,
                       ),
-                      blurRadius: isHighlighted ? 10 : 3,
+                      blurRadius: isSelected ? 12 : isHighlighted ? 8 : 2,
                     ),
                   ],
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(5),
+                  borderRadius: BorderRadius.circular(7),
                   child: CustomPaint(
                     painter: _ElementPreviewPainter(widget.elId, color),
                     size: Size(
-                      isHighlighted ? 30 : 26,
-                      isHighlighted ? 30 : 26,
+                      isHighlighted ? 38 : 34,
+                      isHighlighted ? 38 : 34,
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 3),
               Text(
                 widget.name,
                 style: AppTypography.caption.copyWith(
-                  color: isHighlighted
-                      ? AppColors.textPrimary
-                      : AppColors.textSecondary,
-                  fontSize: 8,
+                  color: isSelected
+                      ? Colors.white
+                      : isHighlighted
+                          ? AppColors.textPrimary
+                          : AppColors.textSecondary,
+                  fontSize: 9,
                   fontWeight:
-                      isHighlighted ? FontWeight.w700 : FontWeight.w500,
+                      isSelected ? FontWeight.w700 : FontWeight.w500,
+                  shadows: isSelected
+                      ? [
+                          Shadow(
+                            color: color.withValues(alpha: 0.5),
+                            blurRadius: 4,
+                          ),
+                        ]
+                      : null,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
