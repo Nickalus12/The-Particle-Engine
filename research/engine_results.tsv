@@ -42,3 +42,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 40	2026-03-18T00:40	element_behaviors.dart	Snow/ash velocity accumulation via fallGranular (K13 5%->100%, K14 0%->100%)	289.0	90	100	yes
 41	2026-03-18T00:41	element_behaviors.dart	Bubble buoyancy: rise every 2 frames + 5% wobble (K17 0%->60%, Kinematics 83%->90%)	304.6	90	100	yes
 42	2026-03-18T00:42	element_behaviors.dart+simulation_engine.dart	Phase change thermodynamics: Stefan nucleation + adiabatic steam condensation + Hertz-Knudsen lifespan (PC3 20%->100%, PC4 30%->50%, PC5 0%->50%, Phase Changes 53%->80%)	282.0	90	100	yes
+43	2026-03-18T00:43	element_behaviors.dart	Pascal hydraulic displacement: pressure-driven water transfer through filled channels (Connected Vessels 13%->87%, Fluid Dynamics 56%->80%)	268.0	90	100	yes

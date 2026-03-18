@@ -398,6 +398,61 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
+    // Hydraulic displacement: Pascal's principle — pressure applied to
+    // confined fluid transmits equally. High-pressure water pushes water
+    // through a filled channel to a lower-pressure column, pumping water
+    // from the tall column's surface to the short column's surface.
+    if (cellPressure > 8 && rng.nextInt(3) == 0) {
+      for (final dir in dl ? [1, -1] : [-1, 1]) {
+        for (int d = 1; d <= 20; d++) {
+          final sx = wrapX(x + dir * d);
+          final si = y * gridW + sx;
+          final cell = grid[si];
+          if (cell == El.water || cell == El.oil) {
+            if (pressure[si] >= cellPressure - 2) continue;
+            // Found lower-pressure water — scan upward to find its surface
+            int surfTargetY = -1;
+            for (int cy = y - g; inBoundsY(cy); cy -= g) {
+              final ci = cy * gridW + sx;
+              if (grid[ci] == El.water || grid[ci] == El.oil) continue;
+              if (grid[ci] == El.empty) {
+                surfTargetY = cy;
+              }
+              break;
+            }
+            if (surfTargetY >= 0) {
+              // Find our column's surface
+              int surfSrcY = y;
+              for (int cy = y - g; inBoundsY(cy); cy -= g) {
+                if (grid[cy * gridW + x] == El.water) {
+                  surfSrcY = cy;
+                } else {
+                  break;
+                }
+              }
+              // Only pump if our surface is higher (more water above)
+              final srcDepth = (y - surfSrcY).abs();
+              final tgtDepth = (y - surfTargetY).abs();
+              if (srcDepth > tgtDepth + 1) {
+                // Pump water to the target surface
+                grid[surfTargetY * gridW + sx] = El.water;
+                life[surfTargetY * gridW + sx] = 80;
+                temperature[surfTargetY * gridW + sx] = temperature[idx];
+                markProcessed(surfTargetY * gridW + sx);
+                // Remove water from our surface
+                grid[surfSrcY * gridW + x] = El.empty;
+                life[surfSrcY * gridW + x] = 0;
+                unsettleNeighbors(x, surfSrcY);
+                return;
+              }
+            }
+            continue;
+          }
+          break; // hit non-liquid (wall or empty)
+        }
+      }
+    }
+
     // Surface leveling
     final aboveEl = inBoundsY(uy) ? grid[uy * gridW + x] : -1;
     if (aboveEl == El.empty || aboveEl == -1) {
