@@ -29,6 +29,23 @@ double _fastSin(double x) {
   }
 }
 
+/// Pure-integer sine approximation. Input: integer phase [0..255] wrapping.
+/// Returns value in [0..256] where 128 = zero-crossing.
+/// Equivalent to `(_fastSin(phase * 2*pi/256) * 128 + 128).round()`.
+@pragma('vm:prefer-inline')
+int _fastSinI(int phase) {
+  final ix = phase & 0xFF; // wrap to [0, 255]
+  if (ix < 64) {
+    return 128 + (ix << 1); // 128 to 256
+  } else if (ix < 128) {
+    return 128 + ((128 - ix) << 1); // 256 to 128
+  } else if (ix < 192) {
+    return 128 - ((ix - 128) << 1); // 128 to 0
+  } else {
+    return 128 - ((256 - ix) << 1); // 0 to 128
+  }
+}
+
 class PixelRenderer {
   final SimulationEngine engine;
 
@@ -410,12 +427,14 @@ class PixelRenderer {
                 // Heat shimmer: distort color above hot sources (lava/fire)
                 // Creates a wavy mirage-like effect
                 if (!underground && cellTemp > 170 && y > 2) {
-                  final shimmerPhase = _fastSin(
-                      _effectTime * 3.5 + x * 0.8 + y * 0.4) * 0.5 + 0.5;
-                  final shimmerPhase2 = _fastSin(
-                      _effectTime * 2.3 + x * 1.2 + y * 0.6 + 1.9) * 0.5 + 0.5;
-                  final heatIntensity = ((cellTemp - 170) / 80.0).clamp(0.0, 1.0);
-                  final shimmerAmount = (heatIntensity * (shimmerPhase * 18 + shimmerPhase2 * 10)).round();
+                  // Integer heat shimmer using phase-based sine
+                  final hsp1 = (fc * 14 + x * 205 + y * 102) >> 8;
+                  final hsp2 = (fc * 9 + x * 307 + y * 154 + 46) >> 8;
+                  final shimmerPhase = _fastSinI(hsp1); // [0, 256]
+                  final shimmerPhase2 = _fastSinI(hsp2); // [0, 256]
+                  // heatIntensity: (cellTemp-170) / 80 as [0, 256]
+                  final heatI256 = ((cellTemp - 170) * 256 ~/ 80).clamp(0, 256);
+                  final shimmerAmount = (heatI256 * (shimmerPhase * 18 + shimmerPhase2 * 10)) >> 16;
                   // Warm orange-red shimmer tint
                   emptyR = (emptyR + shimmerAmount).clamp(0, 255);
                   emptyG = (emptyG + shimmerAmount ~/ 3).clamp(0, 255);
@@ -786,10 +805,14 @@ class PixelRenderer {
           final isUndergroundWater = _isUnderground(x, y, w, grid);
 
           if (isTop) {
-            // Surface shimmer with gentle wave animation
-            final wave = _fastSin((frameCount * 0.12 + x * 0.6)) * 0.5 + 0.5;
-            final wave2 = _fastSin((frameCount * 0.07 + x * 1.1 + 1.8)) * 0.5 + 0.5;
-            final shimmer = ((wave * 25 + wave2 * 15)).round();
+            // Surface shimmer with gentle wave animation (pure integer math)
+            // Phase inputs: frameCount*31/256 + x*154/256 ≈ fc*0.12 + x*0.6 in radians→phase
+            final wavePhase1 = (frameCount * 31 + x * 154) >> 8;
+            final wavePhase2 = (frameCount * 18 + x * 282 + 46) >> 8;
+            // _fastSinI returns [0, 256], scale to shimmer range
+            final wave = _fastSinI(wavePhase1); // [0, 256]
+            final wave2 = _fastSinI(wavePhase2); // [0, 256]
+            final shimmer = (wave * 25 + wave2 * 15) >> 8; // [0, 40]
 
             // Foam/highlight where water meets solid elements
             final belowIdx = y < h - 1 ? (y + 1) * w + x : -1;
@@ -860,10 +883,14 @@ class PixelRenderer {
             // Caustics for shallow water
             int caustic = 0;
             if (depth < 10) {
-              final cx1 = _fastSin((frameCount * 0.10 + x * 0.6 + y * 0.35)) * 0.5 + 0.5;
-              final cx2 = _fastSin((frameCount * 0.07 + x * 0.9 + y * 0.5 + 1.7)) * 0.5 + 0.5;
-              final causticStrength = (1.0 - depth / 10.0);
-              caustic = ((cx1 * 10 + cx2 * 6) * causticStrength).round();
+              // Integer caustics: phase-based sine
+              final cp1 = (frameCount * 26 + x * 154 + y * 90) >> 8;
+              final cp2 = (frameCount * 18 + x * 230 + y * 128 + 46) >> 8;
+              final cx1 = _fastSinI(cp1); // [0, 256]
+              final cx2 = _fastSinI(cp2); // [0, 256]
+              // causticStrength = (10 - depth) / 10 as [0, 256]
+              final cStr = (10 - depth) * 256 ~/ 10;
+              caustic = ((cx1 * 10 + cx2 * 6) * cStr) >> 16;
             }
 
             // Foam/highlight at water-solid edges
