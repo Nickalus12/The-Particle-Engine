@@ -109,3 +109,80 @@ class TestLightEmission:
             pytest.skip("No light_emission oracle data")
         emitters = gt["emitting_elements"]
         assert emitters["lava"]["intensity"] > emitters["fire"]["intensity"]
+
+
+class TestFireCycle:
+    """Fire should follow a predictable combustion cycle."""
+
+    @pytest.mark.physics
+    def test_fire_cycle_stages(self, ground_truth):
+        gt = ground_truth.get("fire_cycle")
+        if gt is None:
+            pytest.skip("No fire_cycle oracle data")
+        stages = gt["stages"]
+        assert stages == ["wood", "fire", "smoke"]
+
+    @pytest.mark.physics
+    def test_fire_spread_consistency(self, ground_truth):
+        """Fire should spread at roughly constant velocity in uniform fuel."""
+        gt = ground_truth.get("fire_spread")
+        if gt is None:
+            pytest.skip("No fire_spread oracle data")
+        assert gt["expected_cv_below"] <= 0.5
+
+
+class TestDecayChains:
+    """Elements should decay through predictable chains."""
+
+    @pytest.mark.physics
+    def test_fire_decay_chain(self, ground_truth):
+        gt = ground_truth.get("decay_chains")
+        if gt is None:
+            pytest.skip("No decay_chains oracle data")
+        fire = gt.get("fire")
+        assert fire is not None
+        assert fire["chain"] == ["fire", "smoke", "empty"]
+
+    @pytest.mark.physics
+    def test_steam_condenses_to_water(self, ground_truth):
+        gt = ground_truth.get("decay_chains")
+        if gt is None:
+            pytest.skip("No decay_chains oracle data")
+        steam = gt.get("steam")
+        assert steam is not None
+        assert steam["final_product"] == "water"
+
+    @pytest.mark.physics
+    def test_decay_rates_positive(self, ground_truth):
+        gt = ground_truth.get("decay_chains")
+        if gt is None:
+            pytest.skip("No decay_chains oracle data")
+        for name, chain in gt.items():
+            assert chain["decay_rate_frames"] > 0, \
+                f"{name} has non-positive decay rate"
+            assert chain["half_life_frames"] > 0, \
+                f"{name} has non-positive half life"
+
+
+class TestExplosionFalloff:
+    """Explosion energy should follow inverse square law."""
+
+    @pytest.mark.physics
+    def test_inverse_square_law(self, ground_truth):
+        gt = ground_truth.get("explosion_falloff")
+        if gt is None:
+            pytest.skip("No explosion_falloff oracle data")
+        distances = gt["distances"]
+        ratios = gt["expected_energy_ratio"]
+        for d, r in zip(distances, ratios):
+            expected = 1.0 / (d * d)
+            assert r == pytest.approx(expected, rel=0.01)
+
+    @pytest.mark.physics
+    def test_energy_decreases_with_distance(self, ground_truth):
+        gt = ground_truth.get("explosion_falloff")
+        if gt is None:
+            pytest.skip("No explosion_falloff oracle data")
+        ratios = gt["expected_energy_ratio"]
+        for i in range(1, len(ratios)):
+            assert ratios[i] < ratios[i - 1]
