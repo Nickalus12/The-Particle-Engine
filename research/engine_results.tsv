@@ -32,3 +32,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 30	2026-03-18T00:30	element_behaviors.dart	Stefan solidification + heterogeneous condensation: temp-dependent ice-water freezing, steam condenses on ice surfaces	303.3	95	100	yes
 31	2026-03-18T00:31	element_behaviors.dart	Wood combustion: contact pyrolysis ignition, multi-face fire propagation, burning wood gravity	296.4	95	100	yes
 32	2026-03-18T00:32	element_behaviors.dart	Galilean freefall for dirt: velocity-based fall in vacuum, displacement in water (K3: 0%->100%)	285.4	95	100	yes
+33	2026-03-18T00:33	element_behaviors.dart	Oil flash point auto-ignition: temp>145 combustion + lava adjacency ignition (CR1:fire+oil 0%->100%)	273.5	90	100	yes

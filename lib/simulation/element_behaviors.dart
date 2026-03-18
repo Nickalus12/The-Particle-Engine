@@ -2445,7 +2445,15 @@ extension ElementBehaviors on SimulationEngine {
     // Temperature-driven boiling (oil -> smoke at high temp)
     if (checkTemperatureReaction(x, y, idx, El.oil)) return;
 
-    if (checkAdjacent(x, y, El.fire)) {
+    // Flash point auto-ignition: oil vapor above its flash point ignites
+    // spontaneously. Real oil flash points (200-300°C) are below boil
+    // points. In our system, oil heated above 145 (below boilPoint 160)
+    // has sufficient vapor concentration for combustion.
+    if (temperature[idx] > 145) {
+      grid[idx] = El.fire; life[idx] = 0; markProcessed(idx); return;
+    }
+
+    if (checkAdjacent(x, y, El.fire) || checkAdjacent(x, y, El.lava)) {
       grid[idx] = El.fire; life[idx] = 0; markProcessed(idx); return;
     }
 
