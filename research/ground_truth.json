@@ -7744,5 +7744,1625 @@
     "hottest": "lightning",
     "coldest": "ice",
     "neutral_point": 128
+  },
+  "reaction_products": {
+    "fire_oil": {
+      "source": "fire",
+      "target": "oil",
+      "source_becomes": null,
+      "target_becomes": "fire",
+      "probability": 0.5,
+      "expected_frames_to_react": 2,
+      "is_deterministic": false,
+      "description": "Fire ignites adjacent oil"
+    },
+    "fire_wood": {
+      "source": "fire",
+      "target": "wood",
+      "source_becomes": null,
+      "target_becomes": null,
+      "probability": 0.15,
+      "expected_frames_to_react": 7,
+      "is_deterministic": false,
+      "description": "Fire chars wood"
+    },
+    "fire_plant": {
+      "source": "fire",
+      "target": "plant",
+      "source_becomes": null,
+      "target_becomes": "fire",
+      "probability": 0.3,
+      "expected_frames_to_react": 3,
+      "is_deterministic": false,
+      "description": "Fire spreads to plants"
+    },
+    "fire_seed": {
+      "source": "fire",
+      "target": "seed",
+      "source_becomes": null,
+      "target_becomes": "fire",
+      "probability": 0.3,
+      "expected_frames_to_react": 3,
+      "is_deterministic": false,
+      "description": "Fire ignites seeds"
+    },
+    "fire_ice": {
+      "source": "fire",
+      "target": "ice",
+      "source_becomes": null,
+      "target_becomes": "water",
+      "probability": 0.1,
+      "expected_frames_to_react": 10,
+      "is_deterministic": false,
+      "description": "Fire melts ice"
+    },
+    "fire_snow": {
+      "source": "fire",
+      "target": "snow",
+      "source_becomes": null,
+      "target_becomes": "water",
+      "probability": 0.15,
+      "expected_frames_to_react": 7,
+      "is_deterministic": false,
+      "description": "Fire melts snow"
+    },
+    "fire_tnt": {
+      "source": "fire",
+      "target": "tnt",
+      "source_becomes": null,
+      "target_becomes": null,
+      "probability": 0.3,
+      "expected_frames_to_react": 3,
+      "is_deterministic": false,
+      "description": "Fire detonates TNT"
+    },
+    "water_fire": {
+      "source": "water",
+      "target": "fire",
+      "source_becomes": "steam",
+      "target_becomes": "empty",
+      "probability": 1.0,
+      "expected_frames_to_react": 1,
+      "is_deterministic": true,
+      "description": "Water extinguishes fire"
+    },
+    "water_lava": {
+      "source": "water",
+      "target": "lava",
+      "source_becomes": "steam",
+      "target_becomes": "stone",
+      "probability": 1.0,
+      "expected_frames_to_react": 1,
+      "is_deterministic": true,
+      "description": "Water cools lava"
+    },
+    "sand_lightning": {
+      "source": "sand",
+      "target": "lightning",
+      "source_becomes": "glass",
+      "target_becomes": null,
+      "probability": 1.0,
+      "expected_frames_to_react": 1,
+      "is_deterministic": true,
+      "description": "Lightning fuses sand to glass"
+    },
+    "sand_water": {
+      "source": "sand",
+      "target": "water",
+      "source_becomes": "mud",
+      "target_becomes": null,
+      "probability": 1.0,
+      "expected_frames_to_react": 1,
+      "is_deterministic": true,
+      "description": "Sand absorbs water to become mud"
+    },
+    "lava_water": {
+      "source": "lava",
+      "target": "water",
+      "source_becomes": "stone",
+      "target_becomes": "steam",
+      "probability": 1.0,
+      "expected_frames_to_react": 1,
+      "is_deterministic": true,
+      "description": "Lava + water = stone + steam"
+    },
+    "lava_ice": {
+      "source": "lava",
+      "target": "ice",
+      "source_becomes": null,
+      "target_becomes": "water",
+      "probability": 1.0,
+      "expected_frames_to_react": 1,
+      "is_deterministic": true,
+      "description": "Lava melts ice"
+    },
+    "lava_snow": {
+      "source": "lava",
+      "target": "snow",
+      "source_becomes": null,
+      "target_becomes": "steam",
+      "probability": 1.0,
+      "expected_frames_to_react": 1,
+      "is_deterministic": true,
+      "description": "Lava vaporizes snow"
+    },
+    "lava_wood": {
+      "source": "lava",
+      "target": "wood",
+      "source_becomes": null,
+      "target_becomes": "fire",
+      "probability": 0.4,
+      "expected_frames_to_react": 2,
+      "is_deterministic": false,
+      "description": "Lava ignites wood"
+    },
+    "lava_stone": {
+      "source": "lava",
+      "target": "stone",
+      "source_becomes": null,
+      "target_becomes": null,
+      "probability": 0.08,
+      "expected_frames_to_react": 12,
+      "is_deterministic": false,
+      "description": "Lava heats adjacent stone"
+    },
+    "acid_stone": {
+      "source": "acid",
+      "target": "stone",
+      "source_becomes": "empty",
+      "target_becomes": "empty",
+      "probability": 0.08,
+      "expected_frames_to_react": 12,
+      "is_deterministic": false,
+      "description": "Acid dissolves stone"
+    },
+    "acid_wood": {
+      "source": "acid",
+      "target": "wood",
+      "source_becomes": "empty",
+      "target_becomes": "empty",
+      "probability": 0.12,
+      "expected_frames_to_react": 8,
+      "is_deterministic": false,
+      "description": "Acid dissolves wood"
+    },
+    "acid_metal": {
+      "source": "acid",
+      "target": "metal",
+      "source_becomes": null,
+      "target_becomes": null,
+      "probability": 0.05,
+      "expected_frames_to_react": 20,
+      "is_deterministic": false,
+      "description": "Acid corrodes metal"
+    },
+    "acid_dirt": {
+      "source": "acid",
+      "target": "dirt",
+      "source_becomes": null,
+      "target_becomes": "empty",
+      "probability": 0.15,
+      "expected_frames_to_react": 7,
+      "is_deterministic": false,
+      "description": "Acid dissolves dirt"
+    },
+    "acid_ice": {
+      "source": "acid",
+      "target": "ice",
+      "source_becomes": null,
+      "target_becomes": "water",
+      "probability": 0.1,
+      "expected_frames_to_react": 10,
+      "is_deterministic": false,
+      "description": "Acid melts ice"
+    },
+    "acid_glass": {
+      "source": "acid",
+      "target": "glass",
+      "source_becomes": "empty",
+      "target_becomes": "empty",
+      "probability": 0.1,
+      "expected_frames_to_react": 10,
+      "is_deterministic": false,
+      "description": "Acid dissolves glass"
+    },
+    "acid_plant": {
+      "source": "acid",
+      "target": "plant",
+      "source_becomes": null,
+      "target_becomes": "empty",
+      "probability": 0.33,
+      "expected_frames_to_react": 3,
+      "is_deterministic": false,
+      "description": "Acid dissolves plants"
+    },
+    "acid_seed": {
+      "source": "acid",
+      "target": "seed",
+      "source_becomes": null,
+      "target_becomes": "empty",
+      "probability": 0.33,
+      "expected_frames_to_react": 3,
+      "is_deterministic": false,
+      "description": "Acid dissolves seeds"
+    },
+    "acid_ant": {
+      "source": "acid",
+      "target": "ant",
+      "source_becomes": null,
+      "target_becomes": "empty",
+      "probability": 1.0,
+      "expected_frames_to_react": 1,
+      "is_deterministic": true,
+      "description": "Acid kills ants"
+    },
+    "acid_water": {
+      "source": "acid",
+      "target": "water",
+      "source_becomes": "water",
+      "target_becomes": null,
+      "probability": 0.125,
+      "expected_frames_to_react": 8,
+      "is_deterministic": false,
+      "description": "Acid dilutes in water"
+    },
+    "acid_lava": {
+      "source": "acid",
+      "target": "lava",
+      "source_becomes": "smoke",
+      "target_becomes": "steam",
+      "probability": 0.2,
+      "expected_frames_to_react": 5,
+      "is_deterministic": false,
+      "description": "Acid + lava = violent reaction"
+    },
+    "seed_water": {
+      "source": "seed",
+      "target": "water",
+      "source_becomes": null,
+      "target_becomes": null,
+      "probability": 0.02,
+      "expected_frames_to_react": 50,
+      "is_deterministic": false,
+      "description": "Seed near water can sprout"
+    },
+    "lightning_water": {
+      "source": "lightning",
+      "target": "water",
+      "source_becomes": null,
+      "target_becomes": null,
+      "probability": 1.0,
+      "expected_frames_to_react": 1,
+      "is_deterministic": true,
+      "description": "Lightning electrifies water"
+    },
+    "lightning_metal": {
+      "source": "lightning",
+      "target": "metal",
+      "source_becomes": null,
+      "target_becomes": null,
+      "probability": 1.0,
+      "expected_frames_to_react": 1,
+      "is_deterministic": true,
+      "description": "Lightning conducts through metal"
+    },
+    "lightning_sand": {
+      "source": "lightning",
+      "target": "sand",
+      "source_becomes": null,
+      "target_becomes": "glass",
+      "probability": 1.0,
+      "expected_frames_to_react": 1,
+      "is_deterministic": true,
+      "description": "Lightning fuses sand to glass"
+    },
+    "lightning_tnt": {
+      "source": "lightning",
+      "target": "tnt",
+      "source_becomes": null,
+      "target_becomes": null,
+      "probability": 1.0,
+      "expected_frames_to_react": 1,
+      "is_deterministic": true,
+      "description": "Lightning detonates TNT"
+    },
+    "snow_fire": {
+      "source": "snow",
+      "target": "fire",
+      "source_becomes": "water",
+      "target_becomes": null,
+      "probability": 1.0,
+      "expected_frames_to_react": 1,
+      "is_deterministic": true,
+      "description": "Snow melts near fire"
+    },
+    "ice_fire": {
+      "source": "ice",
+      "target": "fire",
+      "source_becomes": "water",
+      "target_becomes": null,
+      "probability": 1.0,
+      "expected_frames_to_react": 1,
+      "is_deterministic": true,
+      "description": "Ice melts near fire"
+    },
+    "mud_fire": {
+      "source": "mud",
+      "target": "fire",
+      "source_becomes": "dirt",
+      "target_becomes": null,
+      "probability": 0.05,
+      "expected_frames_to_react": 20,
+      "is_deterministic": false,
+      "description": "Mud dries near fire"
+    },
+    "mud_lava": {
+      "source": "mud",
+      "target": "lava",
+      "source_becomes": "dirt",
+      "target_becomes": null,
+      "probability": 0.05,
+      "expected_frames_to_react": 20,
+      "is_deterministic": false,
+      "description": "Mud dries near lava"
+    }
+  },
+  "reaction_rates": {
+    "p_0.02": {
+      "probability": 0.02,
+      "expected_mean_frames": 50,
+      "reactions": [
+        "seed_water"
+      ]
+    },
+    "p_0.05": {
+      "probability": 0.05,
+      "expected_mean_frames": 20,
+      "reactions": [
+        "acid_metal",
+        "mud_fire",
+        "mud_lava"
+      ]
+    },
+    "p_0.08": {
+      "probability": 0.08,
+      "expected_mean_frames": 12,
+      "reactions": [
+        "lava_stone",
+        "acid_stone"
+      ]
+    },
+    "p_0.1": {
+      "probability": 0.1,
+      "expected_mean_frames": 10,
+      "reactions": [
+        "fire_ice",
+        "acid_ice",
+        "acid_glass"
+      ]
+    },
+    "p_0.12": {
+      "probability": 0.12,
+      "expected_mean_frames": 8,
+      "reactions": [
+        "acid_wood",
+        "acid_water"
+      ]
+    },
+    "p_0.15": {
+      "probability": 0.15,
+      "expected_mean_frames": 7,
+      "reactions": [
+        "fire_wood",
+        "fire_snow",
+        "acid_dirt"
+      ]
+    },
+    "p_0.2": {
+      "probability": 0.2,
+      "expected_mean_frames": 5,
+      "reactions": [
+        "acid_lava"
+      ]
+    },
+    "p_0.3": {
+      "probability": 0.3,
+      "expected_mean_frames": 3,
+      "reactions": [
+        "fire_plant",
+        "fire_seed",
+        "fire_tnt"
+      ]
+    },
+    "p_0.33": {
+      "probability": 0.33,
+      "expected_mean_frames": 3,
+      "reactions": [
+        "acid_plant",
+        "acid_seed"
+      ]
+    },
+    "p_0.4": {
+      "probability": 0.4,
+      "expected_mean_frames": 2,
+      "reactions": [
+        "lava_wood"
+      ]
+    },
+    "p_0.5": {
+      "probability": 0.5,
+      "expected_mean_frames": 2,
+      "reactions": [
+        "fire_oil"
+      ]
+    },
+    "p_1.0": {
+      "probability": 1.0,
+      "expected_mean_frames": 1,
+      "reactions": [
+        "water_fire",
+        "water_lava",
+        "sand_lightning",
+        "sand_water",
+        "lava_water",
+        "lava_ice",
+        "lava_snow",
+        "acid_ant",
+        "lightning_water",
+        "lightning_metal",
+        "lightning_sand",
+        "lightning_tnt",
+        "snow_fire",
+        "ice_fire"
+      ]
+    }
+  },
+  "non_reactive_pairs": {
+    "pairs": [
+      [
+        "stone",
+        "stone"
+      ],
+      [
+        "water",
+        "water"
+      ],
+      [
+        "sand",
+        "sand"
+      ],
+      [
+        "metal",
+        "metal"
+      ],
+      [
+        "dirt",
+        "dirt"
+      ],
+      [
+        "glass",
+        "glass"
+      ],
+      [
+        "wood",
+        "wood"
+      ],
+      [
+        "ice",
+        "ice"
+      ],
+      [
+        "snow",
+        "snow"
+      ],
+      [
+        "oil",
+        "oil"
+      ],
+      [
+        "ash",
+        "ash"
+      ],
+      [
+        "mud",
+        "mud"
+      ],
+      [
+        "stone",
+        "metal"
+      ],
+      [
+        "glass",
+        "stone"
+      ],
+      [
+        "dirt",
+        "sand"
+      ],
+      [
+        "wood",
+        "stone"
+      ],
+      [
+        "ice",
+        "snow"
+      ]
+    ],
+    "principle": "Elements without registered reactions should not transform each other"
+  },
+  "reaction_chains": {
+    "fire_oil_chain": {
+      "description": "Fire ignites oil, which spreads fire through connected oil",
+      "fuel_element": "oil",
+      "igniter": "fire",
+      "fuel_length": 10,
+      "probability_per_step": 0.5,
+      "expected_max_frames": 60
+    },
+    "lava_water_chain": {
+      "description": "Lava contacts water producing steam + stone",
+      "source": "lava",
+      "target": "water",
+      "source_product": "stone",
+      "target_product": "steam"
+    },
+    "acid_layered": {
+      "description": "Acid dissolves materials at rates proportional to probability",
+      "layer_order": [
+        "plant",
+        "wood",
+        "stone"
+      ],
+      "probabilities": [
+        0.33,
+        0.12,
+        0.08
+      ],
+      "expected_dissolution_order": [
+        "plant",
+        "wood",
+        "stone"
+      ]
+    }
+  },
+  "corrosion_resistance_ordering": {
+    "dissolution_probabilities": {
+      "stone": 0.08,
+      "wood": 0.12,
+      "dirt": 0.15,
+      "ice": 0.1,
+      "glass": 0.1,
+      "plant": 0.33,
+      "seed": 0.33,
+      "ant": 1.0,
+      "lava": 0.2
+    },
+    "fastest_to_slowest": [
+      "ant",
+      "plant",
+      "seed",
+      "lava",
+      "dirt",
+      "wood",
+      "ice",
+      "glass",
+      "stone"
+    ],
+    "principle": "Higher acid probability = less corrosion resistant"
+  },
+  "fire_cycle": {
+    "stages": [
+      "wood",
+      "fire",
+      "smoke"
+    ],
+    "wood_ignition_probability": 0.4,
+    "description": "Wood ignites from fire/lava, burns, produces smoke",
+    "max_frames": 200
+  },
+  "water_cycle_reaction": {
+    "stages": [
+      "water",
+      "steam"
+    ],
+    "trigger": "lava or fire heats water above boil point",
+    "description": "Water becomes steam when heated, steam rises and may condense",
+    "max_frames": 100
+  },
+  "reaction_mass": {
+    "mass_conserving_reactions": [
+      "fire_oil",
+      "fire_plant",
+      "fire_seed",
+      "fire_ice",
+      "fire_snow",
+      "water_lava",
+      "sand_lightning",
+      "sand_water",
+      "lava_water",
+      "lava_ice",
+      "lava_snow",
+      "lava_wood",
+      "acid_ice",
+      "acid_water",
+      "acid_lava",
+      "lightning_sand",
+      "snow_fire",
+      "ice_fire",
+      "mud_fire",
+      "mud_lava"
+    ],
+    "mass_reducing_reactions": [
+      "water_fire",
+      "acid_stone",
+      "acid_wood",
+      "acid_dirt",
+      "acid_glass",
+      "acid_plant",
+      "acid_seed",
+      "acid_ant"
+    ],
+    "principle": "Reactions that produce non-empty products preserve cell count"
+  },
+  "reaction_temperature": {
+    "reactions": [
+      {
+        "source": "fire",
+        "target": "oil",
+        "probability": 0.5
+      },
+      {
+        "source": "fire",
+        "target": "wood",
+        "probability": 0.15
+      },
+      {
+        "source": "fire",
+        "target": "plant",
+        "probability": 0.3
+      },
+      {
+        "source": "fire",
+        "target": "seed",
+        "probability": 0.3
+      },
+      {
+        "source": "fire",
+        "target": "ice",
+        "probability": 0.1
+      },
+      {
+        "source": "fire",
+        "target": "snow",
+        "probability": 0.15
+      },
+      {
+        "source": "fire",
+        "target": "tnt",
+        "probability": 0.3
+      },
+      {
+        "source": "water",
+        "target": "fire",
+        "probability": 1.0
+      },
+      {
+        "source": "water",
+        "target": "lava",
+        "probability": 1.0
+      },
+      {
+        "source": "sand",
+        "target": "lightning",
+        "probability": 1.0
+      },
+      {
+        "source": "sand",
+        "target": "water",
+        "probability": 1.0
+      },
+      {
+        "source": "lava",
+        "target": "water",
+        "probability": 1.0
+      },
+      {
+        "source": "lava",
+        "target": "ice",
+        "probability": 1.0
+      },
+      {
+        "source": "lava",
+        "target": "snow",
+        "probability": 1.0
+      },
+      {
+        "source": "lava",
+        "target": "wood",
+        "probability": 0.4
+      },
+      {
+        "source": "lava",
+        "target": "stone",
+        "probability": 0.08
+      },
+      {
+        "source": "acid",
+        "target": "stone",
+        "probability": 0.08
+      },
+      {
+        "source": "acid",
+        "target": "wood",
+        "probability": 0.12
+      },
+      {
+        "source": "acid",
+        "target": "metal",
+        "probability": 0.05
+      },
+      {
+        "source": "acid",
+        "target": "dirt",
+        "probability": 0.15
+      },
+      {
+        "source": "acid",
+        "target": "ice",
+        "probability": 0.1
+      },
+      {
+        "source": "acid",
+        "target": "glass",
+        "probability": 0.1
+      },
+      {
+        "source": "acid",
+        "target": "plant",
+        "probability": 0.33
+      },
+      {
+        "source": "acid",
+        "target": "seed",
+        "probability": 0.33
+      },
+      {
+        "source": "acid",
+        "target": "ant",
+        "probability": 1.0
+      },
+      {
+        "source": "acid",
+        "target": "water",
+        "probability": 0.125
+      },
+      {
+        "source": "acid",
+        "target": "lava",
+        "probability": 0.2
+      },
+      {
+        "source": "seed",
+        "target": "water",
+        "probability": 0.02
+      },
+      {
+        "source": "lightning",
+        "target": "water",
+        "probability": 1.0
+      },
+      {
+        "source": "lightning",
+        "target": "metal",
+        "probability": 1.0
+      },
+      {
+        "source": "lightning",
+        "target": "sand",
+        "probability": 1.0
+      },
+      {
+        "source": "lightning",
+        "target": "tnt",
+        "probability": 1.0
+      },
+      {
+        "source": "snow",
+        "target": "fire",
+        "probability": 1.0
+      },
+      {
+        "source": "ice",
+        "target": "fire",
+        "probability": 1.0
+      },
+      {
+        "source": "mud",
+        "target": "fire",
+        "probability": 0.05
+      },
+      {
+        "source": "mud",
+        "target": "lava",
+        "probability": 0.05
+      }
+    ],
+    "principle": "Reactions with temperature constraints only fire within range",
+    "note": "Current built-in rules have no temp constraints; test framework validates the mechanism"
+  },
+  "first_frame_displacement": {
+    "sand": {
+      "gravity": 2,
+      "maxVelocity": 3,
+      "first_frame_vel": 2,
+      "direction": "down"
+    },
+    "water": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_frame_vel": 1,
+      "direction": "down"
+    },
+    "fire": {
+      "gravity": -1,
+      "maxVelocity": 2,
+      "first_frame_vel": -1,
+      "direction": "up"
+    },
+    "ice": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_frame_vel": 1,
+      "direction": "down"
+    },
+    "lightning": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_frame_vel": 1,
+      "direction": "down"
+    },
+    "seed": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_frame_vel": 1,
+      "direction": "down"
+    },
+    "stone": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_frame_vel": 1,
+      "direction": "down"
+    },
+    "tnt": {
+      "gravity": 2,
+      "maxVelocity": 2,
+      "first_frame_vel": 2,
+      "direction": "down"
+    },
+    "rainbow": {
+      "gravity": -1,
+      "maxVelocity": 2,
+      "first_frame_vel": -1,
+      "direction": "up"
+    },
+    "mud": {
+      "gravity": 1,
+      "maxVelocity": 1,
+      "first_frame_vel": 1,
+      "direction": "down"
+    },
+    "steam": {
+      "gravity": -1,
+      "maxVelocity": 2,
+      "first_frame_vel": -1,
+      "direction": "up"
+    },
+    "ant": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_frame_vel": 1,
+      "direction": "down"
+    },
+    "oil": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_frame_vel": 1,
+      "direction": "down"
+    },
+    "acid": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_frame_vel": 1,
+      "direction": "down"
+    },
+    "glass": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_frame_vel": 1,
+      "direction": "down"
+    },
+    "dirt": {
+      "gravity": 1,
+      "maxVelocity": 3,
+      "first_frame_vel": 1,
+      "direction": "down"
+    },
+    "lava": {
+      "gravity": 1,
+      "maxVelocity": 1,
+      "first_frame_vel": 1,
+      "direction": "down"
+    },
+    "snow": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_frame_vel": 1,
+      "direction": "down"
+    },
+    "wood": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_frame_vel": 1,
+      "direction": "down"
+    },
+    "metal": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_frame_vel": 1,
+      "direction": "down"
+    },
+    "smoke": {
+      "gravity": -1,
+      "maxVelocity": 2,
+      "first_frame_vel": -1,
+      "direction": "up"
+    },
+    "bubble": {
+      "gravity": -1,
+      "maxVelocity": 2,
+      "first_frame_vel": -1,
+      "direction": "up"
+    },
+    "ash": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_frame_vel": 1,
+      "direction": "down"
+    }
+  },
+  "negative_gravity": {
+    "fire": {
+      "gravity": -1,
+      "maxVelocity": 2,
+      "expected_rise_10frames": 19.0
+    },
+    "rainbow": {
+      "gravity": -1,
+      "maxVelocity": 2,
+      "expected_rise_10frames": 19.0
+    },
+    "steam": {
+      "gravity": -1,
+      "maxVelocity": 2,
+      "expected_rise_10frames": 19.0
+    },
+    "smoke": {
+      "gravity": -1,
+      "maxVelocity": 2,
+      "expected_rise_10frames": 19.0
+    },
+    "bubble": {
+      "gravity": -1,
+      "maxVelocity": 2,
+      "expected_rise_10frames": 19.0
+    }
+  },
+  "acceleration_curves": {
+    "sand": {
+      "gravity": 2,
+      "maxVelocity": 3,
+      "velocities_10frames": [
+        2,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      "frames_to_terminal": 2
+    },
+    "water": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "velocities_10frames": [
+        1,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "frames_to_terminal": 2
+    },
+    "fire": {
+      "gravity": -1,
+      "maxVelocity": 2,
+      "velocities_10frames": [
+        -1,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2
+      ],
+      "frames_to_terminal": 2
+    },
+    "ice": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "velocities_10frames": [
+        1,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "frames_to_terminal": 2
+    },
+    "lightning": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "velocities_10frames": [
+        1,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "frames_to_terminal": 2
+    },
+    "seed": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "velocities_10frames": [
+        1,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "frames_to_terminal": 2
+    },
+    "stone": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "velocities_10frames": [
+        1,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "frames_to_terminal": 2
+    },
+    "tnt": {
+      "gravity": 2,
+      "maxVelocity": 2,
+      "velocities_10frames": [
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "frames_to_terminal": 1
+    },
+    "rainbow": {
+      "gravity": -1,
+      "maxVelocity": 2,
+      "velocities_10frames": [
+        -1,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2
+      ],
+      "frames_to_terminal": 2
+    },
+    "mud": {
+      "gravity": 1,
+      "maxVelocity": 1,
+      "velocities_10frames": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "frames_to_terminal": 1
+    },
+    "steam": {
+      "gravity": -1,
+      "maxVelocity": 2,
+      "velocities_10frames": [
+        -1,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2
+      ],
+      "frames_to_terminal": 2
+    },
+    "ant": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "velocities_10frames": [
+        1,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "frames_to_terminal": 2
+    },
+    "oil": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "velocities_10frames": [
+        1,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "frames_to_terminal": 2
+    },
+    "acid": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "velocities_10frames": [
+        1,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "frames_to_terminal": 2
+    },
+    "glass": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "velocities_10frames": [
+        1,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "frames_to_terminal": 2
+    },
+    "dirt": {
+      "gravity": 1,
+      "maxVelocity": 3,
+      "velocities_10frames": [
+        1,
+        2,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      "frames_to_terminal": 3
+    },
+    "lava": {
+      "gravity": 1,
+      "maxVelocity": 1,
+      "velocities_10frames": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "frames_to_terminal": 1
+    },
+    "snow": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "velocities_10frames": [
+        1,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "frames_to_terminal": 2
+    },
+    "wood": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "velocities_10frames": [
+        1,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "frames_to_terminal": 2
+    },
+    "metal": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "velocities_10frames": [
+        1,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "frames_to_terminal": 2
+    },
+    "smoke": {
+      "gravity": -1,
+      "maxVelocity": 2,
+      "velocities_10frames": [
+        -1,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2
+      ],
+      "frames_to_terminal": 2
+    },
+    "bubble": {
+      "gravity": -1,
+      "maxVelocity": 2,
+      "velocities_10frames": [
+        -1,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2,
+        -2
+      ],
+      "frames_to_terminal": 2
+    },
+    "ash": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "velocities_10frames": [
+        1,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "frames_to_terminal": 2
+    }
+  },
+  "wrapping_edge_cases": {
+    "grid_width": 320,
+    "inputs": [
+      -1,
+      -320,
+      320,
+      321,
+      -321,
+      640
+    ],
+    "expected": [
+      319,
+      0,
+      0,
+      1,
+      319,
+      0
+    ]
+  },
+  "settling_timing": {
+    "frames_to_settle": 3,
+    "settle_flag_bit": 64,
+    "principle": "Elements settle after 3 consecutive stable frames"
+  },
+  "momentum_symmetry": {
+    "principle": "Two identical elements dropped from same height at symmetric x positions should land at same y",
+    "max_allowed_asymmetry": 0
+  },
+  "multi_cell_fall": {
+    "sand": {
+      "gravity": 2,
+      "maxVelocity": 3,
+      "first_multi_cell_frame": 1,
+      "velocity_at_that_frame": 2
+    },
+    "water": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_multi_cell_frame": 2,
+      "velocity_at_that_frame": 2
+    },
+    "ice": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_multi_cell_frame": 2,
+      "velocity_at_that_frame": 2
+    },
+    "lightning": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_multi_cell_frame": 2,
+      "velocity_at_that_frame": 2
+    },
+    "seed": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_multi_cell_frame": 2,
+      "velocity_at_that_frame": 2
+    },
+    "stone": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_multi_cell_frame": 2,
+      "velocity_at_that_frame": 2
+    },
+    "tnt": {
+      "gravity": 2,
+      "maxVelocity": 2,
+      "first_multi_cell_frame": 1,
+      "velocity_at_that_frame": 2
+    },
+    "ant": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_multi_cell_frame": 2,
+      "velocity_at_that_frame": 2
+    },
+    "oil": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_multi_cell_frame": 2,
+      "velocity_at_that_frame": 2
+    },
+    "acid": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_multi_cell_frame": 2,
+      "velocity_at_that_frame": 2
+    },
+    "glass": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_multi_cell_frame": 2,
+      "velocity_at_that_frame": 2
+    },
+    "dirt": {
+      "gravity": 1,
+      "maxVelocity": 3,
+      "first_multi_cell_frame": 2,
+      "velocity_at_that_frame": 2
+    },
+    "snow": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_multi_cell_frame": 2,
+      "velocity_at_that_frame": 2
+    },
+    "wood": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_multi_cell_frame": 2,
+      "velocity_at_that_frame": 2
+    },
+    "metal": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_multi_cell_frame": 2,
+      "velocity_at_that_frame": 2
+    },
+    "ash": {
+      "gravity": 1,
+      "maxVelocity": 2,
+      "first_multi_cell_frame": 2,
+      "velocity_at_that_frame": 2
+    }
+  },
+  "clock_bit": {
+    "principle": "Elements are processed exactly once per step via clock-bit toggle",
+    "clock_mask": 128
+  },
+  "velocity_on_impact": {
+    "principle": "Velocity resets to 0 on landing (hitting solid surface)"
+  },
+  "drag_comparison": {
+    "elements": {
+      "sand": {
+        "air_distance_20frames": 59.0,
+        "gravity": 2,
+        "maxVelocity": 3
+      },
+      "dirt": {
+        "air_distance_20frames": 57.0,
+        "gravity": 1,
+        "maxVelocity": 3
+      },
+      "stone": {
+        "air_distance_20frames": 39.0,
+        "gravity": 1,
+        "maxVelocity": 2
+      }
+    },
+    "principle": "Elements fall slower through fluid than air due to density displacement"
+  },
+  "projectile_motion": {
+    "element": "sand",
+    "initial_velX": 2,
+    "gravity": 2,
+    "maxVelocity": 3,
+    "x_positions_20frames": [
+      2.0,
+      4.0,
+      6.0,
+      8.0,
+      10.0,
+      12.0,
+      14.0,
+      16.0,
+      18.0,
+      20.0,
+      22.0,
+      24.0,
+      26.0,
+      28.0,
+      30.0,
+      32.0,
+      34.0,
+      36.0,
+      38.0,
+      40.0
+    ],
+    "y_positions_20frames": [
+      2.0,
+      5.0,
+      8.0,
+      11.0,
+      14.0,
+      17.0,
+      20.0,
+      23.0,
+      26.0,
+      29.0,
+      32.0,
+      35.0,
+      38.0,
+      41.0,
+      44.0,
+      47.0,
+      50.0,
+      53.0,
+      56.0,
+      59.0
+    ],
+    "principle": "Horizontal position advances linearly, vertical follows free-fall"
+  },
+  "stack_pressure": {
+    "principle": "Stack of elements should remain stable once settled, no element left behind",
+    "test_element": "sand",
+    "stack_height": 10
+  },
+  "pile_stability": {
+    "principle": "Large granular pile should reach equilibrium (all cells settled) after enough frames",
+    "test_element": "sand",
+    "pile_count": 100,
+    "max_frames_to_settle": 500
   }
 }

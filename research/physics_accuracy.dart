@@ -2730,6 +2730,1111 @@ int _measureDissolutionTime(int thickness) {
 }
 
 // ===========================================================================
+// CHEMICAL REACTIONS: Comprehensive test suite
+// ===========================================================================
+
+/// Test each registered reaction produces correct products.
+/// Places source adjacent to target, runs frames, checks transformations.
+List<TestResult> testAllReactionProducts() {
+  final oracle = _oracle('reaction_products');
+  if (oracle == null) {
+    return [_oracleError('CR1: Reaction Products', 'reaction_products')];
+  }
+  final results = <TestResult>[];
+  for (final entry in oracle.entries) {
+    final data = entry.value as Map<String, dynamic>;
+    final sourceName = data['source'] as String;
+    final targetName = data['target'] as String;
+    final sourceId = _elIdByName(sourceName);
+    final targetId = _elIdByName(targetName);
+    if (sourceId < 0 || targetId < 0) continue;
+
+    final expectedSourceBecomes = data['source_becomes'] as String?;
+    final expectedTargetBecomes = data['target_becomes'] as String?;
+    final probability = (data['probability'] as num).toDouble();
+
+    // Skip reactions with no visible transformation (behavioral only)
+    if (expectedSourceBecomes == null && expectedTargetBecomes == null) {
+      // Still verify the reaction is registered
+      final hasReaction =
+          ReactionRegistry.reactionsBetween(sourceId, targetId).isNotEmpty;
+      results.add(TestResult('CR1: $sourceName+$targetName',
+          hasReaction ? 1.0 : 0.0, hasReaction ? 'registered (behavioral)' : 'MISSING'));
+      continue;
+    }
+
+    // Create a small isolated grid: source at center, target adjacent
+    final e = _createEngine(10, 10);
+    // Surround with metal walls to contain
+    for (int x = 0; x < 10; x++) {
+      e.grid[x] = El.metal;
+      e.grid[9 * e.gridW + x] = El.metal;
+    }
+    for (int y = 0; y < 10; y++) {
+      e.grid[y * e.gridW] = El.metal;
+      e.grid[y * e.gridW + 9] = El.metal;
+    }
+
+    // Place source at (4,5) and target at (5,5)
+    final srcIdx = 5 * e.gridW + 4;
+    final tgtIdx = 5 * e.gridW + 5;
+    e.grid[srcIdx] = sourceId;
+    e.grid[tgtIdx] = targetId;
+
+    // Track which element types exist before
+    final beforeSet = <int>{};
+    for (int i = 0; i < e.grid.length; i++) {
+      if (e.grid[i] != El.empty && e.grid[i] != El.metal) {
+        beforeSet.add(e.grid[i]);
+      }
+    }
+
+    // Run enough frames for probabilistic reactions
+    final maxFrames = max(60, (3.0 / probability).round());
+    _step(e, maxFrames);
+
+    // Scan entire grid for products (elements move due to gravity/flow)
+    final afterSet = <int>{};
+    for (int i = 0; i < e.grid.length; i++) {
+      if (e.grid[i] != El.empty && e.grid[i] != El.metal) {
+        afterSet.add(e.grid[i]);
+      }
+    }
+
+    // Check if expected products appeared anywhere in the grid
+    double score = 0.0;
+    int checks = 0;
+    int passed = 0;
+
+    if (expectedSourceBecomes != null) {
+      checks++;
+      final expectedId = _elIdByName(expectedSourceBecomes);
+      if (expectedId >= 0) {
+        // Product should be present (or source should be gone if product is empty)
+        if (expectedId == El.empty) {
+          if (!afterSet.contains(sourceId)) passed++;
+        } else if (afterSet.contains(expectedId)) {
+          passed++;
+        }
+      }
+    }
+    if (expectedTargetBecomes != null) {
+      checks++;
+      final expectedId = _elIdByName(expectedTargetBecomes);
+      if (expectedId >= 0) {
+        if (expectedId == El.empty) {
+          if (!afterSet.contains(targetId)) passed++;
+        } else if (afterSet.contains(expectedId)) {
+          passed++;
+        }
+      }
+    }
+
+    score = checks > 0 ? passed / checks : 0.0;
+    final afterNames = afterSet.map((id) => id < elementNames.length ? elementNames[id] : '?').join(',');
+    results.add(TestResult('CR1: $sourceName+$targetName', score,
+        'grid contains: [$afterNames] '
+        '(expected: src→${expectedSourceBecomes ?? "unchanged"}, tgt→${expectedTargetBecomes ?? "unchanged"})'));
+  }
+  return results.isEmpty
+      ? [TestResult('CR1: Reaction Products', 0.0, '0 tested')]
+      : results;
+}
+
+/// Test that reaction rates scale with probability.
+/// Higher probability reactions should fire sooner on average.
+TestResult testReactionRateScaling() {
+  final oracle = _oracle('reaction_rates');
+  if (oracle == null) return _oracleError('CR2: Rate Scaling', 'reaction_rates');
+
+  // Pick two reactions with different probabilities and measure reaction times
+  // acid+plant (p=0.33) vs acid+stone (p=0.08) -- plant should dissolve faster
+  final trials = 5;
+  double totalPlant = 0;
+  double totalStone = 0;
+
+  for (int t = 0; t < trials; t++) {
+    totalPlant += _measureReactionTime(El.acid, El.plant, 200);
+    totalStone += _measureReactionTime(El.acid, El.stone, 400);
+  }
+
+  final avgPlant = totalPlant / trials;
+  final avgStone = totalStone / trials;
+
+  // Plant (p=0.33) should react faster than stone (p=0.08)
+  double score;
+  if (avgPlant < avgStone && avgPlant > 0) {
+    score = 1.0;
+  } else if (avgPlant == avgStone) {
+    score = 0.5;
+  } else {
+    score = 0.2;
+  }
+
+  return TestResult('CR2: Rate Scaling', score,
+      'acid+plant avg=${avgPlant.toStringAsFixed(1)}f, '
+      'acid+stone avg=${avgStone.toStringAsFixed(1)}f '
+      '(plant p=0.33 should be faster than stone p=0.08)');
+}
+
+/// Measure how many frames until a reaction fires between source and target.
+/// Uses a column of target cells with source adjacent to avoid movement issues.
+int _measureReactionTime(int sourceEl, int targetEl, int maxFrames) {
+  final e = _createEngine(10, 14);
+  // Metal walls
+  for (int x = 0; x < 10; x++) {
+    e.grid[x] = El.metal;
+    e.grid[13 * e.gridW + x] = El.metal;
+  }
+  for (int y = 0; y < 14; y++) {
+    e.grid[y * e.gridW] = El.metal;
+    e.grid[y * e.gridW + 9] = El.metal;
+  }
+  // Column of target at x=5
+  for (int y = 2; y <= 11; y++) {
+    e.grid[y * e.gridW + 5] = targetEl;
+  }
+  // Column of source at x=4
+  for (int y = 2; y <= 11; y++) {
+    e.grid[y * e.gridW + 4] = sourceEl;
+  }
+
+  // Count initial target cells
+  int initialTarget = 0;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == targetEl) initialTarget++;
+  }
+
+  for (int frame = 0; frame < maxFrames; frame++) {
+    e.markAllDirty();
+    e.step(_simulateElement);
+    // Check if any target was consumed
+    int remaining = 0;
+    for (int i = 0; i < e.grid.length; i++) {
+      if (e.grid[i] == targetEl) remaining++;
+    }
+    if (remaining < initialTarget) return frame + 1;
+  }
+  return maxFrames;
+}
+
+/// Test fire chain propagation through a line of oil.
+TestResult testFireChainPropagation() {
+  final oracle = _oracle('reaction_chains');
+  if (oracle == null) return _oracleError('CR3: Fire Chain', 'reaction_chains');
+
+  final chainData = oracle['fire_oil_chain'] as Map<String, dynamic>;
+  final fuelLength = (chainData['fuel_length'] as num).toInt();
+  final maxFrames = (chainData['expected_max_frames'] as num).toInt();
+
+  final e = _createEngine(fuelLength + 6, 5);
+  // Floor
+  for (int x = 0; x < e.gridW; x++) {
+    e.grid[4 * e.gridW + x] = El.stone;
+  }
+  // Line of oil from x=3 to x=3+fuelLength-1
+  for (int x = 3; x < 3 + fuelLength; x++) {
+    e.grid[3 * e.gridW + x] = El.oil;
+  }
+  // Fire at the start
+  e.grid[3 * e.gridW + 2] = El.fire;
+
+  _step(e, maxFrames);
+
+  // Check how far fire/empty spread through the oil line
+  int oilRemaining = 0;
+  for (int x = 3; x < 3 + fuelLength; x++) {
+    if (e.grid[3 * e.gridW + x] == El.oil) oilRemaining++;
+  }
+
+  final burnedFraction = 1.0 - (oilRemaining / fuelLength);
+  // Score based on how much oil was consumed
+  final score = burnedFraction >= 0.5 ? 1.0 : burnedFraction * 2.0;
+
+  return TestResult('CR3: Fire Chain', score,
+      'oil burned: ${(burnedFraction * 100).toStringAsFixed(0)}% '
+      '($oilRemaining/$fuelLength remaining after $maxFrames frames)');
+}
+
+/// Test that non-reactive pairs do not react.
+List<TestResult> testNonReactivePairs() {
+  final oracle = _oracle('non_reactive_pairs');
+  if (oracle == null) {
+    return [_oracleError('CR4: Non-Reactive', 'non_reactive_pairs')];
+  }
+  final pairs = oracle['pairs'] as List<dynamic>;
+  final results = <TestResult>[];
+
+  for (final pair in pairs) {
+    final nameA = (pair as List<dynamic>)[0] as String;
+    final nameB = pair[1] as String;
+    final idA = _elIdByName(nameA);
+    final idB = _elIdByName(nameB);
+    if (idA < 0 || idB < 0) continue;
+
+    // Verify no reaction is registered
+    final hasReaction =
+        ReactionRegistry.reactionsBetween(idA, idB).isNotEmpty;
+
+    // Also run a simulation to verify no transformation
+    final e = _createEngine(10, 10);
+    for (int x = 0; x < 10; x++) {
+      e.grid[x] = El.metal;
+      e.grid[9 * e.gridW + x] = El.metal;
+    }
+    for (int y = 0; y < 10; y++) {
+      e.grid[y * e.gridW] = El.metal;
+      e.grid[y * e.gridW + 9] = El.metal;
+    }
+    final idxA = 5 * e.gridW + 4;
+    final idxB = 5 * e.gridW + 5;
+    e.grid[idxA] = idA;
+    e.grid[idxB] = idB;
+
+    _step(e, 30);
+
+    // Elements may move due to gravity, but shouldn't transform into other types
+    // Count if any cell became something unexpected
+    bool transformed = false;
+    for (int i = 0; i < e.grid.length; i++) {
+      final el = e.grid[i];
+      if (el != El.empty && el != El.metal && el != idA && el != idB) {
+        transformed = true;
+        break;
+      }
+    }
+
+    final score = (!hasReaction && !transformed) ? 1.0 : 0.0;
+    results.add(TestResult('CR4: $nameA+$nameB', score,
+        hasReaction ? 'UNEXPECTED reaction registered' :
+        transformed ? 'UNEXPECTED transformation occurred' : 'inert (correct)'));
+  }
+  return results.isEmpty
+      ? [TestResult('CR4: Non-Reactive', 0.0, '0 tested')]
+      : results;
+}
+
+/// Test corrosion resistance ordering: acid dissolves materials at different rates.
+TestResult testCorrosionResistanceOrdering() {
+  final oracle = _oracle('corrosion_resistance_ordering');
+  if (oracle == null) {
+    return _oracleError('CR5: Corrosion Order', 'corrosion_resistance_ordering');
+  }
+
+  final expectedOrder = (oracle['fastest_to_slowest'] as List<dynamic>)
+      .map((e) => e as String)
+      .toList();
+
+  // Measure dissolution time for each material
+  final times = <String, int>{};
+  for (final name in expectedOrder) {
+    final targetId = _elIdByName(name);
+    if (targetId < 0) continue;
+    times[name] = _measureReactionTime(El.acid, targetId, 300);
+  }
+
+  // Check if measured order matches expected
+  final measuredOrder = times.keys.toList()
+    ..sort((a, b) => times[a]!.compareTo(times[b]!));
+
+  int correctPairs = 0;
+  int totalPairs = 0;
+  for (int i = 0; i < measuredOrder.length - 1; i++) {
+    for (int j = i + 1; j < measuredOrder.length; j++) {
+      totalPairs++;
+      final oi = expectedOrder.indexOf(measuredOrder[i]);
+      final oj = expectedOrder.indexOf(measuredOrder[j]);
+      if (oi >= 0 && oj >= 0 && oi < oj) correctPairs++;
+    }
+  }
+
+  final score = totalPairs > 0 ? correctPairs / totalPairs : 0.0;
+  return TestResult('CR5: Corrosion Order', score,
+      'measured: ${measuredOrder.join(">")} '
+      '(expected: ${expectedOrder.join(">")}, $correctPairs/$totalPairs pairs correct)');
+}
+
+/// Test lava+water chain: lava becomes stone, water becomes steam.
+TestResult testLavaWaterChain() {
+  final oracle = _oracle('reaction_chains');
+  if (oracle == null) return _oracleError('CR6: Lava+Water', 'reaction_chains');
+
+  final e = _createEngine(12, 12);
+  // Stone container
+  for (int x = 0; x < 12; x++) {
+    e.grid[x] = El.stone;
+    e.grid[11 * e.gridW + x] = El.stone;
+  }
+  for (int y = 0; y < 12; y++) {
+    e.grid[y * e.gridW] = El.stone;
+    e.grid[y * e.gridW + 11] = El.stone;
+  }
+
+  // Pool of water in bottom half
+  for (int y = 6; y <= 10; y++) {
+    for (int x = 1; x <= 10; x++) {
+      e.grid[y * e.gridW + x] = El.water;
+    }
+  }
+  // Drop lava on top
+  for (int x = 4; x <= 7; x++) {
+    e.grid[3 * e.gridW + x] = El.lava;
+  }
+
+  _step(e, 60);
+
+  // Count products
+  int stoneNew = 0, steam = 0, waterLeft = 0, lavaLeft = 0;
+  for (int i = 0; i < e.grid.length; i++) {
+    switch (e.grid[i]) {
+      case El.steam:
+        steam++;
+      case El.water:
+        waterLeft++;
+      case El.lava:
+        lavaLeft++;
+    }
+  }
+  // Count stone that's not the container walls
+  for (int y = 2; y <= 10; y++) {
+    for (int x = 1; x <= 10; x++) {
+      if (e.grid[y * e.gridW + x] == El.stone) stoneNew++;
+    }
+  }
+
+  // Lava should have been converted to stone and water to steam
+  final reacted = steam > 0 || stoneNew > 0;
+  final score = reacted ? 1.0 : 0.0;
+
+  return TestResult('CR6: Lava+Water Chain', score,
+      'steam=$steam, new_stone=$stoneNew, water_left=$waterLeft, lava_left=$lavaLeft');
+}
+
+/// Test acid chain dissolution through layered materials.
+TestResult testAcidChainDissolution() {
+  final oracle = _oracle('reaction_chains');
+  if (oracle == null) return _oracleError('CR7: Acid Chain', 'reaction_chains');
+
+  final chainData = oracle['acid_layered'] as Map<String, dynamic>;
+  final layerOrder = (chainData['layer_order'] as List<dynamic>)
+      .map((e) => e as String)
+      .toList();
+
+  // Build a vertical stack of materials: plant on top, then wood, then stone
+  final e = _createEngine(10, 20);
+  // Container
+  for (int x = 0; x < 10; x++) {
+    e.grid[19 * e.gridW + x] = El.metal;
+  }
+  for (int y = 0; y < 20; y++) {
+    e.grid[y * e.gridW] = El.metal;
+    e.grid[y * e.gridW + 9] = El.metal;
+  }
+
+  // Layers (bottom to top): stone, wood, plant
+  for (int x = 1; x <= 8; x++) {
+    e.grid[16 * e.gridW + x] = El.stone;
+    e.grid[14 * e.gridW + x] = El.wood;
+    e.grid[12 * e.gridW + x] = El.plant;
+  }
+
+  // Acid pool above
+  for (int y = 8; y <= 11; y++) {
+    for (int x = 1; x <= 8; x++) {
+      e.grid[y * e.gridW + x] = El.acid;
+    }
+  }
+
+  // Track which layer dissolves first
+  final dissolved = <String>[];
+  for (int frame = 0; frame < 400; frame++) {
+    e.markAllDirty();
+    e.step(_simulateElement);
+
+    // Check each layer
+    for (final name in layerOrder) {
+      if (dissolved.contains(name)) continue;
+      final elId = _elIdByName(name);
+      bool anyRemaining = false;
+      for (int x = 1; x <= 8; x++) {
+        for (int y = 0; y < 20; y++) {
+          if (e.grid[y * e.gridW + x] == elId) {
+            anyRemaining = true;
+            break;
+          }
+        }
+        if (anyRemaining) break;
+      }
+      if (!anyRemaining) dissolved.add(name);
+    }
+    if (dissolved.length == layerOrder.length) break;
+  }
+
+  // Plant should dissolve first (highest probability), then wood, then stone
+  int correctOrder = 0;
+  for (int i = 0; i < dissolved.length && i < layerOrder.length; i++) {
+    if (dissolved[i] == layerOrder[i]) correctOrder++;
+  }
+
+  final score = layerOrder.isNotEmpty ? correctOrder / layerOrder.length : 0.0;
+  return TestResult('CR7: Acid Chain', score,
+      'dissolution order: ${dissolved.join("→")} '
+      '(expected: ${layerOrder.join("→")})');
+}
+
+/// Test that water extinguishes fire (water+fire → steam+empty).
+TestResult testWaterExtinguishesFire() {
+  final e = _createEngine(10, 10);
+  for (int x = 0; x < 10; x++) {
+    e.grid[x] = El.stone;
+    e.grid[9 * e.gridW + x] = El.stone;
+  }
+  for (int y = 0; y < 10; y++) {
+    e.grid[y * e.gridW] = El.stone;
+    e.grid[y * e.gridW + 9] = El.stone;
+  }
+
+  // Fire block with water adjacent
+  e.grid[5 * e.gridW + 4] = El.water;
+  e.grid[5 * e.gridW + 5] = El.fire;
+
+  _step(e, 10);
+
+  // Fire should be extinguished (gone or replaced), steam should appear
+  bool fireGone = true;
+  bool steamFound = false;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.fire) fireGone = false;
+    if (e.grid[i] == El.steam) steamFound = true;
+  }
+
+  double score = 0.0;
+  if (fireGone && steamFound) score = 1.0;
+  else if (fireGone) score = 0.7;
+  else if (steamFound) score = 0.5;
+
+  return TestResult('CR8: Water+Fire', score,
+      'fire_gone=$fireGone, steam_found=$steamFound');
+}
+
+/// Test sand + lightning → glass.
+TestResult testSandLightningGlass() {
+  final e = _createEngine(10, 10);
+  for (int x = 0; x < 10; x++) {
+    e.grid[x] = El.stone;
+    e.grid[9 * e.gridW + x] = El.stone;
+  }
+  for (int y = 0; y < 10; y++) {
+    e.grid[y * e.gridW] = El.stone;
+    e.grid[y * e.gridW + 9] = El.stone;
+  }
+
+  // Place sand with lightning adjacent
+  e.grid[5 * e.gridW + 4] = El.sand;
+  e.grid[5 * e.gridW + 5] = El.lightning;
+
+  _step(e, 10);
+
+  // Sand should become glass
+  bool glassFound = false;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.glass) {
+      glassFound = true;
+      break;
+    }
+  }
+
+  return TestResult('CR9: Sand+Lightning', glassFound ? 1.0 : 0.0,
+      glassFound ? 'glass produced' : 'NO glass found');
+}
+
+/// Test ice melts near fire (ice+fire → water).
+TestResult testIceMeltsNearFire() {
+  final e = _createEngine(10, 10);
+  for (int x = 0; x < 10; x++) {
+    e.grid[x] = El.stone;
+    e.grid[9 * e.gridW + x] = El.stone;
+  }
+  for (int y = 0; y < 10; y++) {
+    e.grid[y * e.gridW] = El.stone;
+    e.grid[y * e.gridW + 9] = El.stone;
+  }
+
+  // Ice block near fire
+  e.grid[5 * e.gridW + 4] = El.ice;
+  e.grid[5 * e.gridW + 5] = El.fire;
+
+  _step(e, 30);
+
+  // Ice should melt to water
+  bool waterFound = false;
+  bool iceRemaining = false;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.water) waterFound = true;
+    if (e.grid[i] == El.ice) iceRemaining = true;
+  }
+
+  double score = 0.0;
+  if (waterFound && !iceRemaining) score = 1.0;
+  else if (waterFound) score = 0.7;
+
+  return TestResult('CR10: Ice+Fire', score,
+      'water_found=$waterFound, ice_remaining=$iceRemaining');
+}
+
+/// Test snow melts near fire (snow+fire → water).
+TestResult testSnowMeltsNearFire() {
+  final e = _createEngine(10, 10);
+  for (int x = 0; x < 10; x++) {
+    e.grid[x] = El.stone;
+    e.grid[9 * e.gridW + x] = El.stone;
+  }
+  for (int y = 0; y < 10; y++) {
+    e.grid[y * e.gridW] = El.stone;
+    e.grid[y * e.gridW + 9] = El.stone;
+  }
+
+  e.grid[5 * e.gridW + 4] = El.snow;
+  e.grid[5 * e.gridW + 5] = El.fire;
+
+  _step(e, 30);
+
+  bool waterFound = false;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.water) {
+      waterFound = true;
+      break;
+    }
+  }
+
+  return TestResult('CR11: Snow+Fire', waterFound ? 1.0 : 0.0,
+      waterFound ? 'water produced' : 'NO water found');
+}
+
+/// Test mud dries near fire (mud+fire → dirt).
+TestResult testMudDriesNearFire() {
+  final e = _createEngine(10, 10);
+  for (int x = 0; x < 10; x++) {
+    e.grid[x] = El.stone;
+    e.grid[9 * e.gridW + x] = El.stone;
+  }
+  for (int y = 0; y < 10; y++) {
+    e.grid[y * e.gridW] = El.stone;
+    e.grid[y * e.gridW + 9] = El.stone;
+  }
+
+  // Multiple mud cells near fire for better probability (p=0.05)
+  for (int y = 4; y <= 6; y++) {
+    for (int x = 3; x <= 5; x++) {
+      e.grid[y * e.gridW + x] = El.mud;
+    }
+  }
+  e.grid[5 * e.gridW + 6] = El.fire;
+  // Keep fire alive with fuel
+  e.grid[5 * e.gridW + 7] = El.oil;
+
+  _step(e, 200);
+
+  bool dirtFound = false;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.dirt) {
+      dirtFound = true;
+      break;
+    }
+  }
+
+  return TestResult('CR12: Mud+Fire→Dirt', dirtFound ? 1.0 : 0.0,
+      dirtFound ? 'dirt produced' : 'NO dirt found (p=0.05, may need more frames)');
+}
+
+/// Test acid dilutes in water (acid+water → water).
+TestResult testAcidDilutesInWater() {
+  final e = _createEngine(12, 12);
+  for (int x = 0; x < 12; x++) {
+    e.grid[x] = El.stone;
+    e.grid[11 * e.gridW + x] = El.stone;
+  }
+  for (int y = 0; y < 12; y++) {
+    e.grid[y * e.gridW] = El.stone;
+    e.grid[y * e.gridW + 11] = El.stone;
+  }
+
+  // Pool of water with acid dropped in
+  for (int y = 6; y <= 10; y++) {
+    for (int x = 1; x <= 10; x++) {
+      e.grid[y * e.gridW + x] = El.water;
+    }
+  }
+  // Small amount of acid
+  e.grid[5 * e.gridW + 5] = El.acid;
+  e.grid[5 * e.gridW + 6] = El.acid;
+
+  final initialAcid = 2;
+  _step(e, 100);
+
+  int acidLeft = 0;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.acid) acidLeft++;
+  }
+
+  // Acid should dilute (convert to water)
+  final diluted = acidLeft < initialAcid;
+  return TestResult('CR13: Acid Dilution', diluted ? 1.0 : 0.0,
+      'acid remaining: $acidLeft (started with $initialAcid)');
+}
+
+/// Test acid + lava = smoke + steam (violent reaction).
+TestResult testAcidLavaReaction() {
+  final e = _createEngine(10, 10);
+  for (int x = 0; x < 10; x++) {
+    e.grid[x] = El.stone;
+    e.grid[9 * e.gridW + x] = El.stone;
+  }
+  for (int y = 0; y < 10; y++) {
+    e.grid[y * e.gridW] = El.stone;
+    e.grid[y * e.gridW + 9] = El.stone;
+  }
+
+  e.grid[5 * e.gridW + 4] = El.acid;
+  e.grid[5 * e.gridW + 5] = El.lava;
+
+  _step(e, 40);
+
+  bool smokeOrSteam = false;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.smoke || e.grid[i] == El.steam) {
+      smokeOrSteam = true;
+      break;
+    }
+  }
+
+  return TestResult('CR14: Acid+Lava', smokeOrSteam ? 1.0 : 0.0,
+      smokeOrSteam ? 'smoke/steam produced' : 'NO reaction products found');
+}
+
+/// Test fire spreads to plant (fire+plant → fire).
+TestResult testFireSpreadsToPlant() {
+  final e = _createEngine(10, 10);
+  for (int x = 0; x < 10; x++) {
+    e.grid[x] = El.stone;
+    e.grid[9 * e.gridW + x] = El.stone;
+  }
+  for (int y = 0; y < 10; y++) {
+    e.grid[y * e.gridW] = El.stone;
+    e.grid[y * e.gridW + 9] = El.stone;
+  }
+
+  // Line of plants with fire at one end
+  for (int x = 3; x <= 7; x++) {
+    e.grid[5 * e.gridW + x] = El.plant;
+  }
+  e.grid[5 * e.gridW + 2] = El.fire;
+
+  _step(e, 60);
+
+  // Plants should be consumed (at least partially)
+  int plantLeft = 0;
+  for (int x = 3; x <= 7; x++) {
+    if (e.grid[5 * e.gridW + x] == El.plant) plantLeft++;
+  }
+
+  final consumed = 5 - plantLeft;
+  final score = consumed > 0 ? min(1.0, consumed / 3.0) : 0.0;
+
+  return TestResult('CR15: Fire→Plant', score,
+      '$consumed/5 plants consumed by fire');
+}
+
+/// Test sand + water → mud.
+TestResult testSandWaterMud() {
+  final e = _createEngine(10, 10);
+  for (int x = 0; x < 10; x++) {
+    e.grid[x] = El.stone;
+    e.grid[9 * e.gridW + x] = El.stone;
+  }
+  for (int y = 0; y < 10; y++) {
+    e.grid[y * e.gridW] = El.stone;
+    e.grid[y * e.gridW + 9] = El.stone;
+  }
+
+  e.grid[5 * e.gridW + 4] = El.sand;
+  e.grid[5 * e.gridW + 5] = El.water;
+
+  _step(e, 20);
+
+  bool mudFound = false;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.mud) {
+      mudFound = true;
+      break;
+    }
+  }
+
+  return TestResult('CR16: Sand+Water', mudFound ? 1.0 : 0.0,
+      mudFound ? 'mud produced' : 'NO mud found');
+}
+
+/// Test lava ignites wood (lava+wood → fire).
+TestResult testLavaIgnitesWood() {
+  final e = _createEngine(10, 10);
+  for (int x = 0; x < 10; x++) {
+    e.grid[x] = El.metal;
+    e.grid[9 * e.gridW + x] = El.metal;
+  }
+  for (int y = 0; y < 10; y++) {
+    e.grid[y * e.gridW] = El.metal;
+    e.grid[y * e.gridW + 9] = El.metal;
+  }
+
+  // Lava next to wood
+  e.grid[5 * e.gridW + 4] = El.lava;
+  e.grid[5 * e.gridW + 5] = El.wood;
+
+  _step(e, 40);
+
+  bool fireFound = false;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.fire) {
+      fireFound = true;
+      break;
+    }
+  }
+
+  return TestResult('CR17: Lava+Wood', fireFound ? 1.0 : 0.0,
+      fireFound ? 'fire produced' : 'NO fire found (p=0.4)');
+}
+
+/// Test fire melts snow into water.
+TestResult testFireMeltsSnow() {
+  final e = _createEngine(10, 10);
+  for (int x = 0; x < 10; x++) {
+    e.grid[x] = El.metal;
+    e.grid[9 * e.gridW + x] = El.metal;
+  }
+  for (int y = 0; y < 10; y++) {
+    e.grid[y * e.gridW] = El.metal;
+    e.grid[y * e.gridW + 9] = El.metal;
+  }
+
+  // Snow block with fire nearby
+  for (int y = 4; y <= 6; y++) {
+    for (int x = 4; x <= 6; x++) {
+      e.grid[y * e.gridW + x] = El.snow;
+    }
+  }
+  e.grid[4 * e.gridW + 7] = El.fire;
+  e.grid[5 * e.gridW + 7] = El.oil; // fuel to keep fire going
+
+  _step(e, 60);
+
+  bool waterFound = false;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.water) {
+      waterFound = true;
+      break;
+    }
+  }
+
+  return TestResult('CR18: Fire Melts Snow', waterFound ? 1.0 : 0.0,
+      waterFound ? 'water produced from snow' : 'NO water found');
+}
+
+/// Test reaction mass conservation for reactions with non-empty products.
+TestResult testReactionMassConservation() {
+  final oracle = _oracle('reaction_mass');
+  if (oracle == null) return _oracleError('CR19: Mass Conservation', 'reaction_mass');
+
+  // Test with water+lava (both products are non-empty: steam + stone)
+  final e = _createEngine(14, 14);
+  for (int x = 0; x < 14; x++) {
+    e.grid[x] = El.metal;
+    e.grid[13 * e.gridW + x] = El.metal;
+  }
+  for (int y = 0; y < 14; y++) {
+    e.grid[y * e.gridW] = El.metal;
+    e.grid[y * e.gridW + 13] = El.metal;
+  }
+
+  // Place lava and water in alternating cells
+  int initialNonEmpty = 0;
+  for (int y = 4; y <= 6; y++) {
+    for (int x = 2; x <= 6; x++) {
+      e.grid[y * e.gridW + x] = El.water;
+      initialNonEmpty++;
+    }
+    for (int x = 7; x <= 11; x++) {
+      e.grid[y * e.gridW + x] = El.lava;
+      initialNonEmpty++;
+    }
+  }
+
+  _step(e, 30);
+
+  int finalNonEmpty = 0;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] != El.empty && e.grid[i] != El.metal) finalNonEmpty++;
+  }
+
+  // For water+lava, products are steam+stone (both non-empty), so count should
+  // stay the same or increase slightly (steam may spread)
+  final drift = (finalNonEmpty - initialNonEmpty).abs() / max(initialNonEmpty, 1);
+  final score = drift < 0.3 ? 1.0 : (1.0 - drift).clamp(0.0, 1.0);
+
+  return TestResult('CR19: Mass Conservation', score,
+      'initial=$initialNonEmpty, final=$finalNonEmpty, '
+      'drift=${(drift * 100).toStringAsFixed(1)}%');
+}
+
+/// Test fire cycle: wood → fire → smoke.
+TestResult testFireCycleLoop() {
+  final oracle = _oracle('fire_cycle');
+  if (oracle == null) return _oracleError('CR20: Fire Cycle', 'fire_cycle');
+
+  final maxFrames = (oracle['max_frames'] as num).toInt();
+
+  final e = _createEngine(12, 12);
+  for (int x = 0; x < 12; x++) {
+    e.grid[x] = El.metal;
+    e.grid[11 * e.gridW + x] = El.metal;
+  }
+  for (int y = 0; y < 12; y++) {
+    e.grid[y * e.gridW] = El.metal;
+    e.grid[y * e.gridW + 11] = El.metal;
+  }
+
+  // Wood block
+  for (int y = 6; y <= 9; y++) {
+    for (int x = 3; x <= 8; x++) {
+      e.grid[y * e.gridW + x] = El.wood;
+    }
+  }
+  // Ignite with fire
+  e.grid[5 * e.gridW + 5] = El.fire;
+
+  bool fireStage = false;
+  bool smokeStage = false;
+
+  for (int frame = 0; frame < maxFrames; frame++) {
+    e.markAllDirty();
+    e.step(_simulateElement);
+
+    for (int i = 0; i < e.grid.length; i++) {
+      if (e.grid[i] == El.fire) fireStage = true;
+      if (e.grid[i] == El.smoke) smokeStage = true;
+    }
+    if (fireStage && smokeStage) break;
+  }
+
+  double score = 0.0;
+  if (fireStage && smokeStage) score = 1.0;
+  else if (fireStage) score = 0.5;
+
+  return TestResult('CR20: Fire Cycle', score,
+      'fire_appeared=$fireStage, smoke_appeared=$smokeStage');
+}
+
+/// Test water→steam cycle via lava heating.
+TestResult testWaterSteamCycle() {
+  final oracle = _oracle('water_cycle_reaction');
+  if (oracle == null) return _oracleError('CR21: Water→Steam', 'water_cycle_reaction');
+
+  final e = _createEngine(12, 12);
+  for (int x = 0; x < 12; x++) {
+    e.grid[x] = El.metal;
+    e.grid[11 * e.gridW + x] = El.metal;
+  }
+  for (int y = 0; y < 12; y++) {
+    e.grid[y * e.gridW] = El.metal;
+    e.grid[y * e.gridW + 11] = El.metal;
+  }
+
+  // Water on top of lava
+  for (int x = 3; x <= 8; x++) {
+    e.grid[7 * e.gridW + x] = El.water;
+    e.grid[8 * e.gridW + x] = El.lava;
+  }
+
+  _step(e, 40);
+
+  bool steamFound = false;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.steam) {
+      steamFound = true;
+      break;
+    }
+  }
+
+  return TestResult('CR21: Water→Steam', steamFound ? 1.0 : 0.0,
+      steamFound ? 'steam produced from water+lava' : 'NO steam found');
+}
+
+/// Test acid kills ants.
+TestResult testAcidKillsAnts() {
+  final e = _createEngine(10, 10);
+  for (int x = 0; x < 10; x++) {
+    e.grid[x] = El.metal;
+    e.grid[9 * e.gridW + x] = El.metal;
+  }
+  for (int y = 0; y < 10; y++) {
+    e.grid[y * e.gridW] = El.metal;
+    e.grid[y * e.gridW + 9] = El.metal;
+  }
+
+  // Ant surrounded by acid
+  e.grid[5 * e.gridW + 5] = El.ant;
+  e.grid[5 * e.gridW + 4] = El.acid;
+  e.grid[5 * e.gridW + 6] = El.acid;
+  e.grid[4 * e.gridW + 5] = El.acid;
+  e.grid[6 * e.gridW + 5] = El.acid;
+
+  _step(e, 15);
+
+  bool antGone = true;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.ant) {
+      antGone = false;
+      break;
+    }
+  }
+
+  return TestResult('CR22: Acid Kills Ant', antGone ? 1.0 : 0.0,
+      antGone ? 'ant dissolved' : 'ant survived');
+}
+
+/// Test lava vaporizes snow to steam.
+TestResult testLavaVaporizesSnow() {
+  final e = _createEngine(10, 10);
+  for (int x = 0; x < 10; x++) {
+    e.grid[x] = El.metal;
+    e.grid[9 * e.gridW + x] = El.metal;
+  }
+  for (int y = 0; y < 10; y++) {
+    e.grid[y * e.gridW] = El.metal;
+    e.grid[y * e.gridW + 9] = El.metal;
+  }
+
+  e.grid[5 * e.gridW + 4] = El.lava;
+  e.grid[5 * e.gridW + 5] = El.snow;
+
+  _step(e, 20);
+
+  bool steamFound = false;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.steam) {
+      steamFound = true;
+      break;
+    }
+  }
+
+  return TestResult('CR23: Lava+Snow→Steam', steamFound ? 1.0 : 0.0,
+      steamFound ? 'steam produced' : 'NO steam found');
+}
+
+/// Test lava melts ice to water.
+TestResult testLavaMeltsIce() {
+  final e = _createEngine(10, 10);
+  for (int x = 0; x < 10; x++) {
+    e.grid[x] = El.metal;
+    e.grid[9 * e.gridW + x] = El.metal;
+  }
+  for (int y = 0; y < 10; y++) {
+    e.grid[y * e.gridW] = El.metal;
+    e.grid[y * e.gridW + 9] = El.metal;
+  }
+
+  e.grid[5 * e.gridW + 4] = El.lava;
+  e.grid[5 * e.gridW + 5] = El.ice;
+
+  _step(e, 20);
+
+  bool waterFound = false;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.water) {
+      waterFound = true;
+      break;
+    }
+  }
+
+  return TestResult('CR24: Lava+Ice→Water', waterFound ? 1.0 : 0.0,
+      waterFound ? 'water produced' : 'NO water found');
+}
+
+/// Test fire ignites seeds.
+TestResult testFireIgnitesSeeds() {
+  final e = _createEngine(10, 10);
+  for (int x = 0; x < 10; x++) {
+    e.grid[x] = El.metal;
+    e.grid[9 * e.gridW + x] = El.metal;
+  }
+  for (int y = 0; y < 10; y++) {
+    e.grid[y * e.gridW] = El.metal;
+    e.grid[y * e.gridW + 9] = El.metal;
+  }
+
+  // Multiple seeds near fire for probability coverage
+  for (int y = 4; y <= 6; y++) {
+    e.grid[y * e.gridW + 4] = El.seed;
+  }
+  e.grid[5 * e.gridW + 5] = El.fire;
+  e.grid[5 * e.gridW + 6] = El.oil; // fuel
+
+  _step(e, 40);
+
+  bool seedBurned = false;
+  for (int y = 4; y <= 6; y++) {
+    if (e.grid[y * e.gridW + 4] != El.seed) {
+      seedBurned = true;
+      break;
+    }
+  }
+
+  return TestResult('CR25: Fire+Seed', seedBurned ? 1.0 : 0.0,
+      seedBurned ? 'seed ignited' : 'seeds survived (p=0.3)');
+}
+
+/// Test acid dissolves glass.
+TestResult testAcidDissolvesGlass() {
+  final time = _measureReactionTime(El.acid, El.glass, 200);
+  final reacted = time < 200;
+
+  return TestResult('CR26: Acid+Glass', reacted ? 1.0 : 0.0,
+      'reaction time: $time frames (p=0.1)');
+}
+
+/// Test mud dries near lava.
+TestResult testMudDriesNearLava() {
+  final e = _createEngine(10, 10);
+  for (int x = 0; x < 10; x++) {
+    e.grid[x] = El.metal;
+    e.grid[9 * e.gridW + x] = El.metal;
+  }
+  for (int y = 0; y < 10; y++) {
+    e.grid[y * e.gridW] = El.metal;
+    e.grid[y * e.gridW + 9] = El.metal;
+  }
+
+  for (int y = 4; y <= 6; y++) {
+    for (int x = 3; x <= 5; x++) {
+      e.grid[y * e.gridW + x] = El.mud;
+    }
+  }
+  e.grid[5 * e.gridW + 6] = El.lava;
+
+  _step(e, 200);
+
+  bool dirtFound = false;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (e.grid[i] == El.dirt) {
+      dirtFound = true;
+      break;
+    }
+  }
+
+  return TestResult('CR27: Mud+Lava→Dirt', dirtFound ? 1.0 : 0.0,
+      dirtFound ? 'dirt produced' : 'NO dirt found (p=0.05)');
+}
+
+// ===========================================================================
 // 30. LOAD DISTRIBUTION
 // ===========================================================================
 //
@@ -4229,6 +5334,33 @@ void main() {
     ]),
     TestCategory('Chemical Reactions', [
       testAcidDissolutionRate(),
+      ...testAllReactionProducts(),
+      testReactionRateScaling(),
+      testFireChainPropagation(),
+      ...testNonReactivePairs(),
+      testCorrosionResistanceOrdering(),
+      testLavaWaterChain(),
+      testAcidChainDissolution(),
+      testWaterExtinguishesFire(),
+      testSandLightningGlass(),
+      testIceMeltsNearFire(),
+      testSnowMeltsNearFire(),
+      testMudDriesNearFire(),
+      testAcidDilutesInWater(),
+      testAcidLavaReaction(),
+      testFireSpreadsToPlant(),
+      testSandWaterMud(),
+      testLavaIgnitesWood(),
+      testFireMeltsSnow(),
+      testReactionMassConservation(),
+      testFireCycleLoop(),
+      testWaterSteamCycle(),
+      testAcidKillsAnts(),
+      testLavaVaporizesSnow(),
+      testLavaMeltsIce(),
+      testFireIgnitesSeeds(),
+      testAcidDissolvesGlass(),
+      testMudDriesNearLava(),
     ]),
     TestCategory('Capillary & Waves', [
       testCapillaryWicking(),

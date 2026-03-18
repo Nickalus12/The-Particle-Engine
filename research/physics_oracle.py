@@ -1293,6 +1293,384 @@ def generate_ground_truth() -> dict:
         "neutral_point": TEMP_NEUTRAL,
     }
 
+    # =========================================================================
+    # 55. REACTION PRODUCTS -- per-reaction expected transformations
+    # =========================================================================
+
+    reaction_products = {}
+    for i, r in enumerate(REACTIONS):
+        key = f"{r['source']}_{r['target']}"
+        if key in reaction_products:
+            key = f"{key}_{i}"
+        # Estimate frames to react: for p=1.0 expect ~1 frame; for lower p,
+        # expected frames = 1/p (geometric distribution mean)
+        p = r["probability"]
+        expected_frames = max(1, round(1.0 / p)) if p > 0 else 9999
+        reaction_products[key] = {
+            "source": r["source"],
+            "target": r["target"],
+            "source_becomes": r["sourceBecomesElement"],
+            "target_becomes": r["targetBecomesElement"],
+            "probability": p,
+            "expected_frames_to_react": expected_frames,
+            "is_deterministic": p >= 1.0,
+            "description": r["description"],
+        }
+    results["reaction_products"] = reaction_products
+
+    # =========================================================================
+    # 56. REACTION RATES -- expected timing at different probabilities
+    # =========================================================================
+
+    reaction_rates = {}
+    # Group reactions by probability bucket
+    prob_buckets = {}
+    for r in REACTIONS:
+        p = r["probability"]
+        bucket = round(p, 2)
+        if bucket not in prob_buckets:
+            prob_buckets[bucket] = []
+        prob_buckets[bucket].append(f"{r['source']}_{r['target']}")
+
+    for p, members in sorted(prob_buckets.items()):
+        reaction_rates[f"p_{p}"] = {
+            "probability": p,
+            "expected_mean_frames": max(1, round(1.0 / p)) if p > 0 else 9999,
+            "reactions": members,
+        }
+    results["reaction_rates"] = reaction_rates
+
+    # =========================================================================
+    # 57. NON-REACTIVE PAIRS -- pairs that should NOT react
+    # =========================================================================
+
+    # Build set of all reactive pairs
+    reactive_pairs = set()
+    for r in REACTIONS:
+        reactive_pairs.add((r["source"], r["target"]))
+
+    # Inert self-pairs and cross-pairs that have no registered reaction
+    non_reactive_candidates = [
+        ["stone", "stone"], ["water", "water"], ["sand", "sand"],
+        ["metal", "metal"], ["dirt", "dirt"], ["glass", "glass"],
+        ["wood", "wood"], ["ice", "ice"], ["snow", "snow"],
+        ["oil", "oil"], ["ash", "ash"], ["mud", "mud"],
+        ["stone", "metal"], ["glass", "stone"], ["dirt", "sand"],
+        ["wood", "stone"], ["ice", "snow"],
+    ]
+    non_reactive = []
+    for pair in non_reactive_candidates:
+        if (pair[0], pair[1]) not in reactive_pairs and \
+           (pair[1], pair[0]) not in reactive_pairs:
+            non_reactive.append(pair)
+
+    results["non_reactive_pairs"] = {
+        "pairs": non_reactive,
+        "principle": "Elements without registered reactions should not transform each other",
+    }
+
+    # =========================================================================
+    # 58. REACTION CHAINS -- multi-step chain reactions
+    # =========================================================================
+
+    results["reaction_chains"] = {
+        "fire_oil_chain": {
+            "description": "Fire ignites oil, which spreads fire through connected oil",
+            "fuel_element": "oil",
+            "igniter": "fire",
+            "fuel_length": 10,
+            "probability_per_step": 0.5,
+            "expected_max_frames": 60,
+        },
+        "lava_water_chain": {
+            "description": "Lava contacts water producing steam + stone",
+            "source": "lava",
+            "target": "water",
+            "source_product": "stone",
+            "target_product": "steam",
+        },
+        "acid_layered": {
+            "description": "Acid dissolves materials at rates proportional to probability",
+            "layer_order": ["plant", "wood", "stone"],
+            "probabilities": [0.33, 0.12, 0.08],
+            "expected_dissolution_order": ["plant", "wood", "stone"],
+        },
+    }
+
+    # =========================================================================
+    # 59. CORROSION RESISTANCE ORDERING -- acid dissolution speed ranking
+    # =========================================================================
+
+    acid_reactions_by_target = {}
+    for r in REACTIONS:
+        if r["source"] == "acid" and r["targetBecomesElement"] is not None:
+            acid_reactions_by_target[r["target"]] = r["probability"]
+
+    # Higher probability = dissolves faster = less resistant
+    corrosion_order = sorted(acid_reactions_by_target.keys(),
+                             key=lambda x: -acid_reactions_by_target[x])
+
+    results["corrosion_resistance_ordering"] = {
+        "dissolution_probabilities": acid_reactions_by_target,
+        "fastest_to_slowest": corrosion_order,
+        "principle": "Higher acid probability = less corrosion resistant",
+    }
+
+    # =========================================================================
+    # 60. FIRE CYCLE -- wood -> fire -> smoke/ash
+    # =========================================================================
+
+    results["fire_cycle"] = {
+        "stages": ["wood", "fire", "smoke"],
+        "wood_ignition_probability": 0.4,
+        "description": "Wood ignites from fire/lava, burns, produces smoke",
+        "max_frames": 200,
+    }
+
+    # =========================================================================
+    # 61. WATER CYCLE -- water -> steam -> condensation
+    # =========================================================================
+
+    results["water_cycle_reaction"] = {
+        "stages": ["water", "steam"],
+        "trigger": "lava or fire heats water above boil point",
+        "description": "Water becomes steam when heated, steam rises and may condense",
+        "max_frames": 100,
+    }
+
+    # =========================================================================
+    # 62. REACTION MASS CONSERVATION -- cell count before/after
+    # =========================================================================
+
+    # For reactions where both source and target become something (not empty),
+    # total cell count should be preserved.
+    mass_conserving = []
+    mass_reducing = []
+    for r in REACTIONS:
+        sb = r["sourceBecomesElement"]
+        tb = r["targetBecomesElement"]
+        if sb is None and tb is None:
+            continue  # No transformation, skip
+        src_consumed = sb == "empty"
+        tgt_consumed = tb == "empty"
+        if src_consumed or tgt_consumed:
+            mass_reducing.append(f"{r['source']}_{r['target']}")
+        else:
+            mass_conserving.append(f"{r['source']}_{r['target']}")
+
+    results["reaction_mass"] = {
+        "mass_conserving_reactions": mass_conserving,
+        "mass_reducing_reactions": mass_reducing,
+        "principle": "Reactions that produce non-empty products preserve cell count",
+    }
+
+    # =========================================================================
+    # 63. TEMPERATURE EFFECTS ON REACTIONS
+    # =========================================================================
+
+    temp_gated = []
+    for r in REACTIONS:
+        # Check if any reaction has temperature constraints
+        # (In the data model, requiresMinTemp/requiresMaxTemp exist but
+        #  current built-in rules don't use them -- test that they are 0)
+        temp_gated.append({
+            "source": r["source"],
+            "target": r["target"],
+            "probability": r["probability"],
+        })
+
+    results["reaction_temperature"] = {
+        "reactions": temp_gated,
+        "principle": "Reactions with temperature constraints only fire within range",
+        "note": "Current built-in rules have no temp constraints; test framework validates the mechanism",
+    }
+
+    # =========================================================================
+    # CORE MECHANICS EXPANSION -- per-element gravity, wrapping, settling, etc.
+    # =========================================================================
+
+    # --- Per-element first-frame displacement ---
+    first_frame_displacement = {}
+    for name, props in ELEMENTS.items():
+        g = props["gravity"]
+        if g == 0:
+            continue
+        # First frame: vel starts at 0, increments by g, clamped to maxVel
+        mv = props["maxVel"]
+        if g > 0:
+            first_vel = min(g, mv)
+        else:
+            first_vel = max(g, -mv)
+        first_frame_displacement[name] = {
+            "gravity": g,
+            "maxVelocity": mv,
+            "first_frame_vel": first_vel,
+            "direction": "down" if g > 0 else "up",
+        }
+    results["first_frame_displacement"] = first_frame_displacement
+
+    # --- Negative gravity elements (should rise) ---
+    negative_gravity = {}
+    for name, props in ELEMENTS.items():
+        g = props["gravity"]
+        if g < 0:
+            mv = props["maxVel"]
+            # Compute expected rise over 10 frames
+            v = 0
+            p = 0.0
+            for f in range(10):
+                v = max(v + g, -mv)
+                p += v
+            negative_gravity[name] = {
+                "gravity": g,
+                "maxVelocity": mv,
+                "expected_rise_10frames": abs(p),
+            }
+    results["negative_gravity"] = negative_gravity
+
+    # --- Acceleration curve (velocity per frame for 10 frames) ---
+    accel_curves = {}
+    for name, props in ELEMENTS.items():
+        g = props["gravity"]
+        if g == 0:
+            continue
+        mv = props["maxVel"]
+        velocities = []
+        v = 0
+        for f in range(10):
+            if g > 0:
+                v = min(v + g, mv)
+            else:
+                v = max(v + g, -mv)
+            velocities.append(v)
+        accel_curves[name] = {
+            "gravity": g,
+            "maxVelocity": mv,
+            "velocities_10frames": velocities,
+            "frames_to_terminal": next((i + 1 for i, vel in enumerate(velocities) if abs(vel) == mv), len(velocities)),
+        }
+    results["acceleration_curves"] = accel_curves
+
+    # --- Wrapping edge cases ---
+    grid_w = 320  # reference grid width
+    wrap_inputs = [-1, -grid_w, grid_w, grid_w + 1, -(grid_w + 1), 2 * grid_w]
+    wrap_expected = []
+    for x in wrap_inputs:
+        r = x % grid_w
+        wrap_expected.append(r if r >= 0 else r + grid_w)
+    results["wrapping_edge_cases"] = {
+        "grid_width": grid_w,
+        "inputs": wrap_inputs,
+        "expected": wrap_expected,
+    }
+
+    # --- Settling timing ---
+    results["settling_timing"] = {
+        "frames_to_settle": 3,
+        "settle_flag_bit": 0x40,
+        "principle": "Elements settle after 3 consecutive stable frames",
+    }
+
+    # --- Momentum symmetry ---
+    results["momentum_symmetry"] = {
+        "principle": "Two identical elements dropped from same height at symmetric x positions should land at same y",
+        "max_allowed_asymmetry": 0,
+    }
+
+    # --- Multi-cell fall verification ---
+    multi_cell_fall = {}
+    for name, props in ELEMENTS.items():
+        g = props["gravity"]
+        mv = props["maxVel"]
+        if g <= 0 or mv <= 1:
+            continue
+        # Compute frame at which velY first exceeds 1
+        v = 0
+        for f in range(1, 20):
+            v = min(v + g, mv)
+            if v > 1:
+                multi_cell_fall[name] = {
+                    "gravity": g,
+                    "maxVelocity": mv,
+                    "first_multi_cell_frame": f,
+                    "velocity_at_that_frame": v,
+                }
+                break
+    results["multi_cell_fall"] = multi_cell_fall
+
+    # --- Clock bit verification ---
+    results["clock_bit"] = {
+        "principle": "Elements are processed exactly once per step via clock-bit toggle",
+        "clock_mask": 0x80,
+    }
+
+    # --- Velocity transfer on impact ---
+    results["velocity_on_impact"] = {
+        "principle": "Velocity resets to 0 on landing (hitting solid surface)",
+    }
+
+    # --- Drag comparison (air vs fluid) ---
+    drag_elements = {}
+    for name in ["sand", "dirt", "stone"]:
+        props = ELEMENTS[name]
+        g = props["gravity"]
+        mv = props["maxVel"]
+        # In air: compute position after 20 frames
+        v = 0
+        p = 0.0
+        for f in range(20):
+            v = min(v + g, mv)
+            p += v
+        drag_elements[name] = {
+            "air_distance_20frames": p,
+            "gravity": g,
+            "maxVelocity": mv,
+        }
+    results["drag_comparison"] = {
+        "elements": drag_elements,
+        "principle": "Elements fall slower through fluid than air due to density displacement",
+    }
+
+    # --- Projectile motion (horizontal launch) ---
+    # Sand launched horizontally with velX=2 from height 10
+    sand_g = ELEMENTS["sand"]["gravity"]
+    sand_mv = ELEMENTS["sand"]["maxVel"]
+    proj_x = []
+    proj_y = []
+    vx = 2
+    vy = 0
+    px, py = 0.0, 0.0
+    for f in range(20):
+        px += vx  # horizontal: constant (no drag in our engine)
+        vy = min(vy + sand_g, sand_mv)
+        py += vy
+        proj_x.append(px)
+        proj_y.append(py)
+    results["projectile_motion"] = {
+        "element": "sand",
+        "initial_velX": vx,
+        "gravity": sand_g,
+        "maxVelocity": sand_mv,
+        "x_positions_20frames": proj_x,
+        "y_positions_20frames": proj_y,
+        "principle": "Horizontal position advances linearly, vertical follows free-fall",
+    }
+
+    # --- Stack pressure ---
+    results["stack_pressure"] = {
+        "principle": "Stack of elements should remain stable once settled, no element left behind",
+        "test_element": "sand",
+        "stack_height": 10,
+    }
+
+    # --- Pile stability ---
+    results["pile_stability"] = {
+        "principle": "Large granular pile should reach equilibrium (all cells settled) after enough frames",
+        "test_element": "sand",
+        "pile_count": 100,
+        "max_frames_to_settle": 500,
+    }
+
     return results
 
 
