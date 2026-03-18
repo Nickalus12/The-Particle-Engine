@@ -4,7 +4,8 @@
 # =============================================================================
 # 1. Install Python dependencies
 # 2. Generate ground truth from real physics (Python + scipy/numpy)
-# 3. Run Dart benchmark comparing simulation against ground truth
+# 3. Export simulation frame (Dart headless render)
+# 4. Run pytest test suite
 # =============================================================================
 
 set -e
@@ -20,5 +21,9 @@ echo "=== Step 2: Generate physics ground truth ==="
 python research/physics_oracle.py
 
 echo ""
-echo "=== Step 3: Run Dart physics benchmark ==="
-dart run research/physics_accuracy.dart
+echo "=== Step 3: Export simulation frame ==="
+dart run research/export_frame.dart 100
+
+echo ""
+echo "=== Step 4: Run pytest test suite ==="
+python -m pytest research/tests/ -v --tb=short "$@"
