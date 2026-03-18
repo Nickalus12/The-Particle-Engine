@@ -759,8 +759,8 @@ extension ElementBehaviors on SimulationEngine {
       swap(idx, uy * gridW + x);
       return;
     }
-    // Lateral shimmy when trapped (fire dances sideways)
-    if (rng.nextInt(3) == 0) {
+    // Occasional lateral shimmy when trapped (fire dances sideways)
+    if (rng.nextInt(5) == 0) {
       final sideX = wrapX(x + (rng.nextBool() ? 1 : -1));
       if (grid[y * gridW + sideX] == El.empty) {
         swap(idx, y * gridW + sideX);
@@ -1965,8 +1965,8 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     final uy = y - gravityDir;
-    // Smoke rises mostly straight, with occasional drift
-    int drift = rng.nextInt(5) < 3 ? 0 : (rng.nextBool() ? 1 : -1);
+    // Smoke rises mostly straight with occasional drift for natural look
+    int drift = rng.nextInt(5) == 0 ? (rng.nextBool() ? 1 : -1) : 0;
     if (windForce != 0) {
       final windBias = windForce > 0 ? 1 : -1;
       if (rng.nextInt(3) < 2) drift = windBias;
@@ -1977,11 +1977,14 @@ extension ElementBehaviors on SimulationEngine {
       if (grid[uy * gridW + nx] == El.empty) { swap(idx, uy * gridW + nx); return; }
       if (grid[uy * gridW + x] == El.empty) { swap(idx, uy * gridW + x); return; }
     }
-    final side = wrapX(windForce != 0
-        ? x + (windForce > 0 ? 1 : -1)
-        : (rng.nextBool() ? x - 1 : x + 1));
-    if (grid[y * gridW + side] == El.empty) {
-      swap(idx, y * gridW + side);
+    // Occasional lateral drift when can't rise (wind or random)
+    if (windForce != 0 || rng.nextInt(3) == 0) {
+      final side = wrapX(windForce != 0
+          ? x + (windForce > 0 ? 1 : -1)
+          : (rng.nextBool() ? x - 1 : x + 1));
+      if (grid[y * gridW + side] == El.empty) {
+        swap(idx, y * gridW + side);
+      }
     }
   }
 
