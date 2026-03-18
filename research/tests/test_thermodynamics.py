@@ -112,6 +112,18 @@ class TestFourierConduction:
         )
 
 
+class TestThermalStratification:
+    """Hot fluid should rise above cold fluid (convection)."""
+
+    @pytest.mark.physics
+    def test_stratification_principle(self, ground_truth):
+        gt = ground_truth.get("thermal_stratification")
+        if gt is None:
+            pytest.skip("No thermal_stratification oracle data")
+        assert gt["mechanism"] == "buoyancy-driven convection"
+        assert "temperature decreases" in gt["expected_ordering"]
+
+
 class TestThermalConductivityOrdering:
     """Conductivity ordering should match real-world ranking."""
 

@@ -77,3 +77,35 @@ class TestArrheniusOrdering:
         if "arrhenius_rate" not in oil or "arrhenius_rate" not in wood:
             pytest.skip("Missing Arrhenius data")
         assert oil["arrhenius_rate"] > wood["arrhenius_rate"]
+
+
+class TestLightEmission:
+    """Light-emitting elements should have correct intensity ordering."""
+
+    @pytest.mark.physics
+    def test_emitting_elements_exist(self, ground_truth):
+        gt = ground_truth.get("light_emission")
+        if gt is None:
+            pytest.skip("No light_emission oracle data")
+        emitters = gt["emitting_elements"]
+        assert "fire" in emitters
+        assert "lava" in emitters
+        assert "lightning" in emitters
+
+    @pytest.mark.physics
+    def test_lightning_brightest(self, ground_truth):
+        """Lightning should be the brightest emitter."""
+        gt = ground_truth.get("light_emission")
+        if gt is None:
+            pytest.skip("No light_emission oracle data")
+        ordering = gt["ordering_by_intensity"]
+        assert ordering[0] == "lightning"
+
+    @pytest.mark.physics
+    def test_lava_brighter_than_fire(self, ground_truth):
+        """Lava should emit more light than fire."""
+        gt = ground_truth.get("light_emission")
+        if gt is None:
+            pytest.skip("No light_emission oracle data")
+        emitters = gt["emitting_elements"]
+        assert emitters["lava"]["intensity"] > emitters["fire"]["intensity"]

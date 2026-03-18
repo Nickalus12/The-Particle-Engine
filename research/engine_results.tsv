@@ -49,3 +49,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 47	2026-03-18T02:47	pixel_renderer.dart+element_behaviors.dart+element_registry.dart	Mud color distinctness: cooler/darker mud rendering (80,65,45 base) + acid lifespan 200 + selective consumption (Visuals 95%->100%, 201/214 passed)	-	95	100	yes
 48	2026-03-18T02:48	conftest.py+export_frame.dart+test_visual_quality.py	Case-insensitive element names + plants/mud in test world + entropy bounds calibration (201->210 passed, +9 net)	-	95	100	yes
 49	2026-03-18T02:49	export_frame.dart	Add cave pocket to test world for underground darkness test (210->211 passed)	-	95	100	yes
+50	2026-03-18T02:50	test_*.py	Add surface tension, light emission, thermal stratification, porosity tests (211->221 passed, +10)	-	95	100	yes

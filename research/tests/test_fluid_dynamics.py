@@ -65,3 +65,37 @@ class TestViscosity:
             pytest.skip("No viscosity oracle data")
         ordering = gt["ordering_least_to_most_viscous"]
         assert ordering[-1] == "lava"
+
+
+class TestSurfaceTension:
+    """Liquids should have correct surface tension ordering."""
+
+    @pytest.mark.physics
+    def test_surface_tension_ordering(self, ground_truth):
+        """Lava should have highest surface tension, acid lowest."""
+        gt = ground_truth.get("surface_tension")
+        if gt is None:
+            pytest.skip("No surface_tension oracle data")
+        ordering = gt["ordering"]
+        assert ordering[0] == "lava", "Lava should have highest surface tension"
+        assert ordering[-1] == "acid", "Acid should have lowest surface tension"
+
+    @pytest.mark.physics
+    def test_water_vs_oil_surface_tension(self, ground_truth):
+        """Water should have higher surface tension than oil."""
+        gt = ground_truth.get("surface_tension")
+        if gt is None:
+            pytest.skip("No surface_tension oracle data")
+        values = gt["values"]
+        assert values["water"] > values["oil"]
+
+    @pytest.mark.physics
+    def test_all_liquids_have_surface_tension(self, ground_truth):
+        """All liquid elements should have surface tension values."""
+        gt = ground_truth.get("surface_tension")
+        if gt is None:
+            pytest.skip("No surface_tension oracle data")
+        values = gt["values"]
+        for liquid in ["water", "oil", "acid", "lava", "mud"]:
+            assert liquid in values, f"Missing surface tension for {liquid}"
+            assert values[liquid] > 0, f"{liquid} surface tension should be > 0"

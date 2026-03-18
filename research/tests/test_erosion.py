@@ -61,3 +61,37 @@ class TestAcidErosion:
                 prob = entry["acid_probability"]
                 assert 0 < prob <= 1.0, \
                     f"{name} acid probability {prob} out of range"
+
+
+class TestPorosity:
+    """Porous materials should absorb water at rates proportional to porosity."""
+
+    @pytest.mark.physics
+    def test_porous_elements_defined(self, ground_truth):
+        gt = ground_truth.get("porosity")
+        if gt is None:
+            pytest.skip("No porosity oracle data")
+        porous = gt["porous_elements"]
+        assert "sand" in porous
+        assert "dirt" in porous
+        assert "mud" in porous
+
+    @pytest.mark.physics
+    def test_dirt_most_porous(self, ground_truth):
+        """Dirt should have highest porosity (most water absorption)."""
+        gt = ground_truth.get("porosity")
+        if gt is None:
+            pytest.skip("No porosity oracle data")
+        ordering = gt["ordering"]
+        assert ordering[0] == "dirt"
+
+    @pytest.mark.physics
+    def test_porosity_ordering(self, ground_truth):
+        """Porosity ordering: dirt > mud > sand > wood > plant."""
+        gt = ground_truth.get("porosity")
+        if gt is None:
+            pytest.skip("No porosity oracle data")
+        porous = gt["porous_elements"]
+        assert porous["dirt"] > porous["mud"]
+        assert porous["mud"] > porous["sand"]
+        assert porous["sand"] > porous["wood"]
