@@ -33,7 +33,7 @@ extension ElementBehaviors on SimulationEngine {
     }
     // Fall/sink first — sand should sink through water before dissolving
     fallGranular(x, y, idx, El.sand);
-    if (grid[idx] == El.sand && rng.nextInt(3) == 0) {
+    if (grid[idx] == El.sand) {
       _avalancheGranular(x, y, idx);
     }
     // Sand dissolves in water to form mud (rare, gradual erosion)
@@ -2727,6 +2727,15 @@ extension ElementBehaviors on SimulationEngine {
   // Avalanche (shared by sand, snow)
   // =========================================================================
 
+  /// Granular avalanche: grains on slopes exceeding the angle of repose
+  /// slide downhill. Real sand has a critical angle of ~34° (tan ≈ 0.67).
+  /// In a cellular automaton, a 1:1 diagonal (45°) exceeds this, so any
+  /// grain supported from below with an empty diagonal-below slides.
+  ///
+  /// Extended slope detection: if the immediate diagonal is blocked but
+  /// a step-down exists 2-3 cells laterally, the grain rolls further —
+  /// modeling real granular surface flow where grains roll multiple
+  /// diameters downhill on steep slopes.
   void _avalancheGranular(int x, int y, int idx) {
     final g = gravityDir;
     final by = y + g;
@@ -2738,19 +2747,35 @@ extension ElementBehaviors on SimulationEngine {
 
     for (final dir in [dir1, dir2]) {
       final sx = wrapX(x + dir);
-      final sy = y;
-      final sx2 = wrapX(x + dir * 2);
-      final sy2 = y + g;
-      if (grid[sy * gridW + sx] == El.empty &&
-          inBoundsY(sy2) && grid[sy2 * gridW + sx] == El.empty) {
-        swap(idx, sy2 * gridW + sx);
+
+      // Standard avalanche: side empty + diagonal-below empty → slide down
+      if (grid[y * gridW + sx] == El.empty &&
+          inBoundsY(by) && grid[by * gridW + sx] == El.empty) {
+        swap(idx, by * gridW + sx);
         return;
       }
-      if (grid[sy * gridW + sx] == El.empty &&
-          inBoundsY(sy2) && grid[sy2 * gridW + sx2] == El.empty &&
-          grid[sy * gridW + sx2] == El.empty) {
-        swap(idx, sy * gridW + sx);
-        return;
+
+      // Extended slide: side empty + diagonal-below occupied →
+      // check 2 cells out for a step-down (models rolling on slope surface)
+      if (grid[y * gridW + sx] == El.empty) {
+        final sx2 = wrapX(x + dir * 2);
+        // Roll to side if 2-out diagonal-below is empty
+        if (inBoundsY(by) && grid[by * gridW + sx2] == El.empty &&
+            grid[y * gridW + sx2] == El.empty) {
+          swap(idx, y * gridW + sx);
+          return;
+        }
+        // Steeper slope: side is empty, diagonal is occupied,
+        // but 2-out at same level is empty → lateral slide
+        // (grain rolls along surface to find lower ground)
+        final by2 = y + g * 2;
+        if (inBoundsY(by2) && grid[by * gridW + sx] != El.empty &&
+            grid[y * gridW + sx2] == El.empty &&
+            grid[by * gridW + sx2] == El.empty &&
+            grid[by2 * gridW + sx2] == El.empty) {
+          swap(idx, y * gridW + sx);
+          return;
+        }
       }
     }
   }

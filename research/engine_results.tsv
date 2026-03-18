@@ -28,3 +28,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 26	2026-03-18T00:26	element_registry.dart	Sand melt point 248->220: sand now melts to glass near lava (Phase Changes 83%->100%)	320.5	95	100	yes
 27	2026-03-18T00:27	simulation_engine.dart	Fix energy-destroying diffusion bug: use live temp for accumulated neighbor transfers	283.0	95	100	yes
 28	2026-03-18T00:28	simulation_engine.dart	Faster heat transfer (>>9 vs >>10) for quicker thermal equilibrium convergence	261.8	95	100	yes
+29	2026-03-18T00:29	element_behaviors.dart	Slope-aware deterministic avalanche: remove 1/3 probability gate, add extended slope detection for multi-cell granular rolling	294.1	95	100	yes
