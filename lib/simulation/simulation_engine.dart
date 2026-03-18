@@ -1566,8 +1566,10 @@ class SimulationEngine {
         final nx = wrapX(x + dx);
         final ni = ny * w + nx;
         final el = grid[ni];
-        // Warm empty air cells and low-conductivity elements
-        if (el == El.empty || elementHeatCond[el] < 20) {
+        // Radiant heat warms all surfaces that absorb infrared radiation.
+        // Only highly conductive metals reflect significant IR (polished
+        // metal emissivity ~0.05). Everything else absorbs and heats up.
+        if (el == El.empty || elementHeatCond[el] < 200) {
           final falloff = intensity * (r2 - d2) ~/ r2;
           final current = temperature[ni];
           if (current < 128 + falloff) {
