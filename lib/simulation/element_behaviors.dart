@@ -77,20 +77,28 @@ extension ElementBehaviors on SimulationEngine {
       return;
     }
 
-    // Surface evaporation (water cycle): surface water slowly evaporates
+    // Surface evaporation (water cycle): surface water slowly evaporates.
     // Surface = no water directly above.
     // Near-heat evaporation is handled by the temperature system (checkTemperatureReaction).
+    // Tuned for natural feel: evaporation should be rare except near heat.
+    // At neutral temperature, a surface cell evaporates roughly once per
+    // 50-80 real seconds — barely noticeable, like real ambient evaporation.
     {
       final aboveY = y - g;
       final isSurface = !inBoundsY(aboveY) ||
           (grid[aboveY * gridW + x] != El.water);
       if (isSurface) {
-        // Check temperature for evaporation — much slower natural rates
-        // to avoid ugly white dot spam across the surface.
         final temp = temperature[idx];
-        final evapRate = temp > 180
-            ? 120   // Very hot: moderate evaporation
-            : (temp > 150 ? 300 : (isNight ? 2000 : 800)); // Warm / Normal / Night
+        int evapRate;
+        if (temp > 200) {
+          evapRate = 80;       // Extreme heat (near lava): visible steam
+        } else if (temp > 170) {
+          evapRate = 250;      // Hot: occasional wisps
+        } else if (temp > 145) {
+          evapRate = 600;      // Warm: rare evaporation
+        } else {
+          evapRate = isNight ? 5000 : 3000; // Neutral: very rare ambient evaporation
+        }
         if (rng.nextInt(evapRate) == 0) {
           grid[idx] = El.steam;
           life[idx] = 0;
@@ -2158,13 +2166,18 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
-    // Steam dissipates quickly in open air — no lingering white dots
+    // Steam lifespan tuned for natural weather feel:
+    // Open air: 8-18 frames (~0.13-0.3s) — brief wisp, then gone.
+    //   Prevents "white dot carpet" on water surfaces.
+    // Underground: 80-140 frames (~1.3-2.3s) — cave humidity lingers visibly.
     final steamLife = isTrappedUnderground
-        ? (isNight ? 100 + rng.nextInt(50) : 140 + rng.nextInt(60))
-        : (isNight ? 20 + rng.nextInt(15) : 35 + rng.nextInt(25));
+        ? (isNight ? 80 + rng.nextInt(40) : 100 + rng.nextInt(40))
+        : (isNight ? 8 + rng.nextInt(8) : 10 + rng.nextInt(8));
 
     if (life[idx] > steamLife) {
-      if (!atEdge && rng.nextInt(isNight ? 2 : 3) == 0) {
+      // Open-air steam almost always vanishes — no mid-air condensation.
+      // Only underground steam can re-condense (dripping cave ceilings).
+      if (!atEdge && isTrappedUnderground && rng.nextInt(isNight ? 3 : 5) == 0) {
         grid[idx] = El.water; life[idx] = 100;
       } else {
         grid[idx] = El.empty; life[idx] = 0;
@@ -2176,19 +2189,27 @@ extension ElementBehaviors on SimulationEngine {
       grid[idx] = El.empty; life[idx] = 0; markProcessed(idx); return;
     }
 
-    // Condensation at altitude (water cycle): steam in top 10% of grid
-    // has a chance to condense into water droplets (rain).
-    final topThreshold = gravityDir == 1 ? gridH ~/ 10 : gridH - (gridH ~/ 10);
+    // Rain (altitude condensation): steam in top 8% of grid becomes rain.
+    // This is THE water cycle mechanism — but should feel like gentle
+    // weather, not a sprinkler. At 60fps, 1/1200 = one raindrop per ~20s
+    // per steam cell at altitude. Night doubles the chance (dew point).
+    final topThreshold = gravityDir == 1
+        ? (gridH * 8) ~/ 100
+        : gridH - ((gridH * 8) ~/ 100);
     final isAtAltitude = gravityDir == 1 ? y < topThreshold : y > topThreshold;
-    if (isAtAltitude && rng.nextInt(isNight ? 200 : 400) == 0) {
+    if (isAtAltitude && rng.nextInt(isNight ? 600 : 1200) == 0) {
       grid[idx] = El.water;
       life[idx] = 100;
       markProcessed(idx);
       return;
     }
 
-    // Adjacent-water condensation — rare, only matters for water cycle
-    final condenseChance = isNight ? 60 : 120;
+    // Adjacent-water condensation — only meaningful underground or at night.
+    // In open air this is extremely rare to prevent steam/water flickering
+    // at water surface boundaries.
+    final condenseChance = isTrappedUnderground
+        ? (isNight ? 100 : 200)
+        : (isNight ? 500 : 1000);
     if (rng.nextInt(condenseChance) == 0 && checkAdjacent(x, y, El.water)) {
       grid[idx] = El.water; life[idx] = 100; markProcessed(idx); return;
     }
@@ -2846,14 +2867,21 @@ extension ElementBehaviors on SimulationEngine {
         final wantsDrop = (decision['drop'] ?? 0.0) > 0.5;
         final pheromone = decision['pheromone'] ?? 0.0;
 
-        // Neural-driven movement
-        if (ndx != 0 || ndy != 0) {
-          final nx = wrapX(x + ndx);
-          final ny = y + ndy;
+        // Neural-driven movement (with random-walk fallback for untrained brains)
+        int mdx = ndx;
+        int mdy = ndy;
+        if (mdx == 0 && mdy == 0) {
+          // Random walk: untrained NEAT outputs near zero, so wander randomly.
+          mdx = rng.nextBool() ? 1 : -1;
+          mdy = rng.nextInt(3) - 1; // -1, 0, or 1
+        }
+        {
+          final nx = wrapX(x + mdx);
+          final ny = y + mdy;
           if (inBoundsY(ny)) {
             final targetEl = grid[ny * w + nx];
             if (targetEl == El.empty) {
-              velX[idx] = ndx;
+              velX[idx] = mdx;
               swap(idx, ny * w + nx);
             } else if (targetEl == El.dirt && rng.nextInt(3) == 0) {
               // Neural-driven digging
@@ -2862,9 +2890,16 @@ extension ElementBehaviors on SimulationEngine {
               markDirty(nx, ny);
               swap(idx, ny * w + nx);
               velY[idx] = antCarrierState;
-            } else if (ndx != 0 && grid[y * w + nx] == El.empty) {
-              velX[idx] = ndx;
+            } else if (mdx != 0 && grid[y * w + nx] == El.empty) {
+              velX[idx] = mdx;
               swap(idx, y * w + nx);
+            } else if (mdx != 0) {
+              // Try climbing over 1-cell obstacle
+              final climbY = y - g;
+              if (inBoundsY(climbY) && grid[climbY * w + nx] == El.empty) {
+                velX[idx] = mdx;
+                swap(idx, climbY * w + nx);
+              }
             }
           }
         }

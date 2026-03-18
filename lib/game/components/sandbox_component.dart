@@ -92,7 +92,7 @@ class SandboxComponent extends PositionComponent
   }
 
   // ---------------------------------------------------------------------------
-  // Rendering — single drawImage call
+  // Rendering — draw world image with wrap copies for seamless scrolling
   // ---------------------------------------------------------------------------
 
   @override
@@ -100,10 +100,28 @@ class SandboxComponent extends PositionComponent
     final image = _gridImage;
     if (image == null) return;
 
+    final worldW = simulation.gridW.toDouble();
+
     canvas.save();
     canvas.scale(cellSize, cellSize);
+    // Draw 3 copies for seamless horizontal wrapping.
+    // The camera wraps its X position, so when near the edge the
+    // adjacent copy becomes visible through Flame's normal clipping.
+    canvas.drawImage(image, ui.Offset(-worldW, 0), _imagePaint);
     canvas.drawImage(image, ui.Offset.zero, _imagePaint);
+    canvas.drawImage(image, ui.Offset(worldW, 0), _imagePaint);
     canvas.restore();
+  }
+
+  /// Override containsLocalPoint so taps/drags are accepted across
+  /// the full 3x render area (one world-width on each side).
+  @override
+  bool containsLocalPoint(Vector2 point) {
+    final worldW = simulation.gridW.toDouble() * cellSize;
+    return point.x >= -worldW &&
+        point.x < worldW * 2 &&
+        point.y >= 0 &&
+        point.y < simulation.gridH.toDouble() * cellSize;
   }
 
   // ---------------------------------------------------------------------------
@@ -149,7 +167,9 @@ class SandboxComponent extends PositionComponent
   }
 
   void paintAt(Vector2 position) {
-    final cx = (position.x / cellSize).floor();
+    // Convert local position to grid coords, wrapping X.
+    final rawX = (position.x / cellSize).floor();
+    final cx = simulation.wrapX(rawX);
     final cy = (position.y / cellSize).floor();
 
     // Bresenham line from last paint position to current for gap-free strokes.
@@ -172,9 +192,17 @@ class SandboxComponent extends PositionComponent
   /// Paint along a Bresenham line from (x0,y0) to (x1,y1), skipping (x0,y0)
   /// since it was already painted on the previous event.
   void _paintLine(int x0, int y0, int x1, int y1) {
-    int dx = (x1 - x0).abs();
+    final w = simulation.gridW;
+    int rawDx = x1 - x0;
+    // Shortest path across wrap boundary
+    if (rawDx.abs() > w ~/ 2) {
+      rawDx += rawDx > 0 ? -w : w;
+    }
+    final actualX1 = x0 + rawDx;
+
+    int dx = rawDx.abs();
     int dy = -(y1 - y0).abs();
-    int sx = x0 < x1 ? 1 : -1;
+    int sx = rawDx >= 0 ? 1 : -1;
     int sy = y0 < y1 ? 1 : -1;
     int err = dx + dy;
 
@@ -183,10 +211,10 @@ class SandboxComponent extends PositionComponent
     bool first = true;
     while (true) {
       if (!first) {
-        _paintCell(px, py);
+        _paintCell(simulation.wrapX(px), py);
       }
       first = false;
-      if (px == x1 && py == y1) break;
+      if (px == actualX1 && py == y1) break;
       final e2 = 2 * err;
       if (e2 >= dy) {
         err += dy;
@@ -230,6 +258,15 @@ class SandboxComponent extends PositionComponent
         }
       }
     }
+
+    // Auto-create a colony when ants are placed so the creature system
+    // (entity-based ants, NEAT brains, pheromones) is active.
+    if (paintEl == El.ant) {
+      final world = game.sandboxWorld;
+      if (world.creatures.colonies.isEmpty) {
+        world.spawnColony(cx, cy);
+      }
+    }
   }
 
   (int x, int y) screenToGrid(Vector2 screenPos) {
@@ -237,7 +274,7 @@ class SandboxComponent extends PositionComponent
     final worldX = screenPos.x / cam.zoom + cam.position.x;
     final worldY = screenPos.y / cam.zoom + cam.position.y;
     return (
-      (worldX / cellSize).floor(),
+      simulation.wrapX((worldX / cellSize).floor()),
       (worldY / cellSize).floor(),
     );
   }
