@@ -10,10 +10,6 @@ class PixelRenderer {
   final SimulationEngine engine;
 
   late Uint8List _pixels;
-  late Uint8List _pixels2;
-  bool _useFirstBuffer = true;
-
-  Uint8List get _activePixels => _useFirstBuffer ? _pixels : _pixels2;
 
   final List<Int32List> _microParticles = [];
   static const int _maxMicroParticles = 120;
@@ -31,13 +27,12 @@ class PixelRenderer {
 
   PixelRenderer(this.engine);
 
-  Uint8List get pixels => _activePixels;
+  Uint8List get pixels => _pixels;
   List<Int32List> get microParticles => _microParticles;
 
   void init() {
     final total = engine.gridW * engine.gridH;
     _pixels = Uint8List(total * 4);
-    _pixels2 = Uint8List(total * 4);
     _glowR = Uint8List(total);
     _glowG = Uint8List(total);
     _glowB = Uint8List(total);
@@ -274,7 +269,7 @@ class PixelRenderer {
     final pheroFood = engine.pheroFood;
     final pheroHome = engine.pheroHome;
     final rng = engine.rng;
-    final pxBuf = _activePixels;
+    final pxBuf = _pixels;
 
     for (int cy = 0; cy < chunkRows; cy++) {
       final chunkRowBase = cy * chunkCols;
@@ -527,16 +522,12 @@ class PixelRenderer {
   }
 
   Future<ui.Image> buildImage() async {
-    final completedBuffer = _activePixels;
-    _useFirstBuffer = !_useFirstBuffer;
-    // Copy completed buffer to the new active buffer so clean (non-dirty)
-    // chunks retain current pixel data instead of showing stale content
-    // from 2 frames ago. This prevents chunk flickering.
-    _activePixels.setAll(0, completedBuffer);
-
+    // decodeImageFromPixels copies the byte data synchronously before
+    // returning, so a single buffer is safe. The _decoding guard in
+    // SandboxComponent prevents concurrent calls.
     final completer = Completer<ui.Image>();
     ui.decodeImageFromPixels(
-      completedBuffer,
+      _pixels,
       engine.gridW,
       engine.gridH,
       ui.PixelFormat.rgba8888,

@@ -122,6 +122,13 @@ class ParticleEngineGame extends FlameGame
   // Game loop — keep camera bounded every frame
   // ---------------------------------------------------------------------------
 
+  @override
+  void update(double dt) {
+    super.update(dt);
+    // Clamp every frame so zoom/move effects can never leave the world visible.
+    clampCameraPosition();
+  }
+
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
