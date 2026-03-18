@@ -634,6 +634,11 @@ extension ElementBehaviors on SimulationEngine {
     // Temperature-driven melting (ice -> water)
     if (checkTemperatureReaction(x, y, idx, El.ice)) return;
 
+    // Gravity: ice falls when unsupported but floats on water
+    // (ice density 90 < water density 100, so sinkThroughLiquids still
+    // won't sink through water due to density check in fallSolid)
+    if (fallSolid(x, y, idx, El.ice)) return;
+
     if (checkAdjacent(x, y, El.fire) || checkAdjacent(x, y, El.lava)) {
       grid[idx] = El.water;
       life[idx] = 150;
@@ -1575,6 +1580,7 @@ extension ElementBehaviors on SimulationEngine {
   // =========================================================================
 
   void simWood(int x, int y, int idx) {
+    // Burning wood logic (life > 0 = on fire)
     if (life[idx] > 0) {
       life[idx]++;
       if (rng.nextInt(100) < 15) {
@@ -1603,6 +1609,18 @@ extension ElementBehaviors on SimulationEngine {
       return;
     }
 
+    // Gravity: wood falls through empty space when unsupported.
+    // velY is used for water saturation (0-3), so no momentum tracking.
+    final by = y + gravityDir;
+    if (inBoundsY(by)) {
+      final belowEl = grid[by * gridW + x];
+      if (belowEl == El.empty) {
+        swap(idx, by * gridW + x);
+        return;
+      }
+    }
+
+    // Water absorption (velY 0-3 = water saturation level)
     if (checkAdjacent(x, y, El.water) && velY[idx] < 3) {
       if (rng.nextInt(30) == 0) {
         velY[idx] = (velY[idx] + 1).clamp(0, 3).toInt();
@@ -1610,8 +1628,8 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
+    // Waterlogged wood (velY >= 3) sinks through water via buoyancy exchange
     if (velY[idx] >= 3) {
-      final by = y + gravityDir;
       if (inBoundsY(by)) {
         final bi = by * gridW + x;
         if (grid[bi] == El.water) {
@@ -1637,6 +1655,9 @@ extension ElementBehaviors on SimulationEngine {
   // =========================================================================
 
   void simMetal(int x, int y, int idx) {
+    // Gravity: metal is very dense, falls and sinks through lighter liquids
+    if (fallSolid(x, y, idx, El.metal)) return;
+
     if (life[idx] >= 200) return;
 
     if (checkAdjacent(x, y, El.water)) {
@@ -2177,6 +2198,9 @@ extension ElementBehaviors on SimulationEngine {
     // Temperature-driven melting (stone -> lava at extreme heat)
     if (checkTemperatureReaction(x, y, idx, El.stone)) return;
 
+    // Gravity: stone falls when unsupported, sinks through lighter liquids
+    if (fallSolid(x, y, idx, El.stone)) return;
+
     final heat = velX[idx];
 
     // Depth tracking: life encodes how deep this stone is (stone cells above).
@@ -2236,6 +2260,21 @@ extension ElementBehaviors on SimulationEngine {
   void simGlass(int x, int y, int idx) {
     // Temperature-driven melting (glass -> sand at high temp)
     if (checkTemperatureReaction(x, y, idx, El.glass)) return;
+
+    // Gravity: glass falls when unsupported
+    // Check velocity before fall — if it was high and we just landed, shatter
+    final preFallVel = velY[idx];
+    final fell = fallSolid(x, y, idx, El.glass);
+    if (fell) return;
+    // Shatter on high-velocity impact: glass breaks into sand
+    if (preFallVel > 3) {
+      grid[idx] = El.sand;
+      life[idx] = 0;
+      velY[idx] = 0;
+      markProcessed(idx);
+      queueReactionFlash(x, y, 200, 220, 255, 4);
+      return;
+    }
 
     // Glass shatters when adjacent to explosions (handled by explosion system)
     // Glass melts back to sand when adjacent to lava for extended time

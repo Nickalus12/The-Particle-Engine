@@ -56,30 +56,30 @@ class El {
 /// [ElementRegistry.register].
 final List<int> baseColors = List<int>.filled(maxElements, 0x00000000)
   ..[El.empty] = 0x00000000
-  ..[El.sand] = 0xFFDEB887
-  ..[El.water] = 0xFF3399FF
-  ..[El.fire] = 0xFFFF6600
-  ..[El.ice] = 0xFFAADDFF
-  ..[El.lightning] = 0xFFFFFF66
-  ..[El.seed] = 0xFF8B7355
-  ..[El.stone] = 0xFF888888
-  ..[El.tnt] = 0xFFCC2222
-  ..[El.rainbow] = 0xFFFF00FF
-  ..[El.mud] = 0xFF6B4226
-  ..[El.steam] = 0xFFDDDDDD
-  ..[El.ant] = 0xFF222222
-  ..[El.oil] = 0xFF4A3728
-  ..[El.acid] = 0xFF33FF33
-  ..[El.glass] = 0xFFDDEEFF
-  ..[El.dirt] = 0xFF8B6914
-  ..[El.plant] = 0xFF33CC33
-  ..[El.lava] = 0xFFFF4500
-  ..[El.snow] = 0xFFF0F0FF
-  ..[El.wood] = 0xFFA0522D
-  ..[El.metal] = 0xFFA8A8B0
-  ..[El.smoke] = 0xFF808080
-  ..[El.bubble] = 0xFFADD8E6
-  ..[El.ash] = 0xFFB0B0B0;
+  ..[El.sand] = 0xFFD9C390     // Warm golden-tan
+  ..[El.water] = 0xFF2E9AFF     // Deep clear blue
+  ..[El.fire] = 0xFFFF8820      // Bright orange flame
+  ..[El.ice] = 0xFFBDE5FF       // Light crystalline blue-white
+  ..[El.lightning] = 0xFFFFFFA0  // Electric yellow-white
+  ..[El.seed] = 0xFF8B7355      // Rich brown seed
+  ..[El.stone] = 0xFF808090     // Cool blue-gray
+  ..[El.tnt] = 0xFFCC2222       // Danger red
+  ..[El.rainbow] = 0xFFFF00FF   // Magenta (cycles in renderer)
+  ..[El.mud] = 0xFF7A5030       // Rich earthy brown
+  ..[El.steam] = 0xFFE0E0F0     // Wispy blue-white
+  ..[El.ant] = 0xFF222222       // Dark body
+  ..[El.oil] = 0xFF3A2820       // Dark with warm undertone
+  ..[El.acid] = 0xFF30F030      // Toxic bright green
+  ..[El.glass] = 0xCCDDE8FF     // Semi-transparent blue-white
+  ..[El.dirt] = 0xFF8C6830      // Rich brown earth
+  ..[El.plant] = 0xFF28B040     // Vibrant green
+  ..[El.lava] = 0xFFFF5010      // Molten orange-red
+  ..[El.snow] = 0xFFF0F4FF      // Cold sparkle white
+  ..[El.wood] = 0xFFA05530      // Warm brown with grain tone
+  ..[El.metal] = 0xFFA8A8B8     // Metallic blue-gray sheen
+  ..[El.smoke] = 0xB09A9AA0     // Semi-transparent gray
+  ..[El.bubble] = 0xA0C8E8FF    // Translucent cyan-white
+  ..[El.ash] = 0xDDB0B0B8;      // Light gray with transparency
 
 /// Human-readable element names (index = element type).
 /// Mutable list sized to [maxElements].
@@ -389,10 +389,10 @@ void _initElementProperties() {
   );
   // Ice
   elementProperties[El.ice] = const ElementProperties(
-    density: 90, gravity: 0, state: PhysicsState.solid,
+    density: 90, gravity: 1, state: PhysicsState.solid,
     heatConductivity: 0.6, meltPoint: 40, meltsInto: El.water,
     baseTemperature: 20, corrosionResistance: 40,
-  
+
     hardness: 40, windResistance: 1.0,
   );
   // Lightning
@@ -412,10 +412,10 @@ void _initElementProperties() {
   );
   // Stone
   elementProperties[El.stone] = const ElementProperties(
-    density: 255, gravity: 0, state: PhysicsState.solid,
+    density: 255, gravity: 1, state: PhysicsState.solid,
     heatConductivity: 0.5, meltPoint: 220, meltsInto: El.lava,
     baseTemperature: 128, corrosionResistance: 60,
-  
+
     hardness: 80, windResistance: 1.0,
   );
   // TNT
@@ -478,10 +478,10 @@ void _initElementProperties() {
   );
   // Glass
   elementProperties[El.glass] = const ElementProperties(
-    density: 220, gravity: 0, state: PhysicsState.solid,
+    density: 220, gravity: 1, state: PhysicsState.solid,
     heatConductivity: 0.4, meltPoint: 200, meltsInto: El.sand,
     baseTemperature: 128, corrosionResistance: 50,
-  
+
     hardness: 70, windResistance: 1.0,
   );
   // Dirt
@@ -519,18 +519,18 @@ void _initElementProperties() {
   );
   // Wood
   elementProperties[El.wood] = const ElementProperties(
-    density: 85, gravity: 0, state: PhysicsState.solid,
+    density: 85, gravity: 1, state: PhysicsState.solid,
     flammable: true, heatConductivity: 0.1, baseTemperature: 128,
     corrosionResistance: 30,
-  
+
     porosity: 0.2, hardness: 50, windResistance: 1.0,
   );
   // Metal
   elementProperties[El.metal] = const ElementProperties(
-    density: 240, gravity: 0, state: PhysicsState.solid,
+    density: 240, gravity: 1, state: PhysicsState.solid,
     heatConductivity: 0.9, meltPoint: 240, meltsInto: El.lava,
     baseTemperature: 128, corrosionResistance: 90,
-  
+
     hardness: 95, conductivity: 0.95, windResistance: 1.0,
   );
   // Smoke

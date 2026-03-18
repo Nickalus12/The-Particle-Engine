@@ -583,6 +583,77 @@ class SimulationEngine {
     }
   }
 
+  // =========================================================================
+  // Solid fall helper (stone, glass, ice, metal)
+  // =========================================================================
+
+  /// Solid block fall — straight down only (no diagonal slide like granular).
+  /// Uses velY for momentum with lower terminal velocity than granular.
+  /// [sinkThroughLiquids]: if true, displaces lighter liquids via density.
+  /// Returns true if the element moved.
+  bool fallSolid(int x, int y, int idx, int elType, {bool sinkThroughLiquids = true}) {
+    final g = gravityDir;
+    final by = y + g;
+    if (!inBoundsY(by)) {
+      velY[idx] = 0;
+      return false;
+    }
+
+    final below = by * gridW + x;
+    final belowEl = grid[below];
+
+    // Fall through empty space with momentum
+    if (belowEl == El.empty) {
+      final curVel = velY[idx];
+      final newVel = (curVel + 1).clamp(0, 2); // lower terminal vel than granular
+      velY[idx] = newVel;
+
+      // Multi-cell fall when velocity > 1
+      if (newVel > 1) {
+        int finalY = by;
+        for (int d = 2; d <= newVel; d++) {
+          final testY = y + g * d;
+          if (!inBoundsY(testY)) break;
+          if (grid[testY * gridW + x] != El.empty) break;
+          finalY = testY;
+        }
+        swap(idx, finalY * gridW + x);
+      } else {
+        swap(idx, below);
+      }
+      return true;
+    }
+
+    // Density-based sinking through lighter liquids
+    if (sinkThroughLiquids) {
+      final myDensity = elementDensity[elType];
+      final belowDensity = elementDensity[belowEl];
+      final belowState = elementPhysicsState[belowEl];
+
+      if (belowDensity < myDensity &&
+          (belowState == PhysicsState.liquid.index ||
+           belowState == PhysicsState.gas.index)) {
+        // Check clock bit to avoid double-processing
+        final clockBit = simClock ? 0x80 : 0;
+        if ((flags[below] & 0x80) != clockBit) {
+          swap(idx, below);
+          velY[idx] = 0; // reset velocity on liquid entry
+          return true;
+        }
+      }
+    }
+
+    // Landing: reset velocity
+    final landingVel = velY[idx];
+    if (landingVel > 0) {
+      velY[idx] = 0;
+      if (landingVel > 2) {
+        queueReactionFlash(x, y, 180, 180, 160, 2);
+      }
+    }
+    return false;
+  }
+
   /// Check if a water cell is trapped (surrounded, 0-1 water neighbors, no empty).
   bool isTrappedWater(int wx, int wy) {
     int waterN = 0, emptyN = 0;
