@@ -36,8 +36,8 @@ extension ElementBehaviors on SimulationEngine {
     if (grid[idx] == El.sand && rng.nextInt(3) == 0) {
       _avalancheGranular(x, y, idx);
     }
-    // Sand dissolves in water to form mud (slow, probabilistic)
-    if (grid[idx] == El.sand && rng.nextInt(40) == 0 && checkAdjacent(x, y, El.water)) {
+    // Sand dissolves in water to form mud (rare, gradual erosion)
+    if (grid[idx] == El.sand && rng.nextInt(100) == 0 && checkAdjacent(x, y, El.water)) {
       grid[idx] = El.mud;
       removeOneAdjacent(x, y, El.water);
       markProcessed(idx);
@@ -636,7 +636,9 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     // Intermittent smoke while burning (visible plume)
-    if (rng.nextInt(6) == 0) {
+    // More frequent early on for a natural ignition burst
+    final smokeChance = life[idx] < 10 ? 3 : 6;
+    if (rng.nextInt(smokeChance) == 0) {
       final uy = y - gravityDir;
       if (inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
         grid[uy * gridW + x] = El.smoke;
