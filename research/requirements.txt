@@ -5,3 +5,4 @@ colour-science
 Pillow
 pytest
 pytest-html
+pytest-benchmark

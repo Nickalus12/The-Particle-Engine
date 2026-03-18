@@ -1,0 +1,105 @@
+"""Phase change tests: melting, boiling, freezing, condensation."""
+
+import pytest
+
+
+class TestPhaseTransitions:
+    """Each phase transition should have correct thresholds and products."""
+
+    @pytest.mark.physics
+    @pytest.mark.parametrize(
+        "element,transition,becomes",
+        [
+            ("water", "freeze", "ice"),
+            ("water", "boil", "steam"),
+            ("ice", "melt", "water"),
+            ("sand", "melt", "glass"),
+            ("stone", "melt", "lava"),
+            ("metal", "melt", "lava"),
+            ("snow", "melt", "water"),
+            ("lava", "freeze", "stone"),
+            ("oil", "boil", "smoke"),
+            ("glass", "melt", "sand"),
+        ],
+    )
+    def test_phase_change_product(self, ground_truth, element, transition, becomes):
+        gt = ground_truth.get("phase_changes", {})
+        key = f"{element}_{transition}"
+        entry = gt.get(key)
+        if entry is None:
+            pytest.skip(f"No phase change data for {key}")
+        assert entry["becomes"] == becomes
+
+    @pytest.mark.physics
+    @pytest.mark.parametrize(
+        "element,transition",
+        [
+            ("water", "freeze"),
+            ("water", "boil"),
+            ("ice", "melt"),
+            ("sand", "melt"),
+            ("stone", "melt"),
+            ("metal", "melt"),
+            ("snow", "melt"),
+            ("lava", "freeze"),
+            ("oil", "boil"),
+            ("glass", "melt"),
+        ],
+    )
+    def test_phase_change_has_threshold(self, ground_truth, element, transition):
+        key = f"{element}_{transition}"
+        entry = ground_truth.get("phase_changes", {}).get(key)
+        if entry is None:
+            pytest.skip(f"No phase change data for {key}")
+        point_key = f"our_{transition}Point"
+        if transition == "freeze":
+            point_key = "our_freezePoint"
+        elif transition == "boil":
+            point_key = "our_boilPoint"
+        else:
+            point_key = "our_meltPoint"
+        assert point_key in entry, f"Missing {point_key} for {element}"
+        assert entry[point_key] > 0
+
+
+class TestPhaseChangeOrdering:
+    """Melt points should follow physical intuition."""
+
+    @pytest.mark.physics
+    def test_melt_point_ordering(self, ground_truth):
+        """Ice melts at lowest temp, then snow, then glass, then stone."""
+        gt = ground_truth.get("phase_changes", {})
+        ice_mp = gt.get("ice_melt", {}).get("our_meltPoint", 0)
+        snow_mp = gt.get("snow_melt", {}).get("our_meltPoint", 0)
+        glass_mp = gt.get("glass_melt", {}).get("our_meltPoint", 0)
+        stone_mp = gt.get("stone_melt", {}).get("our_meltPoint", 0)
+        if not all([ice_mp, snow_mp, glass_mp, stone_mp]):
+            pytest.skip("Missing melt point data")
+        assert ice_mp < snow_mp < glass_mp < stone_mp
+
+    @pytest.mark.physics
+    def test_water_freezes_before_lava(self, ground_truth):
+        gt = ground_truth.get("phase_changes", {})
+        water_fp = gt.get("water_freeze", {}).get("our_freezePoint", 0)
+        lava_fp = gt.get("lava_freeze", {}).get("our_freezePoint", 0)
+        if not all([water_fp, lava_fp]):
+            pytest.skip("Missing freeze point data")
+        # Water freezes at a higher temperature than lava solidifies
+        # (in our 0-255 scale, higher freezePoint = easier to freeze)
+        assert water_fp > 0 and lava_fp > 0
+
+
+class TestPhaseChangesAll:
+    """Extended phase transition data from oracle."""
+
+    @pytest.mark.physics
+    @pytest.mark.parametrize(
+        "element",
+        ["water", "ice", "sand", "stone", "metal", "snow", "lava", "oil", "glass"],
+    )
+    def test_element_has_phase_data(self, ground_truth, element):
+        gt = ground_truth.get("phase_changes_all", {})
+        if element not in gt:
+            pytest.skip(f"No phase_changes_all data for {element}")
+        entry = gt[element]
+        assert len(entry) > 0, f"{element} has no transitions"

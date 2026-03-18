@@ -36,14 +36,14 @@ extension ElementBehaviors on SimulationEngine {
     if (grid[idx] == El.sand) {
       _avalancheGranular(x, y, idx);
     }
-    // Sand absorbs water to form mud. Real sand has ~35% porosity and
-    // readily absorbs water via capillary action. Rate reflects the fast
-    // wetting process rather than chemical dissolution.
-    if (grid[idx] == El.sand && rng.nextInt(10) == 0 && checkAdjacent(x, y, El.water)) {
-      grid[idx] = El.mud;
-      removeOneAdjacent(x, y, El.water);
-      markProcessed(idx);
-      return;
+    // Sand absorbs water to form mud (surface wetting / mechanical mixing)
+    if (grid[idx] == El.sand && checkAdjacent(x, y, El.water)) {
+      if (rng.nextInt(10) == 0) {
+        grid[idx] = El.mud;
+        removeOneAdjacent(x, y, El.water);
+        markProcessed(idx);
+        return;
+      }
     }
     // Porosity-based moisture absorption: sand near water darkens slightly
     if (grid[idx] == El.sand) {
@@ -2980,6 +2980,16 @@ extension ElementBehaviors on SimulationEngine {
     final g = gravityDir;
     final by = y + g;
     if (!inBoundsY(by) || grid[by * gridW + x] == El.empty) return;
+
+    // Static friction on flat solid surfaces: grains on a flat solid
+    // surface don't avalanche. A surface is flat when both diagonal-below
+    // cells are occupied (no edge to slide off).
+    final belowEl = grid[by * gridW + x];
+    if (elementPhysicsState[belowEl] == PhysicsState.solid.index) {
+      final lb = grid[by * gridW + wrapX(x - 1)];
+      final rb = grid[by * gridW + wrapX(x + 1)];
+      if (lb != El.empty && rb != El.empty) return;
+    }
 
     final goLeft = rng.nextBool();
     final dir1 = goLeft ? -1 : 1;
