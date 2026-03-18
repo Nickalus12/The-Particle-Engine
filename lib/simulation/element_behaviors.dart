@@ -1138,7 +1138,17 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
-    fallGranularDisplace(x, y, idx, El.dirt);
+    // Galilean freefall: dirt falls at the same rate as sand in vacuum
+    // (gravity is mass-independent). Use velocity-based fallGranular
+    // for proper acceleration. In water, use displacement-based fall
+    // to preserve water containment and avoid excessive moisture exposure.
+    final by = y + gravityDir;
+    final inWater = inBoundsY(by) && grid[by * gridW + x] == El.water;
+    if (inWater) {
+      fallGranularDisplace(x, y, idx, El.dirt);
+    } else {
+      fallGranular(x, y, idx, El.dirt);
+    }
   }
 
   // =========================================================================
