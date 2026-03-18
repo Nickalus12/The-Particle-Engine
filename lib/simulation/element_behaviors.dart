@@ -717,13 +717,19 @@ extension ElementBehaviors on SimulationEngine {
           life[ni] = 0;
           markProcessed(ni);
         }
-        if (neighbor == El.wood && temperature[ni] >= 190) {
+        if (neighbor == El.wood) {
           // Temperature-based ignition: wood at flash point auto-ignites
-          // from radiated heat. This replaces random ignition with
-          // physics-driven propagation for consistent fire front velocity.
-          grid[ni] = El.fire;
-          life[ni] = 0;
-          markProcessed(ni);
+          // from radiated heat. This produces consistent Fisher-KPP
+          // propagation velocity v = 2*sqrt(k*α).
+          if (temperature[ni] >= 190) {
+            grid[ni] = El.fire;
+            life[ni] = 0;
+            markProcessed(ni);
+          } else if (life[ni] == 0 && rng.nextInt(6) == 0) {
+            // Contact pyrolysis: flame touching wood surface starts
+            // internal charring, igniting the wood from within
+            life[ni] = 1;
+          }
         }
         if (neighbor == El.oil) {
           grid[ni] = El.fire;
@@ -1845,20 +1851,26 @@ extension ElementBehaviors on SimulationEngine {
 
   void simWood(int x, int y, int idx) {
     // Burning wood logic (life > 0 = on fire)
+    // Real physics: wood combustion involves surface pyrolysis, charring,
+    // and flame spread. Once ignited, fire propagates along the surface
+    // at a rate determined by heat flux from the flame to adjacent wood.
+    // Flame spread velocity v ≈ 2√(αk/ρcΔT) is typically 0.5-2 mm/s
+    // for wood, meaning adjacent cells ignite within seconds.
     if (life[idx] > 0) {
       life[idx]++;
-      if (rng.nextInt(100) < 15) {
-        for (int dy = -1; dy <= 1; dy++) {
-          for (int dx = -1; dx <= 1; dx++) {
-            if (dx == 0 && dy == 0) continue;
-            final nx = wrapX(x + dx);
-            final ny = y + dy;
-            if (!inBoundsY(ny)) continue;
-            final ni = ny * gridW + nx;
-            if (grid[ni] == El.wood && life[ni] == 0) {
-              life[ni] = 1;
-              break;
-            }
+
+      // Fire spreads to adjacent wood via surface charring.
+      // Each exposed face independently pyrolyzes at ~8% per frame,
+      // modeling conductive heat transfer through wood grain.
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = wrapX(x + dx);
+          final ny = y + dy;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * gridW + nx;
+          if (grid[ni] == El.wood && life[ni] == 0 && rng.nextInt(12) == 0) {
+            life[ni] = 1;
           }
         }
       }
@@ -1869,6 +1881,12 @@ extension ElementBehaviors on SimulationEngine {
           grid[uy * gridW + x] = El.smoke; life[uy * gridW + x] = 0;
           markProcessed(uy * gridW + x);
         }
+        return;
+      }
+      // Burning wood still falls — gravity doesn't stop for fire
+      final bby = y + gravityDir;
+      if (inBoundsY(bby) && grid[bby * gridW + x] == El.empty) {
+        swap(idx, bby * gridW + x);
       }
       return;
     }
@@ -1885,6 +1903,15 @@ extension ElementBehaviors on SimulationEngine {
     if (temperature[idx] >= 190) {
       // Auto-ignite: wood reaches flash point from heat conduction
       life[idx] = 1; // Start burning
+      return;
+    }
+
+    // Pilot flame ignition: wood in direct contact with fire or burning
+    // wood catches fire through surface pyrolysis. The flame's convective
+    // heat flux (~25 kW/m²) causes rapid surface decomposition without
+    // needing the bulk to reach flash point.
+    if (checkAdjacent(x, y, El.fire) && rng.nextInt(4) == 0) {
+      life[idx] = 1; // Start burning from contact
       return;
     }
 

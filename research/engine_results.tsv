@@ -30,3 +30,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 28	2026-03-18T00:28	simulation_engine.dart	Faster heat transfer (>>9 vs >>10) for quicker thermal equilibrium convergence	261.8	95	100	yes
 29	2026-03-18T00:29	element_behaviors.dart	Slope-aware deterministic avalanche: remove 1/3 probability gate, add extended slope detection for multi-cell granular rolling	294.1	95	100	yes
 30	2026-03-18T00:30	element_behaviors.dart	Stefan solidification + heterogeneous condensation: temp-dependent ice-water freezing, steam condenses on ice surfaces	303.3	95	100	yes
+31	2026-03-18T00:31	element_behaviors.dart	Wood combustion: contact pyrolysis ignition, multi-face fire propagation, burning wood gravity	296.4	95	100	yes
