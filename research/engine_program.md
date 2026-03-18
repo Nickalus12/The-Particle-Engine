@@ -1,196 +1,232 @@
-# Engine Autoresearch Protocol
+# Engine Autoresearch Protocol v4
 
-> Instructions for an AI agent tasked with continuously improving
-> the physics engine, visual rendering, and element behaviors in
-> The Particle Engine.
+> Autonomous AI agent improving the physics engine, visual rendering,
+> and element behaviors in The Particle Engine using pytest-validated
+> experiments against scipy/scikit-image ground truth.
 
 ---
 
 ## Mission
 
-Autonomously improve The Particle Engine's simulation quality, visual
-rendering, and performance through iterative experimentation. You operate
-in a tight loop:
+Make The Particle Engine's simulation physically accurate, visually
+stunning, and performant. You THINK DEEPLY, RESEARCH REAL PHYSICS,
+IMPLEMENT CAREFULLY, and VALIDATE with pytest.
 
-    analyze → hypothesize → modify → benchmark → keep/discard → repeat
-
-You must NEVER STOP. After each experiment, immediately begin the next one.
+You must NEVER STOP. After each experiment, immediately begin the next.
 
 ---
 
-## Three-File Architecture
+## Core Philosophy
 
-### 1. Frozen Evaluation (DO NOT MODIFY)
-- `research/engine_program.md` — This file. Your instructions.
-- `research/engine_benchmark.dart` — The evaluation harness.
-- `lib/simulation/element_registry.dart` — Element property definitions
-  (IDs, names, property field names). You may adjust numeric VALUES but
-  not add/remove fields or change element IDs.
+You are NOT a line-tweaker. Each experiment should be a meaningful,
+well-reasoned improvement — not a trivial parameter nudge.
 
-### 2. Mutable Search Space (YOUR TARGETS)
+Before changing ANY code:
+1. **READ** the relevant source files completely
+2. **UNDERSTAND** why the current code works the way it does
+3. **RESEARCH** the real physics you're trying to approximate
+4. **PLAN** a coherent change (20-200 lines)
+5. **IMPLEMENT** the full solution
+6. **VALIDATE** invariants hold
+7. **TEST** with pytest — the ONLY evaluation tool
+
+---
+
+## Architecture
+
+### Frozen (NEVER MODIFY)
+- `research/engine_program.md` — This file
+- `research/ground_truth.json` — scipy oracle output
+- `research/visual_ground_truth.json` — colour-science oracle output
+
+### Test Suite (ADD tests only, NEVER weaken or remove)
+- `research/tests/test_kinematics.py` — Gravity, trajectory, terminal velocity
+- `research/tests/test_fluid_dynamics.py` — Torricelli, viscosity, flow
+- `research/tests/test_fluid_statics.py` — Pascal, buoyancy, U-tube
+- `research/tests/test_thermodynamics.py` — Fourier, Newton cooling
+- `research/tests/test_phase_changes.py` — Melt/boil/freeze transitions
+- `research/tests/test_granular.py` — Angle of repose, hourglass
+- `research/tests/test_combustion.py` — Fire triangle, spread rate
+- `research/tests/test_reactions.py` — All 36+ reactions
+- `research/tests/test_structural.py` — Cantilever, arch, cascade
+- `research/tests/test_conservation.py` — Mass, energy, momentum
+- `research/tests/test_erosion.py` — Erosion, weathering
+- `research/tests/test_ecosystem.py` — Water cycle, plants
+- `research/tests/test_visuals.py` — CIE 2000 Delta E color science
+- `research/tests/test_visual_quality.py` — Texture, gradients, edges
+
+### Oracles (regenerate when needed)
+- `research/physics_oracle.py` — scipy/numpy ground truth
+- `research/visual_oracle.py` — scikit-image/colour-science ground truth
+
+### Mutable Simulation Files (YOUR TARGETS)
 - `lib/simulation/element_behaviors.dart` — Element behavior logic
 - `lib/simulation/simulation_engine.dart` — Core physics engine
 - `lib/simulation/pixel_renderer.dart` — Visual rendering pipeline
-- `lib/simulation/world_gen/terrain_generator.dart` — Terrain shaping
-- `lib/simulation/world_gen/feature_placer.dart` — World features
+- `lib/simulation/element_registry.dart` — Element property VALUES only
+- `lib/simulation/world_gen/terrain_generator.dart` — Terrain
+- `lib/simulation/world_gen/feature_placer.dart` — Features
 - `lib/game/components/background_component.dart` — Sky/atmosphere
 
-### 3. Results Log
-- `research/engine_results.tsv` — One row per experiment:
-  `id  timestamp  file  description  fps  physics  visuals  kept`
+### Results
+- `research/engine_results.tsv` — Experiment log
 
 ---
 
-## Evaluation Metrics
+## Invariant Rules (AUTOMATIC DISCARD if violated)
 
-The benchmark runs a headless 320x180 simulation for 300 frames and
-measures three axes:
+### 1. Universal Gravity
+Every non-gas element MUST have gravity. Solids call `fallSolid()`.
+Granulars call `fallGranular()`. Structural integrity via lateral
+support — NEVER remove gravity.
 
-### FPS (Performance)
-- Target: >= 30 fps sustained
-- Measured: wall-clock time for 300 simulation steps + 300 render passes
-- Higher is better. Below 25 is a hard failure.
+### 2. Element Identity
+Each element keeps its fundamental nature (granular/liquid/gas/solid).
 
-### Physics Score (0-100)
-Correctness checks run after 300 frames on a deterministic test world:
+### 3. Interaction Preservation
+Never remove working interactions. Only ADD or IMPROVE.
 
-| Check | Points | Criteria |
-|-------|--------|----------|
-| Sand falls | 10 | Sand placed in air reaches ground |
-| Water flows | 10 | Water spreads laterally to fill depression |
-| Fire rises | 5 | Fire placed at bottom produces smoke above |
-| Steam rises | 5 | Steam moves upward and dissipates |
-| Lava sinks | 5 | Lava displaces water, produces steam |
-| Ice-water temp | 5 | Ice only freezes water when temp < 100 |
-| Temperature propagation | 10 | Heat spreads from lava to adjacent cells |
-| Wrapping | 10 | Element at x=319 wraps to x=0 |
-| Gravity solids | 10 | Stone/glass/metal fall when unsupported |
-| Structural integrity | 10 | Supported stone holds; unsupported falls |
-| Density displacement | 10 | Heavy elements sink through lighter liquids |
-| Erosion | 10 | Flowing water erodes dirt/sand over time |
+### 4. Conservation Laws
+Mass drift < 5% over 1000 frames in non-reactive systems.
 
-### Visual Score (0-100)
-Pixel analysis of the rendered frame buffer:
+### 5. Performance Floor
+Never below 25 fps on 320x180 grid.
 
-| Check | Points | Criteria |
-|-------|--------|----------|
-| No black artifacts | 15 | Empty sky cells have valid sky color, not black |
-| Element color range | 15 | Each element's pixels fall within expected RGB ranges |
-| Underground consistency | 10 | Cells below ground level use cave palette, not sky |
-| Glow correctness | 10 | Glow doesn't produce black halos or overflow to 255 |
-| Water depth gradient | 10 | Deeper water is darker than surface water |
-| Steam subtlety | 10 | Steam alpha < 80, not bright white (R<210) |
-| Temperature tinting | 10 | Hot cells have warm tint, cold cells have cool tint |
-| Element distinctness | 10 | No two different elements produce identical colors |
-| Day/night transition | 10 | Night colors are darker; stars visible at night |
+### 6. No Hot-Loop Allocations
+No List/Map/closure/object creation inside per-cell loops.
 
 ---
 
-## Loop Procedure
+## Experiment Workflow
 
+### Phase 1: ANALYZE
+Run pytest to find failing tests:
+```bash
+python -m pytest research/tests/ -v --tb=short 2>&1 | tail -30
 ```
-1. Read engine_results.tsv to see past experiments and current best scores.
-2. Identify the weakest metric or an untested improvement opportunity.
-3. Form a hypothesis: "Changing X in file Y should improve Z because W."
-4. Make ONE focused edit to ONE mutable file. Keep diffs small.
-5. Run: dart run research/engine_benchmark.dart
-   - 60 second wall-clock budget max.
-6. Parse stdout for: fps=XX physics=XX visuals=XX
-7. Decision gate:
-   - ANY metric drops > 3 points from baseline → DISCARD
-   - physics OR visuals improves >= 2 points, no regression > 1 → KEEP
-   - fps improves >= 3, no other regression → KEEP
-   - Otherwise → DISCARD
-8. Log to engine_results.tsv.
-9. If KEEP: git add <file> && git commit -m "autoresearch: <description>"
-   If DISCARD: git checkout -- <file>
-10. GOTO step 1. NEVER STOP.
+Identify the weakest category. Read the relevant simulation code.
+
+### Phase 2: RESEARCH
+Look up the real physics for the weakness. Consult ground_truth.json
+for scipy-computed expected values.
+
+### Phase 3: IMPLEMENT
+Write 20-200 lines of coherent improvement in ONE simulation file.
+
+### Phase 4: VALIDATE
+```bash
+# Gravity check
+grep -c "fallSolid" lib/simulation/element_behaviors.dart
+
+# Dart analyze
+dart analyze --no-fatal-infos lib/
+```
+If ANY invariant fails → DISCARD immediately.
+
+### Phase 5: TEST (pytest is the ONLY evaluation)
+```bash
+# Run full test suite
+python -m pytest research/tests/ -v --tb=short
+
+# Or specific category
+python -m pytest research/tests/test_phase_changes.py -v
 ```
 
----
+Parse output: count passed/failed/skipped.
 
-## Improvement Priority Stack
+### Phase 6: DECIDE
 
-Focus on the highest-priority unfixed issue:
+**AUTOMATIC DISCARD:**
+- Any invariant violation
+- More tests fail than before the change
+- Any previously-passing test now fails
+- dart analyze has new errors
 
-### Tier 1: Correctness (must fix first)
-- Elements that don't obey gravity
-- Wrapping inconsistencies at world edges
-- Temperature system not propagating correctly
-- Elements that don't interact (water+lava should make steam+stone)
+**KEEP (requires ALL):**
+- All invariants pass
+- At least ONE previously-failing test now passes
+- No previously-passing test regressed to failing
+- Net test pass count increased
 
-### Tier 2: Visual Quality
-- Elements that look flat or ugly (need texture variation)
-- Glow artifacts (black halos, overflow)
-- Underground rendering glitches (light leaking through holes)
-- Steam/smoke being too visible (should be wispy, subtle)
+**NEUTRAL:** Same pass count, no regressions → log as "neutral"
 
-### Tier 3: Performance
-- Unnecessary allocations in per-cell loops
-- O(n^2) patterns in neighbor checks
-- Redundant computation (scanning same neighbors twice)
-- math.sin() in hot loops (replace with hash-based approximation)
+### Phase 7: LOG & COMMIT
 
-### Tier 4: Emergent Behaviors
-- Water erosion (flow carrying sediment)
-- Convection (hot liquids rising)
-- Weathering (rain on stone over time)
-- Ecosystem loops (evaporation → rain → plants → decay → soil)
+Append to `research/engine_results.tsv`:
+```
+id  timestamp  file  description  passed  failed  skipped  total  kept
+```
 
-### Tier 5: Polish
-- Micro-particle effects (sparks, embers, splashes)
-- Smooth transitions between element states
-- Natural-looking terrain generation
-- Atmospheric depth effects in caves
+If KEEP: `git add <file> && git commit -m "autoresearch: <description>"`
+If DISCARD: `git checkout -- <file>`
+
+GOTO Phase 1. NEVER STOP.
 
 ---
 
-## Constraints
+## Targeting Strategy
 
-1. **Single file per experiment.** One focused change, one file edited.
-2. **No new files.** Work within existing architecture.
-3. **No UI changes.** Only simulation, rendering, and world gen.
-4. **Performance floor.** Never drop below 25 fps on 320x180 grid.
-5. **Deterministic.** Use seeded Random (engine.rng). Same seed = same result.
-6. **No allocations in hot loops.** The step() and renderPixels() methods
-   process 57,600 cells per frame. No List creation, no closures, no objects.
-7. **Dart analyze clean.** No new analyzer warnings or errors.
+Run pytest and sort failures by category:
+```bash
+python -m pytest research/tests/ -v --tb=line 2>&1 | grep FAILED
+```
 
----
-
-## Experiment Strategies
-
-### Hill Climbing (default)
-- Start from current best
-- Make small delta changes
-- Keep improvements, discard regressions
-- Gradually converge on optimal parameters
-
-### Ablation Studies
-- Remove a feature/optimization
-- Measure impact
-- If removal improves metrics, the feature was harmful
-- If removal hurts, the feature is validated
-
-### A/B Comparisons
-- Implement two approaches to the same problem
-- Benchmark both
-- Keep the winner
-
-### Parameter Sweeps
-- For numeric parameters (glow radius, evaporation rate, temperature
-  thresholds), try 3-5 values in a range
-- Log all results
-- Adopt the best value
+Priority order:
+1. Tests with 0% pass rate (complete failures)
+2. Categories with lowest pass rate
+3. Tests closest to passing (small deviation from expected)
 
 ---
 
-## What Success Looks Like
+## What Makes a GOOD Experiment
 
-After 100+ experiments:
-- physics_score consistently >= 90
-- visuals_score consistently >= 85
-- fps consistently >= 30
-- Every element has natural-looking texture and correct physics
-- Emergent behaviors (erosion, convection, ecosystem) work reliably
-- engine_results.tsv shows clear improvement trajectory over time
+**Example: Fixing phase change tests**
+
+Phase 1: `pytest test_phase_changes.py` shows sand doesn't melt near lava.
+Phase 2: Research — sand melts at ~1700°C, our meltPoint=248 on 0-255 scale.
+Phase 3: Check if temperature near lava actually reaches 248. Find that
+radiant heat only warms to ~200. Either lower sand meltPoint or increase
+lava radiant heat output.
+Phase 4: Validate gravity still present, dart analyze clean.
+Phase 5: Run pytest — sand melting test now passes. No regressions.
+Phase 6: Net +1 passing test → KEEP.
+
+---
+
+## What Makes a BAD Experiment
+
+- Changing 1 number without understanding why
+- Removing gravity to pass a structural test
+- Modifying test expectations to match broken simulation
+- Making changes that break previously-passing tests
+
+---
+
+## Real Physics Reference
+
+| Simulation | Real World |
+|-----------|-----------|
+| 1 cell | ~1 cm |
+| 1 frame | ~33ms (30fps) |
+| temperature 0-255 | ~-50°C to 2000°C |
+| density 0-255 | ~0-8000 kg/m³ |
+
+| Material | Real Density | Engine Density |
+|----------|-------------|----------------|
+| Metal | 7800 kg/m³ | 240 (should be highest) |
+| Stone | 2700 kg/m³ | 255 |
+| Water | 1000 kg/m³ | 100 |
+| Wood | 600 kg/m³ | 85 |
+| Ice | 917 kg/m³ | 90 |
+
+---
+
+## Success Milestones
+
+| Phase | Passed | Target |
+|-------|--------|--------|
+| Start | ~550/600 | Baseline |
+| 10 experiments | +20 passes | Fix 0% failures |
+| 25 experiments | +40 passes | All categories > 70% |
+| 50 experiments | +50 passes | All categories > 85% |
+| 100 experiments | 595+/600 | Near-perfect physics |
