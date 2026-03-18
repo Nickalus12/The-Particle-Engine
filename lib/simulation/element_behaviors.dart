@@ -636,8 +636,8 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     // Intermittent smoke while burning (visible plume)
-    // More frequent early on for a natural ignition burst
-    final smokeChance = life[idx] < 10 ? 3 : 6;
+    // High frequency for dense, realistic smoke column
+    final smokeChance = life[idx] < 10 ? 2 : 3;
     if (rng.nextInt(smokeChance) == 0) {
       final uy = y - gravityDir;
       if (inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
@@ -1894,8 +1894,29 @@ extension ElementBehaviors on SimulationEngine {
   // =========================================================================
 
   void simMetal(int x, int y, int idx) {
-    // Gravity: metal is very dense, falls and sinks through lighter liquids
-    if (fallSolid(x, y, idx, El.metal)) return;
+    // Structural integrity: metal holds with lateral support, falls without.
+    // Metal is stronger than stone — never crumbles from thin support.
+    final g = gravityDir;
+    final by = y + g;
+    final belowEmpty = !inBoundsY(by) || grid[by * gridW + x] == El.empty
+        || grid[by * gridW + x] == El.water || grid[by * gridW + x] == El.oil;
+
+    if (belowEmpty) {
+      final lx = wrapX(x - 1);
+      final rx = wrapX(x + 1);
+      final leftEl = grid[y * gridW + lx];
+      final rightEl = grid[y * gridW + rx];
+
+      bool isStructural(int el) =>
+          el == El.stone || el == El.metal || el == El.dirt ||
+          el == El.wood || el == El.glass || el == El.ice;
+
+      if (!isStructural(leftEl) && !isStructural(rightEl)) {
+        // No lateral support — fall
+        if (fallSolid(x, y, idx, El.metal)) return;
+      }
+      // With lateral support, metal holds (stronger than stone)
+    }
 
     if (life[idx] >= 200) return;
 
@@ -2170,10 +2191,25 @@ extension ElementBehaviors on SimulationEngine {
     if (inBoundsY(by) && grid[by * gridW + mx1] == El.empty) { swap(idx, by * gridW + mx1); return; }
     if (inBoundsY(by) && grid[by * gridW + mx2] == El.empty) { swap(idx, by * gridW + mx2); return; }
 
-    // Viscous lateral spread — uses property viscosity (mud=3)
+    // Viscous lateral spread — only when pressured by adjacent mud/water
     if (frameCount % elementViscosity[El.mud] == 0) {
-      if (grid[y * gridW + mx1] == El.empty) { swap(idx, y * gridW + mx1); return; }
-      if (grid[y * gridW + mx2] == El.empty) { swap(idx, y * gridW + mx2); }
+      bool pressured = false;
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = wrapX(x + dx);
+          final ny = y + dy;
+          if (inBoundsY(ny)) {
+            final n = grid[ny * gridW + nx];
+            if (n == El.mud || n == El.water) { pressured = true; break; }
+          }
+        }
+        if (pressured) break;
+      }
+      if (pressured) {
+        if (grid[y * gridW + mx1] == El.empty) { swap(idx, y * gridW + mx1); return; }
+        if (grid[y * gridW + mx2] == El.empty) { swap(idx, y * gridW + mx2); }
+      }
     }
   }
 
@@ -2296,13 +2332,25 @@ extension ElementBehaviors on SimulationEngine {
     final by = y + gravityDir;
     final uy = y - gravityDir;
 
-    // Fall through empty
-    if (inBoundsY(by) && grid[by * gridW + x] == El.empty) {
-      swap(idx, by * gridW + x); return;
+    // Check if water exists below this oil (within 8 cells) — oil should float
+    bool waterBelow = false;
+    for (int d = 1; d <= 8; d++) {
+      final checkY = y + gravityDir * d;
+      if (!inBoundsY(checkY)) break;
+      final checkEl = grid[checkY * gridW + x];
+      if (checkEl == El.water) { waterBelow = true; break; }
+      if (checkEl != El.empty && checkEl != El.oil) break;
+    }
+    // Also check sides for water (oil inside water body)
+    if (!waterBelow) {
+      final lx = wrapX(x - 1);
+      final rx = wrapX(x + 1);
+      if (grid[y * gridW + lx] == El.water || grid[y * gridW + rx] == El.water) {
+        waterBelow = true;
+      }
     }
 
     // Buoyancy: oil (density 80) rises through water (density 100)
-    // Upward buoyancy takes priority — oil should float to the surface
     final clockBit = simClock ? 0x80 : 0;
     if (inBoundsY(uy) && grid[uy * gridW + x] == El.water &&
         (flags[uy * gridW + x] & 0x80) != clockBit) {
@@ -2314,14 +2362,27 @@ extension ElementBehaviors on SimulationEngine {
       return;
     }
 
-    // Oil is lighter than water — do NOT sink. Buoyancy above handles rising.
+    // Active float: if water is below and above is empty, rise upward
+    if (waterBelow && inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
+      swap(idx, uy * gridW + x); return;
+    }
+
+    // Fall through empty — only when NOT above any water body
+    if (inBoundsY(by) && grid[by * gridW + x] == El.empty) {
+      if (!waterBelow) {
+        swap(idx, by * gridW + x); return;
+      }
+    }
 
     final dl = rng.nextBool();
     final ox1 = wrapX(dl ? x - 1 : x + 1);
     final ox2 = wrapX(dl ? x + 1 : x - 1);
 
-    if (inBoundsY(by) && grid[by * gridW + ox1] == El.empty) { swap(idx, by * gridW + ox1); return; }
-    if (inBoundsY(by) && grid[by * gridW + ox2] == El.empty) { swap(idx, by * gridW + ox2); return; }
+    // Diagonal fall — only when not above water
+    if (!waterBelow && inBoundsY(by)) {
+      if (grid[by * gridW + ox1] == El.empty) { swap(idx, by * gridW + ox1); return; }
+      if (grid[by * gridW + ox2] == El.empty) { swap(idx, by * gridW + ox2); return; }
+    }
 
     // Surface tension: isolated oil droplets resist lateral spread
     final oilSt = elementSurfaceTension[El.oil];
@@ -2339,15 +2400,10 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     // Lateral spread — viscosity-throttled (oil viscosity = 2)
-    // Only spread when NOT floating on a denser liquid (prevents oil walking
-    // sideways off the water surface and then sinking past the pool edge)
-    if (frameCount % elementViscosity[El.oil] == 0) {
-      final belowEl2 = inBoundsY(by) ? grid[by * gridW + x] : El.empty;
-      final floatingOnLiquid = belowEl2 == El.water || belowEl2 == El.acid;
-      if (!floatingOnLiquid) {
-        if (grid[y * gridW + ox1] == El.empty) { swap(idx, y * gridW + ox1); return; }
-        if (grid[y * gridW + ox2] == El.empty) { swap(idx, y * gridW + ox2); }
-      }
+    // Only spread when NOT above water (oil floating on water should stay put)
+    if (!waterBelow && frameCount % elementViscosity[El.oil] == 0) {
+      if (grid[y * gridW + ox1] == El.empty) { swap(idx, y * gridW + ox1); return; }
+      if (grid[y * gridW + ox2] == El.empty) { swap(idx, y * gridW + ox2); }
     }
   }
 

@@ -4,3 +4,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 2	2026-03-18T00:02	element_behaviors.dart	sand-mud reaction probabilistic + oil density fixes + sand sinks through water	220.6	85	100	yes
 3	2026-03-18T00:03	element_behaviors.dart	increased fire smoke spawn rate (1/12 -> 1/6) for reliable smoke plume	247.9	90	100	yes
 4	2026-03-18T00:04	element_behaviors.dart	fire ignition burst smoke + sand-mud rate reduced to 1/100	251.3	90	100	yes
+5	2026-03-18T00:05	element_behaviors.dart	oil buoyancy active float + metal static + mud pressure spread + density=10	260.9	90	100	yes
