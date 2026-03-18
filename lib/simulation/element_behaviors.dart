@@ -31,22 +31,26 @@ extension ElementBehaviors on SimulationEngine {
       queueReactionFlash(x, y, 200, 230, 255, 4);
       return;
     }
-    if (checkAdjacent(x, y, El.water)) {
+    // Fall/sink first — sand should sink through water before dissolving
+    fallGranular(x, y, idx, El.sand);
+    if (grid[idx] == El.sand && rng.nextInt(3) == 0) {
+      _avalancheGranular(x, y, idx);
+    }
+    // Sand dissolves in water to form mud (slow, probabilistic)
+    if (grid[idx] == El.sand && rng.nextInt(40) == 0 && checkAdjacent(x, y, El.water)) {
       grid[idx] = El.mud;
       removeOneAdjacent(x, y, El.water);
       markProcessed(idx);
       return;
     }
     // Porosity-based moisture absorption: sand near water darkens slightly
-    final sandPorosity = elementPorosity[El.sand];
-    if (sandPorosity > 0 && checkAdjacent(x, y, El.water)) {
-      if (rng.nextInt(255) < sandPorosity ~/ 4) {
-        life[idx] = (life[idx] + 1).clamp(0, 3); // slight moisture
+    if (grid[idx] == El.sand) {
+      final sandPorosity = elementPorosity[El.sand];
+      if (sandPorosity > 0 && checkAdjacent(x, y, El.water)) {
+        if (rng.nextInt(255) < sandPorosity ~/ 4) {
+          life[idx] = (life[idx] + 1).clamp(0, 3);
+        }
       }
-    }
-    fallGranular(x, y, idx, El.sand);
-    if (grid[idx] == El.sand && rng.nextInt(3) == 0) {
-      _avalancheGranular(x, y, idx);
     }
   }
 
@@ -2291,7 +2295,9 @@ extension ElementBehaviors on SimulationEngine {
     final uy = y - gravityDir;
 
     // Fall through empty
-    if (inBoundsY(by) && grid[by * gridW + x] == El.empty) { swap(idx, by * gridW + x); return; }
+    if (inBoundsY(by) && grid[by * gridW + x] == El.empty) {
+      swap(idx, by * gridW + x); return;
+    }
 
     // Buoyancy: oil (density 80) rises through water (density 100)
     // Upward buoyancy takes priority — oil should float to the surface
@@ -2306,16 +2312,7 @@ extension ElementBehaviors on SimulationEngine {
       return;
     }
 
-    // Downward displacement through water (oil sinking past water it just displaced)
-    if (inBoundsY(by) && grid[by * gridW + x] == El.water &&
-        (flags[by * gridW + x] & 0x80) != clockBit) {
-      final bi = by * gridW + x;
-      final waterMass = life[bi];
-      grid[bi] = El.oil; life[bi] = life[idx];
-      grid[idx] = El.water; life[idx] = waterMass < 20 ? 100 : waterMass;
-      markProcessed(bi); markProcessed(idx);
-      return;
-    }
+    // Oil is lighter than water — do NOT sink. Buoyancy above handles rising.
 
     final dl = rng.nextBool();
     final ox1 = wrapX(dl ? x - 1 : x + 1);
@@ -2340,9 +2337,15 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     // Lateral spread — viscosity-throttled (oil viscosity = 2)
+    // Only spread when NOT floating on a denser liquid (prevents oil walking
+    // sideways off the water surface and then sinking past the pool edge)
     if (frameCount % elementViscosity[El.oil] == 0) {
-      if (grid[y * gridW + ox1] == El.empty) { swap(idx, y * gridW + ox1); return; }
-      if (grid[y * gridW + ox2] == El.empty) { swap(idx, y * gridW + ox2); }
+      final belowEl2 = inBoundsY(by) ? grid[by * gridW + x] : El.empty;
+      final floatingOnLiquid = belowEl2 == El.water || belowEl2 == El.acid;
+      if (!floatingOnLiquid) {
+        if (grid[y * gridW + ox1] == El.empty) { swap(idx, y * gridW + ox1); return; }
+        if (grid[y * gridW + ox2] == El.empty) { swap(idx, y * gridW + ox2); }
+      }
     }
   }
 
