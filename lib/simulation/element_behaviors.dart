@@ -229,7 +229,7 @@ extension ElementBehaviors on SimulationEngine {
         // sqrt approximation: pressure 4->2, 9->3, 16->4, 25->5
         int pVel = 1;
         int p2 = cellPressure;
-        while (pVel * pVel < p2 && pVel < maxVel) pVel++;
+        while (pVel * pVel < p2 && pVel < maxVel) { pVel++; }
         curVel = pVel;
       }
       final newVel = (curVel + 1).clamp(0, maxVel);

@@ -364,7 +364,7 @@ void _initElementProperties() {
   // Sand
   elementProperties[El.sand] = const ElementProperties(
     density: 150, gravity: 2, state: PhysicsState.granular,
-    heatConductivity: 0.3, meltPoint: 248, meltsInto: El.glass,
+    heatConductivity: 0.3, meltPoint: 220, meltsInto: El.glass,
     baseTemperature: 128, maxVelocity: 3,
 
     porosity: 0.3, hardness: 10, conductivity: 0.0, windResistance: 0.4,
