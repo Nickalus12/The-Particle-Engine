@@ -1985,6 +1985,24 @@ def generate_ground_truth() -> dict:
     # =========================================================================
     # Anisotropic fire heat transfer (convective plume)
     # =========================================================================
+    # =========================================================================
+    # Arrhenius acid reactivity (temperature-dependent dissolution)
+    # =========================================================================
+    results["arrhenius_acid"] = {
+        "principle": "Chemical reaction rates follow the Arrhenius equation: "
+                     "k = A·exp(-Ea/RT). Rate approximately doubles per 10°C "
+                     "increase. Hot acid dissolves materials faster; cold acid "
+                     "reacts more slowly.",
+        "equation": "k = A·exp(-Ea/RT)",
+        "doubling_temp_C": 10,
+        "our_hot_threshold": 168,
+        "our_cold_threshold": 88,
+        "our_hot_speedup": 2.0,
+        "our_cold_slowdown": 0.5,
+        "applications": ["acid etching", "metal pickling", "chemical cleaning"],
+        "reference": "Arrhenius, Z. Phys. Chem. 4 (1889) 226-248",
+    }
+
     results["fire_convective_plume"] = {
         "principle": "Fire heats surrounding cells via two mechanisms: "
                      "isotropic thermal radiation (Stefan-Boltzmann) and "

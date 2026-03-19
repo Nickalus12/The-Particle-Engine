@@ -3048,8 +3048,18 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
     if (bestNi >= 0) {
-      final dissolveChance = 6 + (bestResist * 24) ~/ 90;
-      if (rng.nextInt(dissolveChance) == 0) {
+      // Arrhenius temperature dependence: k = A·exp(-Ea/RT).
+      // Reaction rate roughly doubles every 10°C. On our 0-255 scale,
+      // neutral=128. Hot acid (temp>168) reacts ~2x faster; cold acid
+      // (temp<88) reacts ~2x slower. This models real acid chemistry
+      // where heated acid etches glass/metal much faster.
+      final acidTemp = temperature[idx];
+      final tempFactor = acidTemp > 168 ? 2 : (acidTemp < 88 ? 0 : 1);
+      final baseChance = 6 + (bestResist * 24) ~/ 90;
+      final dissolveChance = tempFactor == 2
+          ? (baseChance + 1) ~/ 2 // hot: halve the delay
+          : (tempFactor == 0 ? baseChance * 2 : baseChance); // cold: double
+      if (rng.nextInt(dissolveChance.clamp(1, 255)) == 0) {
         grid[bestNi] = El.empty; life[bestNi] = 0; markProcessed(bestNi);
         final bnx = bestNi % gridW;
         final bny = bestNi ~/ gridW;

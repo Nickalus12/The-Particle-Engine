@@ -447,3 +447,32 @@ class TestElectrolysis:
         if gt is None:
             pytest.skip("No electrolysis oracle data")
         assert gt["our_product"] == "bubble"
+
+
+class TestArrheniusAcid:
+    """Temperature-dependent acid reactivity per Arrhenius equation."""
+
+    @pytest.mark.physics
+    def test_arrhenius_principle(self, ground_truth):
+        """Oracle should describe Arrhenius equation for acid."""
+        gt = ground_truth.get("arrhenius_acid")
+        if gt is None:
+            pytest.skip("No arrhenius_acid oracle data")
+        assert "arrhenius" in gt["principle"].lower()
+        assert "exp" in gt["equation"]
+
+    @pytest.mark.physics
+    def test_hot_acid_faster(self, ground_truth):
+        """Hot acid should react faster (speedup >= 1.5)."""
+        gt = ground_truth.get("arrhenius_acid")
+        if gt is None:
+            pytest.skip("No arrhenius_acid oracle data")
+        assert gt["our_hot_speedup"] >= 1.5
+
+    @pytest.mark.physics
+    def test_cold_acid_slower(self, ground_truth):
+        """Cold acid should react slower (slowdown <= 0.75)."""
+        gt = ground_truth.get("arrhenius_acid")
+        if gt is None:
+            pytest.skip("No arrhenius_acid oracle data")
+        assert gt["our_cold_slowdown"] <= 0.75
