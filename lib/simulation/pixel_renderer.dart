@@ -543,7 +543,7 @@ class PixelRenderer {
 
             int r, g2, b, a = 255;
             _writeElementColor(
-                el, i, x, y, w, h, g, life, velX, velY, fc, rng, temp);
+                el, i, x, y, w, h, g, life, velX, velY, fc, rng, temp, t256);
             r = _inlineR;
             g2 = _inlineG;
             b = _inlineB;
@@ -648,7 +648,8 @@ class PixelRenderer {
       Int8List velY,
       int frameCount,
       math.Random rng,
-      Uint8List temp) {
+      Uint8List temp,
+      int nightT256) {
     switch (el) {
       case El.fire:
         final fireLife = life[idx];
@@ -829,12 +830,11 @@ class PixelRenderer {
               _inlineA = 235;
             } else {
               // Surface water reflects sky color
-              // Integer night dimming: dayNightT is [0, 1.0]
-              final dnt256 = (dayNightT * 256).round(); // [0, 256]
-              final skyDimRG = 256 - (dnt256 * 218 >> 8); // ~(1 - t*0.85)*256
+              // Integer night dimming using frame-level nightT256
+              final skyDimRG = 256 - (nightT256 * 218 >> 8); // ~(1 - t*0.85)*256
               final skyReflectR = (135 * skyDimRG) >> 8;
               final skyReflectG = (195 * skyDimRG) >> 8;
-              final skyReflectB = (255 * (256 - (dnt256 * 77 >> 8))) >> 8; // ~(1-t*0.3)*255
+              final skyReflectB = (255 * (256 - (nightT256 * 77 >> 8))) >> 8; // ~(1-t*0.3)*255
               // Blend ~25% sky reflection into surface water
               _inlineR = (55 + shimmer + (skyReflectR * 60) ~/ 256).clamp(35, 140);
               _inlineG = (185 + shimmer + (skyReflectG * 30) ~/ 256).clamp(165, 245);

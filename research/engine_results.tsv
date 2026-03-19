@@ -68,3 +68,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 66	2026-03-18T04:06	simulation_engine.dart	Integer explosion math: replace float distFraction/trig with _sinI256 + fixed-point arithmetic	-	95	100	yes
 67	2026-03-18T04:07	pixel_renderer.dart	Integer dirt moisture + metal rust: replace mFrac/5.0 and rustLevel/120.0 with fixed-point	-	95	100	yes
 68	2026-03-18T04:08	element_behaviors.dart	Lava solidification latent heat: Stefan problem energy release warms adjacent cells during crystallization	-	95	100	yes
+69	2026-03-18T04:09	pixel_renderer.dart	Pass nightT256 to _writeElementColor: eliminate per-cell (dayNightT*256).round() float multiply	-	95	100	yes
