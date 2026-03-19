@@ -1166,7 +1166,7 @@ class PixelRenderer {
         _inlineA = 255;
         final stoneHeat = velX[idx].clamp(0, 5);
         final stoneDepth = life[idx].clamp(0, 20);
-        final depthDarken = (stoneDepth * 2.0).round(); // deeper = darker
+        final depthDarken = stoneDepth * 2; // deeper = darker
         // Smooth layered look with spatial gradients
         final spatial = _spatialBlend(x, y, 6);
         final layer = (spatial * 16) ~/ 256 - 8;

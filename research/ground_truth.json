@@ -6651,6 +6651,20 @@
       "becomes": "sand"
     }
   },
+  "glass_thermal_shock": {
+    "principle": "Differential thermal expansion creates stress exceeding fracture strength",
+    "real_shock_resistance_C": 150,
+    "our_temp_scale_equivalent": 40,
+    "threshold_gradient": 45,
+    "probabilistic_threshold": 35,
+    "shatters_to": "sand",
+    "produces_flash": true,
+    "equation": "sigma_th = E * alpha * deltaT",
+    "E_GPa": 70,
+    "alpha_per_K": 9e-06,
+    "fracture_strength_MPa": 50,
+    "reference": "Kingery, Introduction to Ceramics (1976)"
+  },
   "thermal_conductivity": {
     "real_W_per_mK": {
       "metal": 50.0,

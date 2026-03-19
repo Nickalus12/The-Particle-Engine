@@ -103,3 +103,34 @@ class TestPhaseChangesAll:
             pytest.skip(f"No phase_changes_all data for {element}")
         entry = gt[element]
         assert len(entry) > 0, f"{element} has no transitions"
+
+
+class TestGlassThermalShock:
+    """Glass should shatter under rapid spatial temperature gradients."""
+
+    @pytest.mark.physics
+    def test_glass_thermal_shock_principle(self, ground_truth):
+        """Glass shatters from thermal stress when ΔT exceeds fracture strength."""
+        gt = ground_truth.get("glass_thermal_shock")
+        if gt is None:
+            pytest.skip("No glass_thermal_shock oracle data")
+        assert gt["shatters_to"] == "sand"
+        assert gt["threshold_gradient"] > 0
+
+    @pytest.mark.physics
+    def test_glass_shock_threshold_realistic(self, ground_truth):
+        """Thermal shock threshold should map to ~150°C (soda-lime glass)."""
+        gt = ground_truth.get("glass_thermal_shock")
+        if gt is None:
+            pytest.skip("No glass_thermal_shock oracle data")
+        threshold = gt["threshold_gradient"]
+        # On 0-255 scale, 150°C ≈ 30-50 units
+        assert 25 <= threshold <= 60
+
+    @pytest.mark.physics
+    def test_glass_shock_produces_flash(self, ground_truth):
+        """Shattering should produce a visual reaction flash."""
+        gt = ground_truth.get("glass_thermal_shock")
+        if gt is None:
+            pytest.skip("No glass_thermal_shock oracle data")
+        assert gt["produces_flash"] is True

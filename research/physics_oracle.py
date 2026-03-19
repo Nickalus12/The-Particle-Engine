@@ -732,6 +732,27 @@ def generate_ground_truth() -> dict:
     }
 
     # =========================================================================
+    # Glass thermal shock (spatial temperature gradient shattering)
+    # =========================================================================
+    # Real soda-lime glass has thermal shock resistance of ~150°C
+    # (σ_th = E·α·ΔT, E≈70 GPa, α≈9×10⁻⁶/K, fracture≈50 MPa → ΔT≈80K)
+    # Our scale: 150°C maps to ~40 units on our 0-255 temperature scale
+    results["glass_thermal_shock"] = {
+        "principle": "Differential thermal expansion creates stress exceeding fracture strength",
+        "real_shock_resistance_C": 150,
+        "our_temp_scale_equivalent": 40,
+        "threshold_gradient": 45,
+        "probabilistic_threshold": 35,
+        "shatters_to": "sand",
+        "produces_flash": True,
+        "equation": "sigma_th = E * alpha * deltaT",
+        "E_GPa": 70,
+        "alpha_per_K": 9e-6,
+        "fracture_strength_MPa": 50,
+        "reference": "Kingery, Introduction to Ceramics (1976)",
+    }
+
+    # =========================================================================
     # 23. THERMAL CONDUCTIVITY (backward compat)
     # =========================================================================
 

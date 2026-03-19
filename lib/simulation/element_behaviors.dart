@@ -3004,6 +3004,45 @@ extension ElementBehaviors on SimulationEngine {
       return;
     }
 
+    // Thermal shock shattering: spatial temperature gradient creates
+    // differential expansion stress. Real soda-lime glass shatters when
+    // σ_th = E·α·ΔT exceeds fracture strength (~50 MPa, ΔT ≈ 150°C).
+    // On our 0-255 scale, ~40 units across a glass-neighbor boundary.
+    // We measure the max temperature difference between this glass cell
+    // and its cardinal neighbors — large gradients cause fracture.
+    if (frameCount % 4 == 0) {
+      final myTemp = temperature[idx];
+      int maxGrad = 0;
+      // Cardinal neighbors only (no allocation, unrolled)
+      if (y > 0) {
+        final d = (myTemp - temperature[idx - gridW]).abs();
+        if (d > maxGrad) maxGrad = d;
+      }
+      if (y < gridH - 1) {
+        final d = (myTemp - temperature[idx + gridW]).abs();
+        if (d > maxGrad) maxGrad = d;
+      }
+      {
+        final lx = wrapX(x - 1);
+        final d = (myTemp - temperature[y * gridW + lx]).abs();
+        if (d > maxGrad) maxGrad = d;
+      }
+      {
+        final rx = wrapX(x + 1);
+        final d = (myTemp - temperature[y * gridW + rx]).abs();
+        if (d > maxGrad) maxGrad = d;
+      }
+      // Threshold 45: deterministic shatter; 35-44: probabilistic (1/3)
+      if (maxGrad > 45 || (maxGrad > 35 && rng.nextInt(3) == 0)) {
+        grid[idx] = El.sand;
+        life[idx] = 0;
+        velY[idx] = 0;
+        markProcessed(idx);
+        queueReactionFlash(x, y, 200, 220, 255, 6);
+        return;
+      }
+    }
+
     // Glass shatters when adjacent to explosions (handled by explosion system)
     // Glass melts back to sand when adjacent to lava for extended time
     if (checkAdjacent(x, y, El.lava)) {

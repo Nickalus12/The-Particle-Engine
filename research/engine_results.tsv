@@ -71,3 +71,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 69	2026-03-18T04:09	pixel_renderer.dart	Pass nightT256 to _writeElementColor: eliminate per-cell (dayNightT*256).round() float multiply	-	95	100	yes
 70	2026-03-18T04:10	test_*.py	Add conservation laws, non-reactive pairs, first-frame displacement, wrapping edge cases tests (670->693 passed, +23)	-	95	100	yes
 71	2026-03-18T04:11	element_behaviors.dart	Blackbody radiation for heated stone: Stefan-Boltzmann radiant heat emission at heat level 3+	-	95	100	yes
+72	2026-03-18T04:12	test_*.py	Complete oracle coverage: 18 remaining categories tested (693->751 passed, +58, 77/77 oracle categories)	-	95	100	yes
