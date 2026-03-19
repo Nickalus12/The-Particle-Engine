@@ -984,9 +984,10 @@ class PixelRenderer {
 
       case El.dirt:
         final moisture = life[idx].clamp(0, 5);
-        final mFrac = moisture / 5.0;
+        // Integer moisture fraction: moisture*256/5 = moisture*51
+        final m256 = moisture * 51; // [0, 255] ≈ moisture/5.0 * 256
         final compaction = velY[idx].clamp(0, 5);
-        final compactDarken = (compaction * 6).round();
+        final compactDarken = compaction * 6;
         // Smooth spatial blending for earthy tones
         final spatial = _spatialBlend(x, y, 5);
         final variation = (spatial * 20) ~/ 256 - 10;
@@ -1002,13 +1003,10 @@ class PixelRenderer {
         final baseR = 140 + variation + warmShift - compactDarken - organicDarken + mineralSpeck;
         final baseG = 95 + variation ~/ 2 - compactDarken - organicDarken ~/ 2;
         final baseB = 40 + variation ~/ 3 - compactDarken ~/ 2 - organicDarken ~/ 3;
-        // Darker when moist (driven by life value)
-        _inlineR =
-            (baseR - mFrac * 60).round().clamp(35, 168);
-        _inlineG =
-            (baseG - mFrac * 50).round().clamp(18, 120);
-        _inlineB =
-            (baseB - mFrac * 12).round().clamp(4, 55);
+        // Darker when moist: mFrac*60 → (m256*60)>>8
+        _inlineR = (baseR - ((m256 * 60) >> 8)).clamp(35, 168);
+        _inlineG = (baseG - ((m256 * 50) >> 8)).clamp(18, 120);
+        _inlineB = (baseB - ((m256 * 12) >> 8)).clamp(4, 55);
         _inlineA = 255;
 
       case El.plant:
@@ -1414,16 +1412,11 @@ class PixelRenderer {
         } else {
           final rustLevel = life[idx].clamp(0, 120);
           if (rustLevel > 0) {
-            final rustFrac = rustLevel / 120.0;
-            _inlineR = (168 - rustFrac * 29 + variation)
-                .round()
-                .clamp(100, 200);
-            _inlineG = (168 - rustFrac * 78 + variation)
-                .round()
-                .clamp(60, 200);
-            _inlineB = (176 - rustFrac * 133 + variation)
-                .round()
-                .clamp(30, 210);
+            // Integer rust: rustLevel*256/120 ≈ rustLevel*546/256 ≈ rustLevel*2+rustLevel/6
+            // Simpler: (rustLevel * 29) ~/ 120 directly for each channel
+            _inlineR = (168 - (rustLevel * 29) ~/ 120 + variation).clamp(100, 200);
+            _inlineG = (168 - (rustLevel * 78) ~/ 120 + variation).clamp(60, 200);
+            _inlineB = (176 - (rustLevel * 133) ~/ 120 + variation).clamp(30, 210);
           } else {
             final sheenP = (frameCount * 26 + x * 77 + y * 51) >> 8;
             final sheenPhase = _fastSinI(sheenP); // [0, 256]
