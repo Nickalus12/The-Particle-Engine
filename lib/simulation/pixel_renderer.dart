@@ -1442,11 +1442,12 @@ class PixelRenderer {
         final wispVal = (wisp * 15) >> 8;
         _inlineA = (fade * 3 + 60).clamp(60, 200);
         final smokeBase =
-            _lerpC(155, 110, (smokeLife * 255 ~/ 60).clamp(0, 255));
+            _lerpC(140, 95, (smokeLife * 255 ~/ 60).clamp(0, 255));
         final variation = ((idx * 7 + y * 3) % 11) - 5;
-        _inlineR = (smokeBase + variation + wispVal).clamp(90, 180);
-        _inlineG = (smokeBase + variation + wispVal ~/ 2).clamp(90, 175);
-        _inlineB = (smokeBase + variation + wispVal ~/ 3).clamp(95, 180);
+        // Warm grey with slight brown tint (combustion smoke)
+        _inlineR = (smokeBase + 8 + variation + wispVal).clamp(90, 170);
+        _inlineG = (smokeBase + variation + wispVal ~/ 2).clamp(80, 155);
+        _inlineB = (smokeBase - 8 + variation + wispVal ~/ 3).clamp(75, 155);
 
       case El.bubble:
         // Iridescent soap-bubble feel with shifting rainbow highlight (integer)

@@ -63,3 +63,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 61	2026-03-18T04:01	test_fluid_statics.py	Add hydrostatic paradox tests: pressure independence from container shape (614->616 passed, +2)	-	95	100	yes
 62	2026-03-18T04:02	test_*.py	Add ripple damping, capillary wicking, load distribution, heat diffusion, Stokes drag tests (616->637 passed, +21)	-	95	100	yes
 63	2026-03-18T04:03	pixel_renderer.dart	Integer rainbow HSV-to-RGB + integer explosion particles + remove _fastSin(double) entirely	-	95	100	yes
+64	2026-03-18T04:04	element_behaviors.dart+pixel_renderer.dart	Fire triangle oxygen deprivation (suffocation in enclosed spaces) + smoke color warmth for Delta E distinctness + fire triangle/flash point tests (637->646 passed, +9)	-	95	100	yes

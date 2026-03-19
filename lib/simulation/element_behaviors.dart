@@ -708,10 +708,35 @@ extension ElementBehaviors on SimulationEngine {
   // =========================================================================
 
   void simFire(int x, int y, int idx) {
+    // Fire triangle: oxygen deprivation — count air (empty) neighbors.
+    // Fire enclosed by solids/liquids with no empty cells lacks oxygen
+    // and suffocates rapidly. Real fires need O₂ concentration > ~16%.
+    int airNeighbors = 0;
+    for (int dy = -1; dy <= 1; dy++) {
+      for (int dx = -1; dx <= 1; dx++) {
+        if (dx == 0 && dy == 0) continue;
+        final ax = wrapX(x + dx);
+        final ay = y + dy;
+        if (!inBoundsY(ay)) continue;
+        if (grid[ay * gridW + ax] == El.empty) airNeighbors++;
+      }
+    }
+
+    // Oxygen-modulated burnout: 0 air = instant death (suffocation),
+    // 1 air = rapid burnout, 2+ air = normal combustion
     life[idx]++;
+    if (airNeighbors == 0) {
+      // No oxygen: fire suffocates immediately → smoke
+      grid[idx] = El.smoke;
+      life[idx] = 0;
+      markProcessed(idx);
+      return;
+    }
 
     final nearOil = checkAdjacent(x, y, El.oil);
-    final burnoutLife = nearOil ? 70 + rng.nextInt(50) : 40 + rng.nextInt(40);
+    int burnoutLife = nearOil ? 70 + rng.nextInt(50) : 40 + rng.nextInt(40);
+    // Reduced air accelerates burnout (oxygen-limited combustion)
+    if (airNeighbors == 1) burnoutLife = burnoutLife ~/ 2;
 
     if (life[idx] > burnoutLife) {
       // Fire burns out — always produce smoke, sometimes ash

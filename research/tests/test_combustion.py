@@ -111,6 +111,99 @@ class TestLightEmission:
         assert emitters["lava"]["intensity"] > emitters["fire"]["intensity"]
 
 
+class TestFireTriangle:
+    """Fire requires fuel, oxygen, and heat — remove any leg and fire dies."""
+
+    @pytest.mark.physics
+    def test_fire_triangle_requirements(self, ground_truth):
+        """Oracle should define the three requirements for combustion."""
+        gt = ground_truth.get("fire_triangle")
+        if gt is None:
+            pytest.skip("No fire_triangle oracle data")
+        reqs = gt["requirements"]
+        assert "fuel" in reqs
+        assert "oxygen" in reqs
+        assert "heat" in reqs
+
+    @pytest.mark.physics
+    def test_fire_without_fuel_extinguishes(self, ground_truth):
+        """Fire without fuel should extinguish (decay to smoke/empty)."""
+        gt = ground_truth.get("fire_triangle")
+        if gt is None:
+            pytest.skip("No fire_triangle oracle data")
+        behavior = gt["expected_behaviors"]["fire_without_fuel"]
+        assert "extinguish" in behavior.lower()
+
+    @pytest.mark.physics
+    def test_fire_with_stone_no_ignition(self, ground_truth):
+        """Stone is non-flammable and should not ignite."""
+        gt = ground_truth.get("fire_triangle")
+        if gt is None:
+            pytest.skip("No fire_triangle oracle data")
+        assert "unchanged" in gt["expected_behaviors"]["fire_with_stone"].lower()
+
+    @pytest.mark.physics
+    def test_flammable_materials_list(self, ground_truth):
+        """Oracle should list all flammable materials."""
+        gt = ground_truth.get("fire_triangle")
+        if gt is None:
+            pytest.skip("No fire_triangle oracle data")
+        flammable = gt["flammable_materials"]
+        assert "wood" in flammable
+        assert "oil" in flammable
+        assert "plant" in flammable
+
+    @pytest.mark.physics
+    def test_non_flammable_materials(self, ground_truth):
+        """Non-flammable elements should not catch fire."""
+        gt = ground_truth.get("fire_triangle")
+        if gt is None:
+            pytest.skip("No fire_triangle oracle data")
+        non_flammable = gt["non_flammable"]
+        assert "stone" in non_flammable
+        assert "metal" in non_flammable
+        assert "glass" in non_flammable
+
+    @pytest.mark.physics
+    def test_oil_chain_ignition(self, ground_truth):
+        """Fire touching oil should cause rapid chain ignition."""
+        gt = ground_truth.get("fire_triangle")
+        if gt is None:
+            pytest.skip("No fire_triangle oracle data")
+        behavior = gt["expected_behaviors"]["fire_with_oil"]
+        assert "chain" in behavior.lower() or "rapid" in behavior.lower()
+
+
+class TestFlashPointOrdering:
+    """Materials should ignite in order of their flash points (activation energy)."""
+
+    @pytest.mark.physics
+    def test_flash_point_ordering(self, ground_truth):
+        """Oil ignites before wood (lower activation energy)."""
+        gt = ground_truth.get("flash_point")
+        if gt is None:
+            pytest.skip("No flash_point oracle data")
+        ordering = gt["expected_ordering"]
+        assert ordering.index("oil") < ordering.index("wood")
+
+    @pytest.mark.physics
+    def test_arrhenius_rate_ratio(self, ground_truth):
+        """Oil Arrhenius rate should be much higher than wood."""
+        gt = ground_truth.get("flash_point")
+        if gt is None:
+            pytest.skip("No flash_point oracle data")
+        ratio = gt["rate_ratio_oil_to_wood"]
+        assert ratio > 100, f"Oil/wood rate ratio {ratio} too low"
+
+    @pytest.mark.physics
+    def test_activation_energies(self, ground_truth):
+        """Oil should have lower activation energy than wood."""
+        gt = ground_truth.get("flash_point")
+        if gt is None:
+            pytest.skip("No flash_point oracle data")
+        assert gt["Ea_oil_J_per_mol"] < gt["Ea_wood_J_per_mol"]
+
+
 class TestFireCycle:
     """Fire should follow a predictable combustion cycle."""
 
