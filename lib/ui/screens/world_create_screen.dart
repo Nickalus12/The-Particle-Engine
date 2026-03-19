@@ -4,16 +4,19 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../simulation/world_gen/terrain_generator.dart';
 import '../../simulation/world_gen/world_config.dart';
 import '../theme/colors.dart';
 import '../theme/particle_theme.dart';
 import '../theme/typography.dart';
-import '../widgets/back_button.dart' show GlassBackButton;
 import 'sandbox_screen.dart';
 
-/// World creation: swipeable full-width terrain preview cards, seed input,
-/// and a single large "CREATE WORLD" button.
+/// World creation screen: choose Blank Canvas or Procedural with presets.
+///
+/// Landscape layout with two columns:
+/// - Left: world type selector (Blank / Procedural)
+/// - Right: preset cards (for Procedural) or blank canvas description
+///
+/// "Create" button generates the world and navigates to SandboxScreen.
 class WorldCreateScreen extends StatefulWidget {
   const WorldCreateScreen({super.key});
 
@@ -22,16 +25,18 @@ class WorldCreateScreen extends StatefulWidget {
 }
 
 class _WorldCreateScreenState extends State<WorldCreateScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final AnimationController _fadeController;
   late final Animation<double> _contentFade;
-  late final PageController _pageController;
 
-  int _currentPage = 0;
-  final TextEditingController _seedController = TextEditingController();
+  // Staggered card entrance
+  late final AnimationController _staggerController;
+
+  bool _isProcedural = true;
+  _WorldPreset _selectedPreset = _WorldPreset.meadow;
+  final TextEditingController _nameController = TextEditingController();
+  final FocusNode _nameFocus = FocusNode();
   bool _creating = false;
-
-  static const _presets = _WorldPreset.values;
 
   @override
   void initState() {
@@ -44,37 +49,40 @@ class _WorldCreateScreenState extends State<WorldCreateScreen>
       parent: _fadeController,
       curve: ParticleTheme.defaultCurve,
     );
-    _pageController = PageController(viewportFraction: 0.85);
-    _seedController.text = Random().nextInt(1 << 30).toString();
+    _staggerController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..forward();
+    _nameController.text = 'My World';
+    _nameFocus.addListener(() => setState(() {}));
   }
 
   @override
   void dispose() {
     _fadeController.dispose();
-    _pageController.dispose();
-    _seedController.dispose();
+    _staggerController.dispose();
+    _nameController.dispose();
+    _nameFocus.dispose();
     super.dispose();
   }
 
-  int get _currentSeed {
-    final text = _seedController.text.trim();
-    if (text.isEmpty) return Random().nextInt(1 << 30);
-    return int.tryParse(text) ?? text.hashCode.abs();
+  Animation<double> _cardAnimation(int index) {
+    final start = (index * 0.08).clamp(0.0, 0.6);
+    final end = (start + 0.4).clamp(0.0, 1.0);
+    return Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _staggerController,
+        curve: Interval(start, end, curve: Curves.easeOutCubic),
+      ),
+    );
   }
-
-  void _randomizeSeed() {
-    setState(() {
-      _seedController.text = Random().nextInt(1 << 30).toString();
-    });
-  }
-
-  _WorldPreset get _selectedPreset => _presets[_currentPage];
 
   WorldConfig _buildConfig() {
-    final seed = _currentSeed;
+    final seed = Random().nextInt(1 << 30);
+    if (!_isProcedural) {
+      return WorldConfig(seed: seed);
+    }
     switch (_selectedPreset) {
-      case _WorldPreset.blank:
-        return WorldConfig(seed: seed);
       case _WorldPreset.meadow:
         return WorldConfig.meadow(seed: seed);
       case _WorldPreset.canyon:
@@ -91,472 +99,165 @@ class _WorldCreateScreenState extends State<WorldCreateScreen>
   void _createWorld() async {
     if (_creating) return;
     setState(() => _creating = true);
+    HapticFeedback.mediumImpact();
 
     final config = _buildConfig();
+    final name = _nameController.text.trim().isEmpty
+        ? 'Untitled World'
+        : _nameController.text.trim();
 
     await Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (context, _, _) => SandboxScreen(
           worldConfig: config,
-          worldName: _selectedPreset.label,
-          isBlankCanvas: _selectedPreset == _WorldPreset.blank,
+          worldName: name,
+          isBlankCanvas: !_isProcedural,
         ),
-        transitionsBuilder: (context, anim, _, child) {
-          return FadeTransition(
-            opacity: anim,
-            child: ScaleTransition(
-              scale: Tween<double>(begin: 0.96, end: 1.0).animate(
-                CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
-              ),
-              child: child,
-            ),
-          );
-        },
+        transitionsBuilder: (context, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
         transitionDuration: ParticleTheme.normalDuration,
       ),
     );
 
-    if (mounted) setState(() => _creating = false);
+    if (mounted) {
+      setState(() => _creating = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final preset = _selectedPreset;
-
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final compact =
-                constraints.maxHeight < 760 || constraints.maxWidth < 420;
-            final ultraCompact = constraints.maxHeight < 680;
-            final seedBarHeight = ultraCompact ? 44.0 : 48.0;
-            final createButtonHeight = ultraCompact ? 44.0 : 48.0;
-
-            Widget buildSeedBar() {
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(ParticleTheme.radiusMedium),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                  child: Container(
-                    height: seedBarHeight,
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    decoration: BoxDecoration(
-                      color: AppColors.glass,
-                      borderRadius: BorderRadius.circular(
-                        ParticleTheme.radiusMedium,
-                      ),
-                      border: Border.all(
-                        color: AppColors.glassBorder,
-                        width: 0.5,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.tag_rounded,
-                          size: 16,
-                          color: AppColors.textDim,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: TextField(
-                            controller: _seedController,
-                            style: AppTypography.body.copyWith(
-                              color: AppColors.textPrimary,
-                              fontFamily: 'monospace',
-                              fontSize: 12,
-                            ),
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly,
-                            ],
-                            decoration: InputDecoration(
-                              hintText: 'World seed...',
-                              hintStyle: AppTypography.body.copyWith(
-                                color: AppColors.textDim,
-                              ),
-                              border: InputBorder.none,
-                              isDense: true,
-                            ),
-                            onChanged: (_) => setState(() {}),
-                          ),
-                        ),
-                        _SmallIconButton(
-                          icon: Icons.casino_rounded,
-                          onTap: _randomizeSeed,
-                        ),
-                      ],
-                    ),
-                  ),
+        child: FadeTransition(
+          opacity: _contentFade,
+          child: Column(
+            children: [
+              // Header
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    _BackButton(
+                        onTap: () => Navigator.of(context).maybePop()),
+                    const SizedBox(width: 16),
+                    Text('Create World', style: AppTypography.heading),
+                    const Spacer(),
+                  ],
                 ),
-              );
-            }
-
-            return FadeTransition(
-              opacity: _contentFade,
-              child: Column(
-                children: [
-                  // Top bar with back button
-                  Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: ultraCompact ? 8 : 10,
-                    ),
-                    child: Row(
-                      children: [
-                        GlassBackButton(
-                          onTap: () => Navigator.of(context).maybePop(),
-                        ),
-                        SizedBox(width: ultraCompact ? 10 : 16),
-                        Text('New World', style: AppTypography.heading),
-                        const Spacer(),
-                        // Page indicator dots
-                        Row(
-                          children: List.generate(_presets.length, (i) {
-                            final isActive = i == _currentPage;
-                            return AnimatedContainer(
-                              duration: ParticleTheme.fastDuration,
-                              width: isActive ? (ultraCompact ? 16 : 20) : 6,
-                              height: ultraCompact ? 5 : 6,
-                              margin: const EdgeInsets.symmetric(horizontal: 3),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(3),
-                                color: isActive
-                                    ? preset.color
-                                    : AppColors.textDim.withValues(alpha: 0.3),
-                              ),
-                            );
-                          }),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      compact ? 16 : 24,
-                      4,
-                      compact ? 16 : 24,
-                      compact ? 8 : 12,
-                    ),
-                    child: _PresetInsightPanel(
-                      key: const ValueKey('world_preset_insight_panel'),
-                      preset: preset,
-                      seed: _currentSeed,
-                      compact: compact,
-                    ),
-                  ),
-
-                  // Big terrain preview cards -- horizontal swipe
-                  Expanded(
-                    child: PageView.builder(
-                      controller: _pageController,
-                      itemCount: _presets.length,
-                      onPageChanged: (i) => setState(() => _currentPage = i),
-                      itemBuilder: (context, index) {
-                        return AnimatedBuilder(
-                          animation: _pageController,
-                          builder: (context, child) {
-                            double scale = 1.0;
-                            if (_pageController.position.haveDimensions) {
-                              final page = _pageController.page ?? 0.0;
-                              scale = (1 - (page - index).abs() * 0.1).clamp(
-                                0.85,
-                                1.0,
-                              );
-                            }
-                            return Transform.scale(scale: scale, child: child);
-                          },
-                          child: _PresetCard(
-                            preset: _presets[index],
-                            seed: _currentSeed,
-                            isActive: index == _currentPage,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-
-                  // Bottom controls: seed input + create button
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      compact ? 16 : 24,
-                      compact ? 6 : 8,
-                      compact ? 16 : 24,
-                      compact ? 10 : 12,
-                    ),
-                    child: compact
-                        ? Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              buildSeedBar(),
-                              const SizedBox(height: 10),
-                              _CreateWorldButton(
-                                key: const ValueKey('world_create_button'),
-                                onTap: _createWorld,
-                                creating: _creating,
-                                color: preset.color,
-                                height: createButtonHeight,
-                                fullWidth: true,
-                              ),
-                            ],
-                          )
-                        : Row(
-                            children: [
-                              Expanded(child: buildSeedBar()),
-                              const SizedBox(width: 14),
-                              _CreateWorldButton(
-                                key: const ValueKey('world_create_button'),
-                                onTap: _createWorld,
-                                creating: _creating,
-                                color: preset.color,
-                                height: createButtonHeight,
-                                fullWidth: false,
-                              ),
-                            ],
-                          ),
-                  ),
-                ],
               ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
 
-// =============================================================================
-// Preset card with large terrain preview
-// =============================================================================
-
-class _PresetCard extends StatelessWidget {
-  const _PresetCard({
-    required this.preset,
-    required this.seed,
-    required this.isActive,
-  });
-
-  final _WorldPreset preset;
-  final int seed;
-  final bool isActive;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(ParticleTheme.radiusLarge),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: AnimatedContainer(
-            duration: ParticleTheme.fastDuration,
-            decoration: BoxDecoration(
-              color: isActive
-                  ? preset.color.withValues(alpha: 0.06)
-                  : AppColors.glass,
-              borderRadius: BorderRadius.circular(ParticleTheme.radiusLarge),
-              border: Border.all(
-                color: isActive
-                    ? preset.color.withValues(alpha: 0.4)
-                    : AppColors.glassBorder,
-                width: isActive ? 1.0 : 0.5,
-              ),
-              boxShadow: isActive
-                  ? [
-                      BoxShadow(
-                        color: preset.color.withValues(alpha: 0.15),
-                        blurRadius: 30,
-                      ),
-                    ]
-                  : null,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Terrain preview area (takes most of the card)
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(19),
-                    ),
-                    child: CustomPaint(
-                      painter: _TerrainPreviewPainter(preset, seed),
-                      size: Size.infinite,
-                    ),
-                  ),
-                ),
-
-                // Label area at bottom
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
+              // Body
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Icon
-                      AnimatedContainer(
-                        duration: ParticleTheme.fastDuration,
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: isActive
-                              ? preset.color.withValues(alpha: 0.15)
-                              : AppColors.surfaceLight,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: isActive
-                                ? preset.color.withValues(alpha: 0.3)
-                                : Colors.white.withValues(alpha: 0.06),
-                            width: 0.5,
-                          ),
-                        ),
-                        child: Icon(
-                          preset.icon,
-                          size: 22,
-                          color: isActive ? preset.color : AppColors.textDim,
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
+                      // Left column: type selector + name input
+                      SizedBox(
+                        width: 220,
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Text(
-                              preset.label,
-                              style: AppTypography.subheading.copyWith(
-                                fontSize: 16,
-                                color: isActive
-                                    ? AppColors.textPrimary
-                                    : AppColors.textSecondary,
-                              ),
+                            // World name input
+                            _WorldNameInput(
+                              controller: _nameController,
+                              focusNode: _nameFocus,
+                              isFocused: _nameFocus.hasFocus,
                             ),
-                            const SizedBox(height: 2),
-                            Text(
-                              preset.description,
-                              style: AppTypography.caption.copyWith(
-                                color: isActive
-                                    ? AppColors.textSecondary
-                                    : AppColors.textDim,
-                                fontSize: 11,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                            const SizedBox(height: 12),
+
+                            // Type selector
+                            _TypeToggle(
+                              isProcedural: _isProcedural,
+                              onChanged: (v) =>
+                                  setState(() => _isProcedural = v),
                             ),
+                            const SizedBox(height: 16),
+
+                            // Description
+                            if (!_isProcedural)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 4),
+                                child: Text(
+                                  'An empty world with stone boundaries. '
+                                  'Place elements freely to build your own landscape.',
+                                  style: AppTypography.body.copyWith(
+                                    color: AppColors.textDim,
+                                  ),
+                                ),
+                              ),
+
+                            const Spacer(),
+
+                            // Create button at bottom of left column
+                            _CreateButton(
+                              onTap: _createWorld,
+                              creating: _creating,
+                              enabled: true,
+                            ),
+                            const SizedBox(height: 16),
                           ],
                         ),
                       ),
+                      const SizedBox(width: 16),
+
+                      // Right column: presets grid (procedural only)
+                      if (_isProcedural)
+                        Expanded(
+                          child: AnimatedBuilder(
+                            animation: _staggerController,
+                            builder: (context, _) => _PresetGrid(
+                              selected: _selectedPreset,
+                              onSelected: (p) =>
+                                  setState(() => _selectedPreset = p),
+                              cardAnimation: _cardAnimation,
+                            ),
+                          ),
+                        ),
+
+                      // Blank canvas illustration
+                      if (!_isProcedural)
+                        Expanded(
+                          child: Center(
+                            child: _GlassPanel(
+                              child: Padding(
+                                padding: const EdgeInsets.all(32),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.landscape_rounded,
+                                      size: 64,
+                                      color: AppColors.textDim
+                                          .withValues(alpha: 0.3),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      'Blank Canvas',
+                                      style: AppTypography.subheading,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Your imagination is the terrain.',
+                                      style: AppTypography.body.copyWith(
+                                        color: AppColors.textDim,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PresetInsightPanel extends StatelessWidget {
-  const _PresetInsightPanel({
-    super.key,
-    required this.preset,
-    required this.seed,
-    required this.compact,
-  });
-
-  final _WorldPreset preset;
-  final int seed;
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final config = preset.buildConfig(seed: seed);
-    final metrics = preset.metrics(config);
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          padding: EdgeInsets.all(compact ? 14 : 16),
-          decoration: BoxDecoration(
-            color: AppColors.panelDark.withValues(alpha: 0.72),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(
-              color: preset.color.withValues(alpha: 0.22),
-              width: 0.8,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      preset.tagline,
-                      key: const ValueKey('world_preset_tagline'),
-                      style: AppTypography.subheading.copyWith(
-                        color: AppColors.textPrimary,
-                        fontSize: compact ? 14 : 15,
-                      ),
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(999),
-                      color: preset.color.withValues(alpha: 0.14),
-                    ),
-                    child: Text(
-                      preset.climateLabel,
-                      key: const ValueKey('world_preset_climate'),
-                      style: AppTypography.caption.copyWith(
-                        color: preset.color,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.0,
-                      ),
-                    ),
-                  ),
-                ],
               ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: preset.traits
-                    .map(
-                      (trait) => _TraitChip(
-                        label: trait,
-                        color: preset.color,
-                      ),
-                    )
-                    .toList(),
-              ),
-              const SizedBox(height: 12),
-              compact
-                  ? Column(
-                      children: metrics
-                          .map((metric) => Padding(
-                                padding: const EdgeInsets.only(bottom: 8),
-                                child: _MetricStrip(metric: metric, color: preset.color),
-                              ))
-                          .toList(),
-                    )
-                  : Row(
-                      children: metrics
-                          .map(
-                            (metric) => Expanded(
-                              child: Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: _MetricStrip(metric: metric, color: preset.color),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    ),
+              const SizedBox(height: 8),
             ],
           ),
         ),
@@ -565,577 +266,324 @@ class _PresetInsightPanel extends StatelessWidget {
   }
 }
 
-class _TraitChip extends StatelessWidget {
-  const _TraitChip({required this.label, required this.color});
+// ═══════════════════════════════════════════════════════════════════════════
+// World name input
+// ═══════════════════════════════════════════════════════════════════════════
 
-  final String label;
-  final Color color;
+class _WorldNameInput extends StatelessWidget {
+  const _WorldNameInput({
+    required this.controller,
+    required this.focusNode,
+    required this.isFocused,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool isFocused;
+
+  static const int _maxLength = 24;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    return AnimatedContainer(
+      duration: ParticleTheme.fastDuration,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        color: Colors.white.withValues(alpha: 0.04),
-        border: Border.all(color: color.withValues(alpha: 0.16), width: 0.7),
+        color: AppColors.glass,
+        borderRadius: BorderRadius.circular(ParticleTheme.radiusMedium),
+        border: Border.all(
+          color: isFocused
+              ? AppColors.primary.withValues(alpha: 0.5)
+              : AppColors.glassBorder,
+          width: isFocused ? 1.0 : 0.5,
+        ),
+        boxShadow: isFocused
+            ? [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.15),
+                  blurRadius: 16,
+                  spreadRadius: -2,
+                ),
+              ]
+            : null,
       ),
-      child: Text(
-        label,
-        style: AppTypography.caption.copyWith(
-          color: AppColors.textPrimary.withValues(alpha: 0.88),
-          letterSpacing: 0.7,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(ParticleTheme.radiusMedium),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  maxLength: _maxLength,
+                  style: AppTypography.body.copyWith(
+                    color: AppColors.textPrimary,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Name your world...',
+                    hintStyle: AppTypography.body.copyWith(
+                      color: AppColors.textDim,
+                    ),
+                    border: InputBorder.none,
+                    isDense: true,
+                    counterText: '',
+                    icon: Icon(
+                      Icons.edit_rounded,
+                      size: 16,
+                      color: isFocused ? AppColors.primary : AppColors.textDim,
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Text(
+                    '${controller.text.length}/$_maxLength',
+                    style: AppTypography.caption.copyWith(
+                      color: AppColors.textDim,
+                      fontSize: 9,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-class _MetricStrip extends StatelessWidget {
-  const _MetricStrip({required this.metric, required this.color});
-
-  final _WorldMetric metric;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        color: Colors.black.withValues(alpha: 0.16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06), width: 0.7),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            metric.label,
-            style: AppTypography.caption.copyWith(
-              color: AppColors.textSecondary,
-              letterSpacing: 0.8,
-            ),
-          ),
-          const SizedBox(height: 6),
-          LinearProgressIndicator(
-            value: metric.value,
-            minHeight: 6,
-            borderRadius: BorderRadius.circular(99),
-            backgroundColor: Colors.white.withValues(alpha: 0.07),
-            color: color,
-          ),
-          const SizedBox(height: 6),
-          Text(
-            metric.description,
-            style: AppTypography.caption.copyWith(
-              color: AppColors.textPrimary.withValues(alpha: 0.82),
-              fontSize: 10.5,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// =============================================================================
-// Terrain preview painter
-// =============================================================================
-
-class _TerrainPreviewPainter extends CustomPainter {
-  _TerrainPreviewPainter(this.preset, this.seed);
-  final _WorldPreset preset;
-  final int seed;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    final config = preset.buildConfig(seed: seed, width: 96, height: 60);
-    final heightmap = preset == _WorldPreset.blank
-        ? List<int>.filled(config.width, (config.height * 0.8).round())
-        : TerrainGenerator.generateHeightmap(config);
-
-    // Sky gradient
-    final skyPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [
-          preset.skyColor.withValues(alpha: 0.5),
-          preset.skyColor.withValues(alpha: 0.1),
-        ],
-      ).createShader(Rect.fromLTWH(0, 0, w, h));
-    canvas.drawRect(Rect.fromLTWH(0, 0, w, h), skyPaint);
-
-    if (preset == _WorldPreset.blank) {
-      // Blank canvas: just a subtle grid
-      final gridPaint = Paint()
-        ..color = AppColors.textDim.withValues(alpha: 0.05)
-        ..strokeWidth = 0.5;
-      for (var x = 0.0; x < w; x += 20) {
-        canvas.drawLine(Offset(x, 0), Offset(x, h), gridPaint);
-      }
-      for (var y = 0.0; y < h; y += 20) {
-        canvas.drawLine(Offset(0, y), Offset(w, y), gridPaint);
-      }
-      return;
-    }
-
-    final segmentCount = heightmap.length - 1;
-
-    // Background layer (distant hills)
-    final bgPath = Path()..moveTo(0, h);
-    for (var i = 0; i <= segmentCount; i++) {
-      final x = (i / segmentCount) * w;
-      final terrainY = _mapHeight(heightmap[i], config.height, h, offset: h * 0.08);
-      bgPath.lineTo(x, terrainY);
-    }
-    bgPath.lineTo(w, h);
-    bgPath.close();
-    canvas.drawPath(
-      bgPath,
-      Paint()..color = preset.color.withValues(alpha: 0.08),
-    );
-
-    // Main terrain
-    final terrainPath = Path()..moveTo(0, h);
-    for (var i = 0; i <= segmentCount; i++) {
-      final x = (i / segmentCount) * w;
-      final terrainY = _mapHeight(heightmap[i], config.height, h);
-      terrainPath.lineTo(x, terrainY);
-    }
-    terrainPath.lineTo(w, h);
-    terrainPath.close();
-
-    final terrainPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [
-          preset.color.withValues(alpha: 0.35),
-          preset.color.withValues(alpha: 0.12),
-        ],
-      ).createShader(Rect.fromLTWH(0, 0, w, h));
-    canvas.drawPath(terrainPath, terrainPaint);
-
-    // Terrain outline
-    final linePath = Path();
-    for (var i = 0; i <= segmentCount; i++) {
-      final x = (i / segmentCount) * w;
-      final terrainY = _mapHeight(heightmap[i], config.height, h);
-      if (i == 0) {
-        linePath.moveTo(x, terrainY);
-      } else {
-        linePath.lineTo(x, terrainY);
-      }
-    }
-    canvas.drawPath(
-      linePath,
-      Paint()
-        ..color = preset.color.withValues(alpha: 0.6)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
-    );
-
-    _paintWater(canvas, size, config, heightmap);
-    _paintVegetation(canvas, size, config, heightmap);
-    _paintAtmospherics(canvas, size, config);
-
-    final rng = Random(seed + preset.index);
-    for (var i = 0; i < 40; i++) {
-      final fx = rng.nextDouble();
-      final ix = (fx * segmentCount).floor().clamp(0, segmentCount - 1);
-      final surfaceY = _mapHeight(heightmap[ix], config.height, h);
-      final dotX = fx * w;
-      final dotY = surfaceY + rng.nextDouble() * (h - surfaceY) * 0.6;
-      final dotSize = 2.0 + rng.nextDouble() * 3.0;
-      final dotAlpha = 0.15 + rng.nextDouble() * 0.25;
-
-      canvas.drawRect(
-        Rect.fromCenter(
-          center: Offset(dotX, dotY),
-          width: dotSize,
-          height: dotSize,
-        ),
-        Paint()..color = preset.color.withValues(alpha: dotAlpha),
-      );
-    }
-  }
-
-  void _paintWater(Canvas canvas, Size size, WorldConfig config, List<int> heightmap) {
-    final waterPaint = Paint()
-      ..color = AppColors.categoryLiquids.withValues(alpha: 0.26)
-      ..style = PaintingStyle.fill;
-    final foamPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.18)
-      ..strokeWidth = 1.2
-      ..style = PaintingStyle.stroke;
-
-    final int? waterLine =
-        config.waterLevel >= 0.3 ? (config.height * 0.55).round() : null;
-    final path = Path();
-    bool started = false;
-    for (var i = 0; i < heightmap.length; i++) {
-      final x = (i / (heightmap.length - 1)) * size.width;
-      final terrainY = _mapHeight(heightmap[i], config.height, size.height);
-      final targetY = waterLine != null
-          ? _mapHeight(waterLine, config.height, size.height)
-          : terrainY - size.height * 0.015;
-      if (targetY < terrainY - 1.5) {
-        if (!started) {
-          path.moveTo(x, targetY);
-          started = true;
-        } else {
-          path.lineTo(x, targetY);
-        }
-      } else if (started) {
-        path.lineTo(x, terrainY);
-      }
-    }
-    if (started) {
-      path.lineTo(size.width, size.height);
-      path.lineTo(0, size.height);
-      path.close();
-      canvas.drawPath(path, waterPaint);
-    }
-
-    for (var i = 2; i < heightmap.length - 2; i += 8) {
-      final terrainY = _mapHeight(heightmap[i], config.height, size.height);
-      final nextY = _mapHeight(heightmap[i + 1], config.height, size.height);
-      if ((nextY - terrainY).abs() > 8 && config.waterLevel > 0.2) {
-        final x = (i / (heightmap.length - 1)) * size.width;
-        canvas.drawLine(Offset(x, terrainY - 6), Offset(x, terrainY + 10), foamPaint);
-      }
-    }
-  }
-
-  void _paintVegetation(Canvas canvas, Size size, WorldConfig config, List<int> heightmap) {
-    if (config.vegetation <= 0.05) return;
-    final rng = Random(seed + 9000 + preset.index);
-    final paint = Paint()..color = AppColors.categoryLife.withValues(alpha: 0.42);
-    final stride = config.vegetation > 0.7 ? 5 : 8;
-    for (var i = 2; i < heightmap.length - 2; i += stride) {
-      if (rng.nextDouble() > config.vegetation * 0.55) continue;
-      final x = (i / (heightmap.length - 1)) * size.width;
-      final y = _mapHeight(heightmap[i], config.height, size.height);
-      final height = 4.0 + rng.nextDouble() * 6.0;
-      canvas.drawLine(
-        Offset(x, y - 1),
-        Offset(x, y - height),
-        paint..strokeWidth = config.vegetation > 0.7 ? 2.2 : 1.5,
-      );
-    }
-  }
-
-  void _paintAtmospherics(Canvas canvas, Size size, WorldConfig config) {
-    final rng = Random(seed + 12000 + preset.index);
-    final vaporPaint = Paint();
-    final count = config.waterLevel > 0.45 ? 7 : config.volcanicActivity > 0.2 ? 6 : 3;
-    for (var i = 0; i < count; i++) {
-      final cx = rng.nextDouble() * size.width;
-      final cy = rng.nextDouble() * size.height * 0.35 + 8;
-      final radius = 10.0 + rng.nextDouble() * 18.0;
-      vaporPaint.shader = RadialGradient(
-        colors: [
-          (config.volcanicActivity > 0.25 ? const Color(0x66FF9B6A) : Colors.white).withValues(alpha: 0.13),
-          Colors.transparent,
-        ],
-      ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: radius));
-      canvas.drawCircle(Offset(cx, cy), radius, vaporPaint);
-    }
-  }
-
-  double _mapHeight(int cellY, int gridHeight, double canvasHeight, {double offset = 0}) {
-    return offset + (cellY / gridHeight) * canvasHeight;
-  }
-
-  @override
-  bool shouldRepaint(covariant _TerrainPreviewPainter old) =>
-      old.preset != preset || old.seed != seed;
-}
-
-// =============================================================================
-// Presets (now includes Blank Canvas as first option)
-// =============================================================================
+// ═══════════════════════════════════════════════════════════════════════════
+// Presets
+// ═══════════════════════════════════════════════════════════════════════════
 
 enum _WorldPreset {
-  blank(
-    'Blank Canvas',
-    'Empty world, build from scratch',
-    Icons.crop_square_rounded,
-    AppColors.textDim,
-    skyColor: Color(0xFF1A1A2E),
-    baseHeight: 0.85,
-    amplitude: 0.0,
-  ),
   meadow(
     'Meadow',
-    'Gentle hills, ponds, lush vegetation',
+    'Gentle rolling hills with lush vegetation',
     Icons.park_rounded,
     AppColors.categoryLife,
-    skyColor: Color(0xFF4488CC),
-    baseHeight: 0.55,
-    amplitude: 0.15,
+    [Color(0xFF064E3B), Color(0xFF10B981)],
   ),
   canyon(
     'Canyon',
-    'Dramatic cliffs, rivers, deep caves',
+    'Deep carved channels with waterfalls',
     Icons.terrain_rounded,
     AppColors.categorySolids,
-    skyColor: Color(0xFFCC8844),
-    baseHeight: 0.4,
-    amplitude: 0.35,
+    [Color(0xFF78350F), Color(0xFFF59E0B)],
   ),
   island(
     'Island',
-    'Water surrounding a central landmass',
+    'Sandy beaches surrounded by ocean',
     Icons.water_rounded,
     AppColors.categoryLiquids,
-    skyColor: Color(0xFF4477BB),
-    baseHeight: 0.6,
-    amplitude: 0.2,
+    [Color(0xFF1E3A5F), Color(0xFF3B82F6)],
   ),
   underground(
     'Underground',
-    'Caves, lava pockets, ore deposits',
+    'Massive cavern systems with lava',
     Icons.dark_mode_rounded,
     AppColors.categoryEnergy,
-    skyColor: Color(0xFF332222),
-    baseHeight: 0.3,
-    amplitude: 0.1,
+    [Color(0xFF3B0764), Color(0xFFEF4444)],
   ),
   random(
     'Random',
-    'Unique randomized parameters',
+    'Surprise me!',
     Icons.casino_rounded,
     AppColors.categoryTools,
-    skyColor: Color(0xFF664488),
-    baseHeight: 0.5,
-    amplitude: 0.25,
+    [Color(0xFF4C1D95), Color(0xFF8B5CF6)],
   );
 
   const _WorldPreset(
     this.label,
     this.description,
     this.icon,
-    this.color, {
-    required this.skyColor,
-    required this.baseHeight,
-    required this.amplitude,
-  });
+    this.color,
+    this.gradientColors,
+  );
 
   final String label;
   final String description;
   final IconData icon;
   final Color color;
-  final Color skyColor;
-  final double baseHeight;
-  final double amplitude;
-  String get tagline {
-    switch (this) {
-      case _WorldPreset.blank:
-        return 'Manual sandbox with no terrain bias.';
-      case _WorldPreset.meadow:
-        return 'Lowland wetlands, soft soil, and broad surface water.';
-      case _WorldPreset.canyon:
-        return 'Vertical relief, exposed stone, and narrow river cuts.';
-      case _WorldPreset.island:
-        return 'Central landmass ringed by ocean and sandy coasts.';
-      case _WorldPreset.underground:
-        return 'Compressed surface with dense caverns and geothermal pockets.';
-      case _WorldPreset.random:
-        return 'Procedural wildcard pulled from the full generator space.';
-    }
-  }
-
-  String get climateLabel {
-    switch (this) {
-      case _WorldPreset.blank:
-        return 'MANUAL';
-      case _WorldPreset.meadow:
-        return 'TEMPERATE';
-      case _WorldPreset.canyon:
-        return 'ARID';
-      case _WorldPreset.island:
-        return 'MARITIME';
-      case _WorldPreset.underground:
-        return 'SUBTERRANEAN';
-      case _WorldPreset.random:
-        return 'UNBOUNDED';
-    }
-  }
-
-  List<String> get traits {
-    switch (this) {
-      case _WorldPreset.blank:
-        return const ['No worldgen', 'Paint-first', 'Fast start'];
-      case _WorldPreset.meadow:
-        return const ['Flood basins', 'Dense vegetation', 'Soft shorelines'];
-      case _WorldPreset.canyon:
-        return const ['Steep walls', 'Exposed stone', 'Channel flow'];
-      case _WorldPreset.island:
-        return const ['Ocean edges', 'Beach bands', 'Central rise'];
-      case _WorldPreset.underground:
-        return const ['Cavern heavy', 'Volcanic heat', 'Ore dense'];
-      case _WorldPreset.random:
-        return const ['Seed driven', 'High variance', 'Discovery focused'];
-    }
-  }
-
-  List<_WorldMetric> metrics(WorldConfig config) {
-    return [
-      _WorldMetric(
-        label: 'Water',
-        value: config.waterLevel.clamp(0.0, 1.0),
-        description: _metricDescription(config.waterLevel),
-      ),
-      _WorldMetric(
-        label: 'Relief',
-        value: (config.terrainScale / 2.5).clamp(0.0, 1.0),
-        description: _metricDescription((config.terrainScale / 2.5).clamp(0.0, 1.0)),
-      ),
-      _WorldMetric(
-        label: 'Biology',
-        value: config.vegetation.clamp(0.0, 1.0),
-        description: _metricDescription(config.vegetation),
-      ),
-    ];
-  }
-
-  String _metricDescription(double value) {
-    if (value >= 0.72) return 'High';
-    if (value >= 0.42) return 'Medium';
-    return 'Low';
-  }
-
-  WorldConfig buildConfig({
-    required int seed,
-    int width = 320,
-    int height = 180,
-  }) {
-    switch (this) {
-      case _WorldPreset.blank:
-        return WorldConfig(seed: seed, width: width, height: height);
-      case _WorldPreset.meadow:
-        return WorldConfig.meadow(seed: seed, width: width, height: height);
-      case _WorldPreset.canyon:
-        return WorldConfig.canyon(seed: seed, width: width, height: height);
-      case _WorldPreset.island:
-        return WorldConfig.island(seed: seed, width: width, height: height);
-      case _WorldPreset.underground:
-        return WorldConfig.underground(seed: seed, width: width, height: height);
-      case _WorldPreset.random:
-        return WorldConfig.random(seed: seed, width: width, height: height);
-    }
-  }
+  final List<Color> gradientColors;
 }
 
-class _WorldMetric {
-  const _WorldMetric({
-    required this.label,
-    required this.value,
-    required this.description,
+class _PresetGrid extends StatelessWidget {
+  const _PresetGrid({
+    required this.selected,
+    required this.onSelected,
+    required this.cardAnimation,
   });
 
-  final String label;
-  final double value;
-  final String description;
-}
-
-// =============================================================================
-// Shared widgets
-// =============================================================================
-
-class _CreateWorldButton extends StatefulWidget {
-  const _CreateWorldButton({
-    super.key,
-    required this.onTap,
-    required this.creating,
-    required this.color,
-    this.height = 48,
-    this.fullWidth = false,
-  });
-  final VoidCallback onTap;
-  final bool creating;
-  final Color color;
-  final double height;
-  final bool fullWidth;
+  final _WorldPreset selected;
+  final ValueChanged<_WorldPreset> onSelected;
+  final Animation<double> Function(int index) cardAnimation;
 
   @override
-  State<_CreateWorldButton> createState() => _CreateWorldButtonState();
+  Widget build(BuildContext context) {
+    final presets = _WorldPreset.values;
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: List.generate(presets.length, (index) {
+        final preset = presets[index];
+        final anim = cardAnimation(index);
+        return Opacity(
+          opacity: anim.value,
+          child: Transform.translate(
+            offset: Offset(40 * (1 - anim.value), 0),
+            child: _PresetCard(
+              preset: preset,
+              isActive: preset == selected,
+              onTap: () => onSelected(preset),
+            ),
+          ),
+        );
+      }),
+    );
+  }
 }
 
-class _CreateWorldButtonState extends State<_CreateWorldButton> {
-  bool _pressed = false;
+class _PresetCard extends StatefulWidget {
+  const _PresetCard({
+    required this.preset,
+    required this.isActive,
+    required this.onTap,
+  });
+
+  final _WorldPreset preset;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  @override
+  State<_PresetCard> createState() => _PresetCardState();
+}
+
+class _PresetCardState extends State<_PresetCard> {
   bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
+    final preset = widget.preset;
+    final isActive = widget.isActive;
+    final isHighlighted = isActive || _hovered;
+
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
-        onTapDown: (_) => setState(() => _pressed = true),
-        onTapUp: (_) {
-          setState(() => _pressed = false);
+        onTap: () {
+          HapticFeedback.selectionClick();
           widget.onTap();
         },
-        onTapCancel: () => setState(() => _pressed = false),
         child: AnimatedScale(
-          scale: _pressed ? 0.95 : 1.0,
+          scale: _hovered ? 1.02 : 1.0,
           duration: ParticleTheme.fastDuration,
+          curve: ParticleTheme.defaultCurve,
           child: AnimatedContainer(
             duration: ParticleTheme.fastDuration,
-            height: widget.height,
-            width: widget.fullWidth ? double.infinity : null,
-            padding: const EdgeInsets.symmetric(horizontal: 28),
+            curve: ParticleTheme.defaultCurve,
+            width: 155,
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  widget.color.withValues(alpha: _hovered ? 0.3 : 0.2),
-                  AppColors.accent.withValues(alpha: _hovered ? 0.2 : 0.12),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(ParticleTheme.radiusMedium),
+              gradient: isActive
+                  ? LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        preset.gradientColors[0].withValues(alpha: 0.25),
+                        preset.gradientColors[1].withValues(alpha: 0.08),
+                      ],
+                    )
+                  : null,
+              color: isActive
+                  ? null
+                  : _hovered
+                      ? AppColors.glass.withValues(alpha: 0.18)
+                      : AppColors.glass,
+              borderRadius:
+                  BorderRadius.circular(ParticleTheme.radiusMedium),
               border: Border.all(
-                color: widget.color.withValues(alpha: _hovered ? 0.6 : 0.4),
-                width: 1.0,
+                color: isActive
+                    ? preset.color.withValues(alpha: 0.6)
+                    : _hovered
+                        ? AppColors.glassBorder.withValues(alpha: 0.4)
+                        : AppColors.glassBorder,
+                width: isActive ? 1.5 : 0.5,
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: widget.color.withValues(alpha: _hovered ? 0.2 : 0.1),
-                  blurRadius: _hovered ? 24 : 12,
-                ),
-              ],
+              boxShadow: isActive
+                  ? [
+                      BoxShadow(
+                        color: preset.color.withValues(alpha: 0.3),
+                        blurRadius: 16,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : null,
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (widget.creating)
-                  SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: widget.color,
+                // Icon with colored background circle
+                AnimatedContainer(
+                  duration: ParticleTheme.fastDuration,
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    gradient: isHighlighted
+                        ? LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              preset.color.withValues(alpha: 0.25),
+                              preset.color.withValues(alpha: 0.10),
+                            ],
+                          )
+                        : null,
+                    color: isHighlighted
+                        ? null
+                        : AppColors.surfaceLight.withValues(alpha: 0.5),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isHighlighted
+                          ? preset.color.withValues(alpha: 0.4)
+                          : Colors.white.withValues(alpha: 0.06),
+                      width: 0.5,
                     ),
-                  )
-                else
-                  Icon(
-                    Icons.rocket_launch_rounded,
-                    size: 18,
-                    color: widget.color,
                   ),
-                const SizedBox(width: 10),
+                  child: Icon(
+                    preset.icon,
+                    size: 24,
+                    color: isHighlighted ? preset.color : AppColors.textDim,
+                  ),
+                ),
+                const SizedBox(height: 10),
                 Text(
-                  widget.creating ? 'CREATING...' : 'CREATE WORLD',
-                  style: AppTypography.button.copyWith(
-                    color: widget.color,
-                    letterSpacing: 1.5,
+                  preset.label,
+                  style: AppTypography.subheading.copyWith(
+                    fontSize: 14,
                     fontWeight: FontWeight.w700,
+                    color: isHighlighted
+                        ? AppColors.textPrimary
+                        : AppColors.textSecondary,
                   ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  preset.description,
+                  style: AppTypography.caption.copyWith(
+                    color: isHighlighted
+                        ? AppColors.textSecondary
+                        : AppColors.textDim,
+                    height: 1.3,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
@@ -1146,16 +594,223 @@ class _CreateWorldButtonState extends State<_CreateWorldButton> {
   }
 }
 
-class _SmallIconButton extends StatefulWidget {
-  const _SmallIconButton({required this.icon, required this.onTap});
+// ═══════════════════════════════════════════════════════════════════════════
+// Create button (full-width, gradient)
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _CreateButton extends StatefulWidget {
+  const _CreateButton({
+    required this.onTap,
+    required this.creating,
+    required this.enabled,
+  });
+  final VoidCallback onTap;
+  final bool creating;
+  final bool enabled;
+
+  @override
+  State<_CreateButton> createState() => _CreateButtonState();
+}
+
+class _CreateButtonState extends State<_CreateButton> {
+  bool _pressed = false;
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final canTap = widget.enabled && !widget.creating;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      cursor: canTap ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      child: GestureDetector(
+        onTapDown: canTap ? (_) => setState(() => _pressed = true) : null,
+        onTapUp: canTap
+            ? (_) {
+                setState(() => _pressed = false);
+                widget.onTap();
+              }
+            : null,
+        onTapCancel: () => setState(() => _pressed = false),
+        child: AnimatedScale(
+          scale: _pressed ? 0.97 : 1.0,
+          duration: ParticleTheme.fastDuration,
+          child: AnimatedContainer(
+            duration: ParticleTheme.fastDuration,
+            height: 48,
+            decoration: BoxDecoration(
+              gradient: canTap
+                  ? LinearGradient(
+                      colors: [
+                        AppColors.primary,
+                        AppColors.accent,
+                      ],
+                    )
+                  : null,
+              color: canTap ? null : AppColors.surfaceLight,
+              borderRadius:
+                  BorderRadius.circular(ParticleTheme.radiusMedium),
+              boxShadow: canTap
+                  ? [
+                      BoxShadow(
+                        color: AppColors.primary
+                            .withValues(alpha: _hovered ? 0.5 : 0.3),
+                        blurRadius: _hovered ? 20 : 12,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: Center(
+                child: widget.creating
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.rocket_launch_rounded,
+                            size: 20,
+                            color: Colors.white,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            'Create World',
+                            style: AppTypography.button.copyWith(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Shared widgets
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _TypeToggle extends StatelessWidget {
+  const _TypeToggle({
+    required this.isProcedural,
+    required this.onChanged,
+  });
+
+  final bool isProcedural;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return _GlassPanel(
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: Row(
+          children: [
+            _ToggleOption(
+              label: 'Blank',
+              icon: Icons.crop_square_rounded,
+              isActive: !isProcedural,
+              onTap: () => onChanged(false),
+            ),
+            const SizedBox(width: 6),
+            _ToggleOption(
+              label: 'Procedural',
+              icon: Icons.auto_awesome_rounded,
+              isActive: isProcedural,
+              onTap: () => onChanged(true),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ToggleOption extends StatelessWidget {
+  const _ToggleOption({
+    required this.label,
+    required this.icon,
+    required this.isActive,
+    required this.onTap,
+  });
+
+  final String label;
   final IconData icon;
+  final bool isActive;
   final VoidCallback onTap;
 
   @override
-  State<_SmallIconButton> createState() => _SmallIconButtonState();
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: ParticleTheme.fastDuration,
+          height: 40,
+          decoration: BoxDecoration(
+            color: isActive
+                ? AppColors.primary.withValues(alpha: 0.15)
+                : Colors.transparent,
+            borderRadius:
+                BorderRadius.circular(ParticleTheme.radiusSmall),
+            border: Border.all(
+              color: isActive
+                  ? AppColors.primary.withValues(alpha: 0.4)
+                  : Colors.transparent,
+              width: 0.5,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 14,
+                color: isActive
+                    ? AppColors.primary
+                    : AppColors.textDim,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: AppTypography.label.copyWith(
+                  color: isActive
+                      ? AppColors.primary
+                      : AppColors.textDim,
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _SmallIconButtonState extends State<_SmallIconButton> {
+class _BackButton extends StatefulWidget {
+  const _BackButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  State<_BackButton> createState() => _BackButtonState();
+}
+
+class _BackButtonState extends State<_BackButton> {
   bool _hovered = false;
 
   @override
@@ -1168,19 +823,46 @@ class _SmallIconButtonState extends State<_SmallIconButton> {
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: ParticleTheme.fastDuration,
-          width: 32,
-          height: 32,
+          width: 40,
+          height: 40,
           decoration: BoxDecoration(
             color: _hovered
-                ? AppColors.primary.withValues(alpha: 0.15)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
+                ? AppColors.glass.withValues(alpha: 0.3)
+                : AppColors.glass,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: _hovered
+                  ? AppColors.glassBorder.withValues(alpha: 0.4)
+                  : AppColors.glassBorder,
+              width: 0.5,
+            ),
           ),
           child: Icon(
-            widget.icon,
-            size: 16,
-            color: _hovered ? AppColors.primary : AppColors.textDim,
+            Icons.arrow_back_rounded,
+            size: 18,
+            color: _hovered ? AppColors.textPrimary : AppColors.textSecondary,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GlassPanel extends StatelessWidget {
+  const _GlassPanel({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(ParticleTheme.radiusMedium),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: ParticleTheme.glassDecoration(
+            borderRadius: ParticleTheme.radiusMedium,
+          ),
+          child: child,
         ),
       ),
     );

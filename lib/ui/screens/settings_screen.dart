@@ -1,13 +1,15 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../theme/colors.dart';
 import '../theme/particle_theme.dart';
 import '../theme/typography.dart';
-import '../widgets/back_button.dart' show GlassBackButton;
 
-/// Settings screen with organized sections: Graphics, Audio, Controls, About.
+/// Settings screen with audio, haptics, and graphics quality controls.
 ///
-/// Dark themed with glassmorphism panels, custom sliders, and premium toggles.
+/// Dark themed with glassmorphism panels. Navigated to from the home screen.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -17,49 +19,42 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _fadeController;
-  late final Animation<double> _contentFade;
+  late final AnimationController _entranceController;
 
-  // -- Graphics --
-  int _giQuality = 1; // 0=off, 1=low, 2=high
-  double _bloomStrength = 0.5;
-  double _renderScale = 1.0;
-
-  // -- Audio --
   double _masterVolume = 0.8;
   double _sfxVolume = 1.0;
-  double _musicVolume = 0.6;
   double _ambientVolume = 0.6;
-
-  // -- Controls --
-  double _brushSize = 3.0;
-  double _touchSensitivity = 1.0;
   bool _hapticsEnabled = true;
+  int _graphicsQuality = 1; // 0=low, 1=medium, 2=high
+  bool _dayNightCycle = true;
+  bool _particleEffects = true;
 
-  static const _giLabels = ['Off', 'Low', 'High'];
-  static const _giDescriptions = [
-    'No global illumination',
-    'Balanced quality and performance',
-    'Full radiance cascades GI',
-  ];
+  static const _qualityLabels = ['Low', 'Medium', 'High'];
 
   @override
   void initState() {
     super.initState();
-    _fadeController = AnimationController(
+    _entranceController = AnimationController(
       vsync: this,
-      duration: ParticleTheme.normalDuration,
+      duration: const Duration(milliseconds: 600),
     )..forward();
-    _contentFade = CurvedAnimation(
-      parent: _fadeController,
-      curve: ParticleTheme.defaultCurve,
-    );
   }
 
   @override
   void dispose() {
-    _fadeController.dispose();
+    _entranceController.dispose();
     super.dispose();
+  }
+
+  Animation<double> _sectionAnimation(int index) {
+    final start = (index * 0.1).clamp(0.0, 0.5);
+    final end = (start + 0.5).clamp(0.0, 1.0);
+    return Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _entranceController,
+        curve: Interval(start, end, curve: Curves.easeOutCubic),
+      ),
+    );
   }
 
   @override
@@ -67,112 +62,82 @@ class _SettingsScreenState extends State<SettingsScreen>
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: FadeTransition(
-          opacity: _contentFade,
-          child: Column(
-            children: [
-              // Header
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Row(
-                  children: [
-                    GlassBackButton(
-                      onTap: () => Navigator.of(context).maybePop(),
-                    ),
-                    const SizedBox(width: 16),
-                    Text('Settings', style: AppTypography.heading),
-                  ],
-                ),
+        child: Column(
+          children: [
+            // Header
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  _BackButton(
+                    onTap: () => Navigator.of(context).maybePop(),
+                  ),
+                  const SizedBox(width: 16),
+                  Text('Settings', style: AppTypography.heading),
+                ],
               ),
+            ),
 
-              // Settings list -- two column layout for landscape
-              Expanded(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            // Settings list
+            Expanded(
+              child: AnimatedBuilder(
+                animation: _entranceController,
+                builder: (context, _) => ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
                   children: [
-                    // Left column: Graphics + Controls
-                    Expanded(
-                      child: ListView(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        children: [
-                          const SizedBox(height: 4),
+                    const SizedBox(height: 8),
 
-                          // Graphics section
-                          _SectionHeader('GRAPHICS'),
+                    // Audio section
+                    _AnimatedSection(
+                      animation: _sectionAnimation(0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const _SectionHeader('AUDIO', Icons.volume_up_rounded),
                           const SizedBox(height: 8),
                           _SettingsPanel(
-                            accent: AppColors.categoryEnergy,
                             children: [
-                              _QualitySelector(
-                                label: 'Global Illumination',
-                                icon: Icons.light_mode_rounded,
-                                value: _giQuality,
-                                labels: _giLabels,
-                                description: _giDescriptions[_giQuality],
+                              _VolumeSlider(
+                                label: 'Master',
+                                icon: Icons.volume_up_rounded,
+                                value: _masterVolume,
                                 onChanged: (v) =>
-                                    setState(() => _giQuality = v),
+                                    setState(() => _masterVolume = v),
                               ),
-                              _Divider(),
-                              _PremiumSlider(
-                                label: 'Bloom Strength',
-                                icon: Icons.blur_on_rounded,
-                                value: _bloomStrength,
+                              _VolumeSlider(
+                                label: 'Sound Effects',
+                                icon: Icons.speaker_rounded,
+                                value: _sfxVolume,
                                 onChanged: (v) =>
-                                    setState(() => _bloomStrength = v),
+                                    setState(() => _sfxVolume = v),
                               ),
-                              _Divider(),
-                              _PremiumSlider(
-                                label: 'Render Scale',
-                                icon: Icons.aspect_ratio_rounded,
-                                value: _renderScale,
-                                min: 0.5,
-                                max: 2.0,
-                                divisions: 6,
-                                valueLabel:
-                                    '${_renderScale.toStringAsFixed(1)}x',
+                              _VolumeSlider(
+                                label: 'Ambient',
+                                icon: Icons.music_note_rounded,
+                                value: _ambientVolume,
                                 onChanged: (v) =>
-                                    setState(() => _renderScale = v),
+                                    setState(() => _ambientVolume = v),
                               ),
                             ],
                           ),
+                        ],
+                      ),
+                    ),
 
-                          const SizedBox(height: 20),
+                    const SizedBox(height: 20),
 
-                          // Controls section
-                          _SectionHeader('CONTROLS'),
+                    // Haptics section
+                    _AnimatedSection(
+                      animation: _sectionAnimation(1),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const _SectionHeader('HAPTICS', Icons.vibration_rounded),
                           const SizedBox(height: 8),
                           _SettingsPanel(
-                            accent: AppColors.primary,
                             children: [
-                              _PremiumSlider(
-                                label: 'Brush Size',
-                                icon: Icons.brush_rounded,
-                                value: _brushSize,
-                                min: 1,
-                                max: 10,
-                                divisions: 9,
-                                valueLabel:
-                                    '${_brushSize.round()}',
-                                onChanged: (v) =>
-                                    setState(() => _brushSize = v),
-                              ),
-                              _Divider(),
-                              _PremiumSlider(
-                                label: 'Touch Sensitivity',
-                                icon: Icons.touch_app_rounded,
-                                value: _touchSensitivity,
-                                min: 0.5,
-                                max: 2.0,
-                                divisions: 6,
-                                valueLabel:
-                                    '${_touchSensitivity.toStringAsFixed(1)}x',
-                                onChanged: (v) =>
-                                    setState(() => _touchSensitivity = v),
-                              ),
-                              _Divider(),
-                              _PremiumToggle(
-                                label: 'Haptic Feedback',
+                              _SettingsToggle(
+                                label: 'Vibration Feedback',
                                 icon: Icons.vibration_rounded,
                                 value: _hapticsEnabled,
                                 onChanged: (v) =>
@@ -180,163 +145,188 @@ class _SettingsScreenState extends State<SettingsScreen>
                               ),
                             ],
                           ),
-                          const SizedBox(height: 32),
                         ],
                       ),
                     ),
 
-                    // Right column: Audio + About
-                    Expanded(
-                      child: ListView(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        children: [
-                          const SizedBox(height: 4),
+                    const SizedBox(height: 20),
 
-                          // Audio section
-                          _SectionHeader('AUDIO'),
+                    // Display section
+                    _AnimatedSection(
+                      animation: _sectionAnimation(2),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const _SectionHeader('DISPLAY', Icons.display_settings_rounded),
                           const SizedBox(height: 8),
                           _SettingsPanel(
-                            accent: AppColors.accent,
                             children: [
-                              _PremiumSlider(
-                                label: 'Master',
-                                icon: Icons.volume_up_rounded,
-                                value: _masterVolume,
+                              _SettingsToggle(
+                                label: 'Day/Night Cycle',
+                                icon: Icons.dark_mode_rounded,
+                                value: _dayNightCycle,
                                 onChanged: (v) =>
-                                    setState(() => _masterVolume = v),
+                                    setState(() => _dayNightCycle = v),
                               ),
-                              _Divider(),
-                              _PremiumSlider(
-                                label: 'Sound Effects',
-                                icon: Icons.speaker_rounded,
-                                value: _sfxVolume,
+                              _SettingsToggle(
+                                label: 'Particle Effects',
+                                icon: Icons.auto_awesome_rounded,
+                                value: _particleEffects,
                                 onChanged: (v) =>
-                                    setState(() => _sfxVolume = v),
-                              ),
-                              _Divider(),
-                              _PremiumSlider(
-                                label: 'Music',
-                                icon: Icons.music_note_rounded,
-                                value: _musicVolume,
-                                onChanged: (v) =>
-                                    setState(() => _musicVolume = v),
-                              ),
-                              _Divider(),
-                              _PremiumSlider(
-                                label: 'Ambient',
-                                icon: Icons.nature_rounded,
-                                value: _ambientVolume,
-                                onChanged: (v) =>
-                                    setState(() => _ambientVolume = v),
+                                    setState(() => _particleEffects = v),
                               ),
                             ],
                           ),
+                        ],
+                      ),
+                    ),
 
-                          const SizedBox(height: 20),
+                    const SizedBox(height: 20),
 
-                          // About section
-                          _SectionHeader('ABOUT'),
+                    // Graphics section
+                    _AnimatedSection(
+                      animation: _sectionAnimation(3),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const _SectionHeader('GRAPHICS', Icons.auto_awesome_rounded),
                           const SizedBox(height: 8),
                           _SettingsPanel(
-                            accent: AppColors.categoryLife,
+                            children: [
+                              _QualitySelector(
+                                value: _graphicsQuality,
+                                labels: _qualityLabels,
+                                onChanged: (v) =>
+                                    setState(() => _graphicsQuality = v),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // About section
+                    _AnimatedSection(
+                      animation: _sectionAnimation(4),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const _SectionHeader('ABOUT', Icons.info_outline_rounded),
+                          const SizedBox(height: 8),
+                          _SettingsPanel(
                             children: [
                               Padding(
-                                padding: const EdgeInsets.all(14),
+                                padding: const EdgeInsets.all(12),
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Row(
-                                      children: [
-                                        // Mini gradient icon
-                                        Container(
-                                          width: 32,
-                                          height: 32,
-                                          decoration: BoxDecoration(
-                                            borderRadius:
-                                                BorderRadius.circular(8),
-                                            gradient: const LinearGradient(
-                                              colors: [
-                                                AppColors.primary,
-                                                AppColors.accent,
-                                              ],
-                                            ),
-                                          ),
-                                          child: const Icon(
-                                            Icons.grain_rounded,
-                                            size: 18,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              'The Particle Engine',
-                                              style:
-                                                  AppTypography.subheading,
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              'v0.1.0',
-                                              style: AppTypography.caption
-                                                  .copyWith(
-                                                color: AppColors.textDim,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
+                                    Text(
+                                      'The Particle Engine',
+                                      style: AppTypography.subheading,
                                     ),
-                                    const SizedBox(height: 12),
-                                    Container(
-                                      width: double.infinity,
-                                      height: 0.5,
-                                      color: AppColors.glassBorder,
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'v0.1.0',
+                                      style: AppTypography.caption.copyWith(
+                                        color: AppColors.primary,
+                                      ),
                                     ),
-                                    const SizedBox(height: 12),
+                                    const SizedBox(height: 8),
                                     Text(
                                       'A sandbox of elements, creatures, and ecosystems. '
                                       'Simulate physics, grow colonies, and watch life emerge.',
-                                      style: AppTypography.body.copyWith(
-                                        color: AppColors.textSecondary,
-                                        height: 1.5,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Row(
-                                      children: [
-                                        _InfoChip(
-                                          label: '41 Elements',
-                                          color: AppColors.categoryLiquids,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        _InfoChip(
-                                          label: 'Radiance GI',
-                                          color: AppColors.categoryEnergy,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        _InfoChip(
-                                          label: 'NEAT AI',
-                                          color: AppColors.categoryLife,
-                                        ),
-                                      ],
+                                      style: AppTypography.body,
                                     ),
                                   ],
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 32),
                         ],
                       ),
                     ),
+                    const SizedBox(height: 32),
                   ],
                 ),
               ),
-            ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Animated section wrapper
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _AnimatedSection extends StatelessWidget {
+  const _AnimatedSection({
+    required this.animation,
+    required this.child,
+  });
+
+  final Animation<double> animation;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: animation.value,
+      child: Transform.translate(
+        offset: Offset(0, 20 * (1 - animation.value)),
+        child: child,
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Shared widgets
+// ═══════════════════════════════════════════════════════════════════════════
+
+class _BackButton extends StatefulWidget {
+  const _BackButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  State<_BackButton> createState() => _BackButtonState();
+}
+
+class _BackButtonState extends State<_BackButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: ParticleTheme.fastDuration,
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: _hovered
+                ? AppColors.glass.withValues(alpha: 0.3)
+                : AppColors.glass,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: _hovered
+                  ? AppColors.glassBorder.withValues(alpha: 0.4)
+                  : AppColors.glassBorder,
+              width: 0.5,
+            ),
+          ),
+          child: Icon(
+            Icons.arrow_back_rounded,
+            size: 18,
+            color: _hovered ? AppColors.textPrimary : AppColors.textSecondary,
           ),
         ),
       ),
@@ -344,13 +334,10 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 }
 
-// =============================================================================
-// Section header with gradient accent line
-// =============================================================================
-
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.text);
+  const _SectionHeader(this.text, this.icon);
   final String text;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -358,7 +345,7 @@ class _SectionHeader extends StatelessWidget {
       children: [
         Container(
           width: 3,
-          height: 12,
+          height: 14,
           margin: const EdgeInsets.only(right: 8),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(2),
@@ -369,6 +356,8 @@ class _SectionHeader extends StatelessWidget {
             ),
           ),
         ),
+        Icon(icon, size: 12, color: AppColors.textDim),
+        const SizedBox(width: 6),
         Text(
           text,
           style: AppTypography.label.copyWith(
@@ -382,124 +371,82 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-// =============================================================================
-// Glass settings panel
-// =============================================================================
-
 class _SettingsPanel extends StatelessWidget {
-  const _SettingsPanel({
-    required this.children,
-    this.accent = AppColors.primary,
-  });
+  const _SettingsPanel({required this.children});
   final List<Widget> children;
-  final Color accent;
 
   @override
   Widget build(BuildContext context) {
-    return ParticleTheme.atmosphericPanel(
-      accent: accent,
-      borderRadius: ParticleTheme.radiusMedium,
-      blurAmount: 12,
-      baseColor: const Color(0xCC10131C),
-      child: Column(
-        children: children,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(ParticleTheme.radiusMedium),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: ParticleTheme.glassDecoration(
+            borderRadius: ParticleTheme.radiusMedium,
+          ),
+          child: Column(
+            children: children,
+          ),
+        ),
       ),
     );
   }
 }
 
-// =============================================================================
-// Subtle divider inside panels
-// =============================================================================
-
-class _Divider extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12),
-      height: 0.5,
-      color: AppColors.glassBorder.withValues(alpha: 0.15),
-    );
-  }
-}
-
-// =============================================================================
-// Premium slider with icon, label, and value display
-// =============================================================================
-
-class _PremiumSlider extends StatelessWidget {
-  const _PremiumSlider({
+class _VolumeSlider extends StatelessWidget {
+  const _VolumeSlider({
     required this.label,
     required this.icon,
     required this.value,
     required this.onChanged,
-    this.min = 0.0,
-    this.max = 1.0,
-    this.divisions,
-    this.valueLabel,
   });
 
   final String label;
   final IconData icon;
   final double value;
   final ValueChanged<double> onChanged;
-  final double min;
-  final double max;
-  final int? divisions;
-  final String? valueLabel;
 
   @override
   Widget build(BuildContext context) {
-    final displayValue = valueLabel ??
-        '${((value - min) / (max - min) * 100).round()}';
-
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
         children: [
-          Icon(icon, size: 16, color: AppColors.textDim),
-          const SizedBox(width: 10),
+          Icon(icon, size: 18, color: AppColors.textDim),
+          const SizedBox(width: 12),
           Expanded(
-            flex: 3,
-            child: Text(
-              label,
-              style: AppTypography.body.copyWith(
-                color: AppColors.textSecondary,
-                fontSize: 12,
-              ),
-            ),
+            flex: 2,
+            child: Text(label, style: AppTypography.body),
           ),
           Expanded(
-            flex: 4,
+            flex: 3,
             child: SliderTheme(
               data: SliderTheme.of(context).copyWith(
                 trackHeight: 3,
                 thumbShape:
-                    const RoundSliderThumbShape(enabledThumbRadius: 5),
+                    const RoundSliderThumbShape(enabledThumbRadius: 6),
                 overlayShape:
                     const RoundSliderOverlayShape(overlayRadius: 14),
-                activeTrackColor: AppColors.primary,
-                inactiveTrackColor: AppColors.surfaceLight,
-                thumbColor: AppColors.primary,
-                overlayColor: AppColors.primaryDim,
               ),
               child: Slider(
                 value: value,
-                min: min,
-                max: max,
-                divisions: divisions,
-                onChanged: onChanged,
+                onChanged: (v) {
+                  HapticFeedback.selectionClick();
+                  onChanged(v);
+                },
+                activeColor: AppColors.primary,
+                inactiveColor: AppColors.surfaceLight,
               ),
             ),
           ),
           SizedBox(
-            width: 32,
+            width: 36,
             child: Text(
-              displayValue,
+              '${(value * 100).round()}',
               style: AppTypography.caption.copyWith(
                 color: AppColors.textPrimary,
-                fontFamily: 'monospace',
-                fontSize: 11,
+                fontWeight: FontWeight.w600,
               ),
               textAlign: TextAlign.right,
             ),
@@ -510,12 +457,8 @@ class _PremiumSlider extends StatelessWidget {
   }
 }
 
-// =============================================================================
-// Premium toggle with custom styling
-// =============================================================================
-
-class _PremiumToggle extends StatelessWidget {
-  const _PremiumToggle({
+class _SettingsToggle extends StatelessWidget {
+  const _SettingsToggle({
     required this.label,
     required this.icon,
     required this.value,
@@ -530,63 +473,33 @@ class _PremiumToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
         children: [
-          Icon(icon, size: 16, color: AppColors.textDim),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              label,
-              style: AppTypography.body.copyWith(
-                color: AppColors.textSecondary,
-                fontSize: 12,
-              ),
+          AnimatedContainer(
+            duration: ParticleTheme.fastDuration,
+            child: Icon(
+              icon,
+              size: 18,
+              color: value ? AppColors.primary : AppColors.textDim,
             ),
           ),
-          GestureDetector(
-            onTap: () => onChanged(!value),
-            child: AnimatedContainer(
+          const SizedBox(width: 12),
+          Expanded(
+            child: AnimatedDefaultTextStyle(
               duration: ParticleTheme.fastDuration,
-              width: 40,
-              height: 22,
-              padding: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(11),
-                color: value
-                    ? AppColors.primary.withValues(alpha: 0.25)
-                    : AppColors.surfaceLight,
-                border: Border.all(
-                  color: value
-                      ? AppColors.primary.withValues(alpha: 0.5)
-                      : AppColors.glassBorder,
-                  width: 0.5,
-                ),
+              style: AppTypography.body.copyWith(
+                color: value ? AppColors.textPrimary : AppColors.textSecondary,
               ),
-              child: AnimatedAlign(
-                duration: ParticleTheme.fastDuration,
-                curve: Curves.easeInOut,
-                alignment:
-                    value ? Alignment.centerRight : Alignment.centerLeft,
-                child: Container(
-                  width: 16,
-                  height: 16,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: value ? AppColors.primary : AppColors.textDim,
-                    boxShadow: value
-                        ? [
-                            BoxShadow(
-                              color: AppColors.primary
-                                  .withValues(alpha: 0.4),
-                              blurRadius: 6,
-                            ),
-                          ]
-                        : null,
-                  ),
-                ),
-              ),
+              child: Text(label),
             ),
+          ),
+          Switch(
+            value: value,
+            onChanged: (v) {
+              HapticFeedback.selectionClick();
+              onChanged(v);
+            },
           ),
         ],
       ),
@@ -594,61 +507,52 @@ class _PremiumToggle extends StatelessWidget {
   }
 }
 
-// =============================================================================
-// Quality selector (segmented control style)
-// =============================================================================
-
 class _QualitySelector extends StatelessWidget {
   const _QualitySelector({
-    required this.label,
-    required this.icon,
     required this.value,
     required this.labels,
     required this.onChanged,
-    this.description,
   });
 
-  final String label;
-  final IconData icon;
   final int value;
   final List<String> labels;
   final ValueChanged<int> onChanged;
-  final String? description;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(icon, size: 16, color: AppColors.textDim),
-              const SizedBox(width: 10),
-              Text(
-                label,
-                style: AppTypography.body.copyWith(
-                  color: AppColors.textSecondary,
-                  fontSize: 12,
-                ),
+              const Icon(
+                Icons.speed_rounded,
+                size: 18,
+                color: AppColors.textDim,
               ),
+              const SizedBox(width: 12),
+              Text('Quality', style: AppTypography.body),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Row(
             children: List.generate(labels.length, (index) {
               final isActive = value == index;
               return Expanded(
                 child: Padding(
                   padding: EdgeInsets.only(
-                    right: index < labels.length - 1 ? 6 : 0,
+                    right: index < labels.length - 1 ? 8 : 0,
                   ),
                   child: GestureDetector(
-                    onTap: () => onChanged(index),
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      onChanged(index);
+                    },
                     child: AnimatedContainer(
                       duration: ParticleTheme.fastDuration,
-                      height: 34,
+                      height: 36,
                       decoration: BoxDecoration(
                         color: isActive
                             ? AppColors.primary.withValues(alpha: 0.2)
@@ -660,13 +564,13 @@ class _QualitySelector extends StatelessWidget {
                           color: isActive
                               ? AppColors.primary.withValues(alpha: 0.5)
                               : Colors.transparent,
-                          width: 0.5,
+                          width: 1,
                         ),
                         boxShadow: isActive
                             ? [
                                 BoxShadow(
-                                  color: AppColors.primary
-                                      .withValues(alpha: 0.1),
+                                  color:
+                                      AppColors.primary.withValues(alpha: 0.15),
                                   blurRadius: 8,
                                 ),
                               ]
@@ -676,7 +580,6 @@ class _QualitySelector extends StatelessWidget {
                         child: Text(
                           labels[index],
                           style: AppTypography.label.copyWith(
-                            fontSize: 11,
                             color: isActive
                                 ? AppColors.primary
                                 : AppColors.textSecondary,
@@ -689,52 +592,8 @@ class _QualitySelector extends StatelessWidget {
               );
             }),
           ),
-          if (description != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              description!,
-              style: AppTypography.caption.copyWith(
-                color: AppColors.textDim,
-                fontSize: 10,
-              ),
-            ),
-          ],
         ],
       ),
     );
   }
 }
-
-// =============================================================================
-// Info chip for the About section
-// =============================================================================
-
-class _InfoChip extends StatelessWidget {
-  const _InfoChip({required this.label, required this.color});
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: color.withValues(alpha: 0.25),
-          width: 0.5,
-        ),
-      ),
-      child: Text(
-        label,
-        style: AppTypography.caption.copyWith(
-          color: color,
-          fontSize: 9,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-}
-
