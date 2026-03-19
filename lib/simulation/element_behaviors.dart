@@ -1975,6 +1975,22 @@ extension ElementBehaviors on SimulationEngine {
     // Temperature-driven melting (snow -> water)
     if (checkTemperatureReaction(x, y, idx, El.snow)) return;
 
+    // Sublimation: at very high temperatures, snow converts directly to
+    // steam (skipping the liquid phase). Real sublimation occurs when
+    // vapor pressure exceeds atmospheric at the triple point (~0.01°C,
+    // 611 Pa). In our engine, rapid heating past both melt and boil
+    // points causes direct solid→gas transition.
+    {
+      final t = temperature[idx];
+      if (t > 200) {
+        grid[idx] = El.steam;
+        life[idx] = 0;
+        markProcessed(idx);
+        queueReactionFlash(x, y, 200, 220, 255, 4);
+        return;
+      }
+    }
+
     // Contact melting: snow adjacent to fire/lava melts. The latent heat
     // of fusion (334 kJ/kg) absorbs the fire's energy, extinguishing it.
     // This prevents the fire from immediately re-vaporizing the meltwater.

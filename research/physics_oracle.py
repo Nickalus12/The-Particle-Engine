@@ -1958,6 +1958,27 @@ def generate_ground_truth() -> dict:
 
     results["energy_conservation"] = energy_conservation
 
+    # =========================================================================
+    # Sublimation (solid → gas, skipping liquid)
+    # =========================================================================
+    results["sublimation"] = {
+        "principle": "Direct phase transition from solid to gas without passing "
+                     "through liquid, occurring when vapor pressure exceeds "
+                     "atmospheric pressure at the triple point",
+        "triple_point_water": {
+            "temperature_C": 0.01,
+            "pressure_Pa": 611.657,
+        },
+        "common_examples": ["dry ice (CO2)", "snow in dry wind", "freeze-drying"],
+        "equation": "ΔH_sub = ΔH_fus + ΔH_vap",
+        "our_element": "snow",
+        "our_product": "steam",
+        "our_threshold": 200,
+        "our_scale_note": "On 0-255 scale, 200 represents extreme heating "
+                          "past both melt and boil points simultaneously",
+        "reference": "Atkins, Physical Chemistry (10th ed.), Ch. 4",
+    }
+
     return results
 
 

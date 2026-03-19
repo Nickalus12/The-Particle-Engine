@@ -164,3 +164,35 @@ class TestGlassThermalShock:
         if gt is None:
             pytest.skip("No glass_thermal_shock oracle data")
         assert gt["produces_flash"] is True
+
+
+class TestSublimation:
+    """Sublimation: solid → gas without passing through liquid phase."""
+
+    @pytest.mark.physics
+    def test_sublimation_principle(self, ground_truth):
+        """Oracle should describe direct solid-to-gas transition."""
+        gt = ground_truth.get("sublimation")
+        if gt is None:
+            pytest.skip("No sublimation oracle data")
+        assert "solid" in gt["principle"].lower() or "gas" in gt["principle"].lower()
+        assert "liquid" in gt["principle"].lower()
+
+    @pytest.mark.physics
+    def test_sublimation_product(self, ground_truth):
+        """Snow should sublimate to steam."""
+        gt = ground_truth.get("sublimation")
+        if gt is None:
+            pytest.skip("No sublimation oracle data")
+        assert gt["our_element"] == "snow"
+        assert gt["our_product"] == "steam"
+
+    @pytest.mark.physics
+    def test_sublimation_threshold(self, ground_truth):
+        """Sublimation threshold should be above both melt and boil points."""
+        gt = ground_truth.get("sublimation")
+        if gt is None:
+            pytest.skip("No sublimation oracle data")
+        threshold = gt["our_threshold"]
+        assert threshold >= 180, "Sublimation must require extreme heat"
+        assert threshold <= 240, "Threshold must be reachable on 0-255 scale"
