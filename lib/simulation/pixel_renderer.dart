@@ -47,7 +47,7 @@ class PixelRenderer {
   late Int16List _groundLevel;
   int _groundLevelAge = 0;
 
-  double _prevDayNightT = 0.0;
+  int _prevNightT256 = 0;
 
   PixelRenderer(this.engine);
 
@@ -216,8 +216,8 @@ class PixelRenderer {
     final nightDimWater = (256 - (t256 * 38 >> 8)).clamp(0, 256); // ≈ 256*(1-t*0.15)
     final nightDimGeneral = (256 - (t256 * 51 >> 8)).clamp(0, 256); // ≈ 256*(1-t*0.2)
 
-    final dayNightTransitioning = (t - _prevDayNightT).abs() > 0.001;
-    _prevDayNightT = t;
+    final dayNightTransitioning = t256 != _prevNightT256;
+    _prevNightT256 = t256;
 
     bool forceFullRender = dayNightTransitioning;
 
@@ -380,7 +380,7 @@ class PixelRenderer {
                 emptyB = (255 - (skyFrac256 * 40 >> 8)).clamp(200, 255);
 
                 // Night dimming — sky dims heavily (0.9 for R/G, 0.85 for B)
-                if (t > 0.0) {
+                if (t256 > 0) {
                   // nightBoost = (t * 30).round(), so t ≈ nightBoost / 30
                   // skyDimRG = 256 * (1 - t * 0.9) ≈ 256 - nightBoost * 256*0.9/30
                   final skyDimRG = (256 - nightBoost * 77 ~/ 10).clamp(0, 256);
