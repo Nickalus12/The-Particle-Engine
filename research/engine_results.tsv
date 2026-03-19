@@ -65,3 +65,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 63	2026-03-18T04:03	pixel_renderer.dart	Integer rainbow HSV-to-RGB + integer explosion particles + remove _fastSin(double) entirely	-	95	100	yes
 64	2026-03-18T04:04	element_behaviors.dart+pixel_renderer.dart	Fire triangle oxygen deprivation (suffocation in enclosed spaces) + smoke color warmth for Delta E distinctness + fire triangle/flash point tests (637->646 passed, +9)	-	95	100	yes
 65	2026-03-18T04:05	test_*.py	Add acceleration curves, projectile motion, domino cascade, settling, U-tube, wind resistance, graded bedding, clock bit, momentum tests (644->670 passed, +26)	-	95	100	yes
+66	2026-03-18T04:06	simulation_engine.dart	Integer explosion math: replace float distFraction/trig with _sinI256 + fixed-point arithmetic	-	95	100	yes

@@ -7,6 +7,16 @@ import 'element_registry.dart';
 // SimulationEngine -- Core grid data, helpers, and main simulation loop
 // ---------------------------------------------------------------------------
 
+/// Integer sine: phase [0..255] → [-128, 128] (signed, centered at 0).
+@pragma('vm:prefer-inline')
+int _sinI256(int phase) {
+  final ix = phase & 0xFF;
+  if (ix < 64) return ix << 1; // 0 to 128
+  if (ix < 128) return (128 - ix) << 1; // 128 to 0
+  if (ix < 192) return -((ix - 128) << 1); // 0 to -128
+  return -((256 - ix) << 1); // -128 to 0
+}
+
 /// Data class for explosion events.
 class Explosion {
   final int x;
@@ -448,11 +458,12 @@ class SimulationEngine {
           final el = grid[ni];
           // Hardness-based explosion resistance: only destroy cells where hardness < explosionForce
           final cellHardness = el < maxElements ? elementHardness[el] : 0;
-          final distFraction = dist2 / (r * r);
-          final explosionForce = ((1.0 - distFraction) * 255).round();
+          // Integer explosion force: (1 - dist2/r2) * 255 = (r2 - dist2) * 255 / r2
+          final r2 = r * r;
+          final explosionForce = ((r2 - dist2) * 255) ~/ r2;
           if (cellHardness >= explosionForce) continue;
 
-          if (el != El.empty && el != El.tnt && dist2 > (r * r * 0.3).round()) {
+          if (el != El.empty && el != El.tnt && dist2 > (r2 * 77) >> 8) { // ~0.3 * r²
             final flingDist = r + 2 + rng.nextInt(r);
             final normDx = dx == 0 ? 0 : (dx > 0 ? 1 : -1);
             final normDy = dy == 0 ? 0 : (dy > 0 ? 1 : -1);
@@ -472,10 +483,14 @@ class SimulationEngine {
         }
       }
       for (int i = 0; i < r * 4; i++) {
-        final angle = rng.nextDouble() * 2 * pi;
-        final dist = r * 0.6 + rng.nextDouble() * r * 0.5;
-        final fx = wrapX(exp.x + (cos(angle) * dist).round());
-        final fy = exp.y + (sin(angle) * dist).round();
+        // Integer trig: random angle as phase256 [0..255], distance as fixed-point
+        final phase256 = rng.nextInt(256);
+        final dist = (r * 154 + rng.nextInt(r * 128)) >> 8; // ~0.6*r + rand*0.5*r
+        // sin/cos via lookup: _sinI256 returns [-128, 128]
+        final sinV = _sinI256(phase256);
+        final cosV = _sinI256(phase256 + 64);
+        final fx = wrapX(exp.x + (dist * cosV) ~/ 128);
+        final fy = exp.y + (dist * sinV) ~/ 128;
         if (inBoundsY(fy)) {
           final fi = fy * gridW + fx;
           if (grid[fi] == El.empty) {
