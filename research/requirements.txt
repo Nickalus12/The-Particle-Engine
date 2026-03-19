@@ -8,3 +8,4 @@ pytest-html
 pytest-benchmark
 hypothesis
 syrupy
+rich
