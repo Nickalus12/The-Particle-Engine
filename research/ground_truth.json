@@ -6743,6 +6743,17 @@
     "metal_lowest": true,
     "reference": "CRC Handbook of Chemistry and Physics"
   },
+  "pressure_boiling": {
+    "principle": "Clausius-Clapeyron: boiling point rises with pressure",
+    "equation": "dP/dT = delta_H_vap / (T * delta_V)",
+    "water_bp_at_1atm_C": 100,
+    "water_bp_at_2atm_C": 121,
+    "water_bp_at_5atm_C": 152,
+    "our_pressure_shift": "boil_threshold += pressure // 2",
+    "deep_water_resists_boiling": true,
+    "surface_water_boils_normally": true,
+    "reference": "Perry's Chemical Engineers' Handbook"
+  },
   "thermal_conductivity": {
     "real_W_per_mK": {
       "metal": 50.0,

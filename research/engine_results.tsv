@@ -77,3 +77,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 75	2026-03-18T04:15	element_registry.dart+simulation_engine.dart+test_benchmark.py+test_properties.py	Specific heat capacity Q=mcΔT: per-element heat capacity (water=10, metal=1) + resolve merge conflicts + entropy bounds + oracle (890 physics passed, +5 thermo tests)	-	95	100	yes
 76	2026-03-18T04:16	element_behaviors.dart	Capillary wicking: Washburn equation moisture transport upward through porous dirt columns (867 passed, +1)	-	95	100	yes
 77	2026-03-18T04:17	simulation_engine.dart	Stokes drag: submerged granular elements capped at velocity 1 in liquid (866 passed, 0 regressions)	-	95	100	yes
+78	2026-03-18T04:18	simulation_engine.dart+physics_oracle.py+test_thermodynamics.py	Clausius-Clapeyron pressure-dependent boiling: deep water needs higher temp to boil (870 passed, +4 tests)	-	95	100	yes

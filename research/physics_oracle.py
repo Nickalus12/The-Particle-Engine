@@ -783,6 +783,23 @@ def generate_ground_truth() -> dict:
     }
 
     # =========================================================================
+    # Pressure-dependent boiling (Clausius-Clapeyron)
+    # =========================================================================
+    # dP/dT = ΔH_vap / (T·ΔV): boiling point rises ~3°C per atm
+    # At 10m depth (~2 atm), water boils at ~121°C instead of 100°C
+    results["pressure_boiling"] = {
+        "principle": "Clausius-Clapeyron: boiling point rises with pressure",
+        "equation": "dP/dT = delta_H_vap / (T * delta_V)",
+        "water_bp_at_1atm_C": 100,
+        "water_bp_at_2atm_C": 121,
+        "water_bp_at_5atm_C": 152,
+        "our_pressure_shift": "boil_threshold += pressure // 2",
+        "deep_water_resists_boiling": True,
+        "surface_water_boils_normally": True,
+        "reference": "Perry's Chemical Engineers' Handbook",
+    }
+
+    # =========================================================================
     # 23. THERMAL CONDUCTIVITY (backward compat)
     # =========================================================================
 

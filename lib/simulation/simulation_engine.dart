@@ -1470,14 +1470,20 @@ class SimulationEngine {
     }
 
     // Hot enough to boil?
-    if (props.boilPoint > 0 && temp > 128 + props.boilPoint ~/ 2) {
-      final target = props.boilsInto;
-      if (target != 0) {
-        grid[idx] = target;
-        life[idx] = 0;
-        markProcessed(idx);
-        unsettleNeighbors(x, y);
-        return true;
+    // Clausius-Clapeyron: boiling point rises with pressure (depth).
+    // Each 2 pressure units adds 1 to the effective boiling threshold.
+    if (props.boilPoint > 0) {
+      final pressureShift = pressure[idx] >> 1; // +1 per 2 depth units
+      final effectiveBoilT = 128 + props.boilPoint ~/ 2 + pressureShift;
+      if (temp > effectiveBoilT) {
+        final target = props.boilsInto;
+        if (target != 0) {
+          grid[idx] = target;
+          life[idx] = 0;
+          markProcessed(idx);
+          unsettleNeighbors(x, y);
+          return true;
+        }
       }
     }
 

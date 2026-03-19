@@ -268,3 +268,40 @@ class TestSpecificHeatCapacity:
             pytest.skip("No specific_heat_capacity oracle data")
         for name, cap in gt["our_1_to_10"].items():
             assert 1 <= cap <= 10, f"{name} capacity {cap} out of [1, 10]"
+
+
+class TestPressureDependentBoiling:
+    """Clausius-Clapeyron: boiling point should increase with pressure/depth."""
+
+    @pytest.mark.physics
+    def test_deep_water_resists_boiling(self, ground_truth):
+        """Water under pressure should require higher temperature to boil."""
+        gt = ground_truth.get("pressure_boiling")
+        if gt is None:
+            pytest.skip("No pressure_boiling oracle data")
+        assert gt["deep_water_resists_boiling"] is True
+
+    @pytest.mark.physics
+    def test_surface_water_boils_normally(self, ground_truth):
+        """Surface water (no pressure) should boil at normal threshold."""
+        gt = ground_truth.get("pressure_boiling")
+        if gt is None:
+            pytest.skip("No pressure_boiling oracle data")
+        assert gt["surface_water_boils_normally"] is True
+
+    @pytest.mark.physics
+    def test_real_bp_increases_with_pressure(self, ground_truth):
+        """Real water boiling point should increase with atmospheric pressure."""
+        gt = ground_truth.get("pressure_boiling")
+        if gt is None:
+            pytest.skip("No pressure_boiling oracle data")
+        assert gt["water_bp_at_2atm_C"] > gt["water_bp_at_1atm_C"]
+        assert gt["water_bp_at_5atm_C"] > gt["water_bp_at_2atm_C"]
+
+    @pytest.mark.physics
+    def test_clausius_clapeyron_principle(self, ground_truth):
+        """Oracle should state the Clausius-Clapeyron equation."""
+        gt = ground_truth.get("pressure_boiling")
+        if gt is None:
+            pytest.skip("No pressure_boiling oracle data")
+        assert "Clausius-Clapeyron" in gt["principle"]
