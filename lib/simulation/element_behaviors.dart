@@ -1616,8 +1616,25 @@ extension ElementBehaviors on SimulationEngine {
     if (life[idx] > coolingThreshold) {
       grid[idx] = El.stone;
       life[idx] = 0;
-      // Newly cooled stone retains heat
+      // Newly cooled stone retains heat (glowing stone visual)
       velX[idx] = 4;
+      // Latent heat of fusion: solidification releases stored energy.
+      // Real magma releases ~4×10⁵ J/kg on crystallization, warming
+      // adjacent material and slowing the cooling front (Stefan problem).
+      temperature[idx] = 200; // stone starts hot
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = wrapX(x + dx);
+          final ny = y + dy;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * gridW + nx;
+          final nt = temperature[ni];
+          if (nt < 200) {
+            temperature[ni] = (nt + 15).clamp(0, 255);
+          }
+        }
+      }
       markProcessed(idx);
       return;
     }
