@@ -158,6 +158,24 @@ Focus on the highest-priority unfixed issue:
 
 ---
 
+## Using the Optimizer
+
+Before manual parameter tuning, check if Optuna has already found better values:
+
+```bash
+python research/optimizer.py show --top 5
+```
+
+To run an automated search:
+
+```bash
+python research/optimizer.py run --n-trials 50
+python research/optimizer.py viz          # generate interactive HTML plots
+python research/optimizer.py apply        # write best params to trial_config.json
+```
+
+---
+
 ## Experiment Strategies
 
 ### Hill Climbing (default)

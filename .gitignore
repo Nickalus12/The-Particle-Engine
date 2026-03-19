@@ -43,3 +43,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Optuna optimizer artifacts
+research/optuna_study.db
+research/trial_config.json
+research/plots/*.html
