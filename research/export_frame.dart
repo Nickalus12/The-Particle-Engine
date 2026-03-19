@@ -12,6 +12,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import '../lib/simulation/simulation_engine.dart';
 import '../lib/simulation/element_registry.dart';
@@ -37,6 +38,15 @@ void main(List<String> args) {
 
   File('research/frame.rgba').writeAsBytesSync(renderer.pixels);
   File('research/grid.bin').writeAsBytesSync(engine.grid);
+  File('research/temp.bin').writeAsBytesSync(engine.temperature);
+  File('research/velx.bin').writeAsBytesSync(
+    Uint8List.view(engine.velX.buffer),
+  );
+  File('research/vely.bin').writeAsBytesSync(
+    Uint8List.view(engine.velY.buffer),
+  );
+  File('research/life.bin').writeAsBytesSync(engine.life);
+  File('research/flags.bin').writeAsBytesSync(engine.flags);
 
   final meta = <String, dynamic>{
     'width': 320,
@@ -50,7 +60,7 @@ void main(List<String> args) {
       .writeAsStringSync(const JsonEncoder.withIndent('  ').convert(meta));
 
   print(
-      'Exported: frame.rgba (${renderer.pixels.length} bytes), grid.bin, frame_meta.json');
+      'Exported: frame.rgba, grid.bin, temp.bin, velx.bin, vely.bin, life.bin, flags.bin');
 }
 
 /// Populate grid with a representative test world (matches engine_benchmark).

@@ -102,3 +102,16 @@ class _CaseInsensitiveDict(dict):
 def element_ids_to_names(element_names):
     """Reverse map: element ID -> name."""
     return {v: k for k, v in element_names.items()}
+
+
+@pytest.fixture(scope="session")
+def visual_truth():
+    """Load visual ground truth from visual_oracle.py output."""
+    vgt_path = RESEARCH_DIR / "visual_ground_truth.json"
+    if not vgt_path.exists():
+        subprocess.run(
+            [sys.executable, str(RESEARCH_DIR / "visual_oracle.py")],
+            check=True,
+        )
+    with open(vgt_path) as f:
+        return json.load(f)
