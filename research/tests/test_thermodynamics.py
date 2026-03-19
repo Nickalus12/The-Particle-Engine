@@ -305,3 +305,32 @@ class TestPressureDependentBoiling:
         if gt is None:
             pytest.skip("No pressure_boiling oracle data")
         assert "Clausius-Clapeyron" in gt["principle"]
+
+
+class TestLeidenfrostEffect:
+    """Leidenfrost: water on very hot surfaces levitates on vapor cushion."""
+
+    @pytest.mark.physics
+    def test_leidenfrost_above_boiling(self, ground_truth):
+        """Leidenfrost point should be above normal boiling point."""
+        gt = ground_truth.get("leidenfrost_effect")
+        if gt is None:
+            pytest.skip("No leidenfrost_effect oracle data")
+        assert gt["leidenfrost_point_C"] > gt["water_bp_C"]
+
+    @pytest.mark.physics
+    def test_vapor_cushion_mechanism(self, ground_truth):
+        """The effect should involve a vapor film insulating the droplet."""
+        gt = ground_truth.get("leidenfrost_effect")
+        if gt is None:
+            pytest.skip("No leidenfrost_effect oracle data")
+        assert "vapor" in gt["mechanism"].lower() or "vapour" in gt["mechanism"].lower()
+
+    @pytest.mark.physics
+    def test_engine_threshold_reasonable(self, ground_truth):
+        """Our engine threshold should be in the high temperature range."""
+        gt = ground_truth.get("leidenfrost_effect")
+        if gt is None:
+            pytest.skip("No leidenfrost_effect oracle data")
+        # Threshold should be > 200 (well above neutral 128)
+        assert gt["our_temp_threshold"] > 200

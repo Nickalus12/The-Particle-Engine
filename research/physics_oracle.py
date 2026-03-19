@@ -800,6 +800,19 @@ def generate_ground_truth() -> dict:
     }
 
     # =========================================================================
+    # Leidenfrost effect
+    # =========================================================================
+    results["leidenfrost_effect"] = {
+        "principle": "Water on extremely hot surfaces levitates on its own vapor cushion",
+        "leidenfrost_point_C": 193,
+        "water_bp_C": 100,
+        "mechanism": "Vapor film insulates droplet, dramatically increasing lifetime",
+        "our_temp_threshold": 220,
+        "behavior": "Water bounces upward on vapor cushion instead of instant boiling",
+        "reference": "Gottfried, Lee & Bell, Int. J. Heat Mass Transfer (1966)",
+    }
+
+    # =========================================================================
     # 23. THERMAL CONDUCTIVITY (backward compat)
     # =========================================================================
 

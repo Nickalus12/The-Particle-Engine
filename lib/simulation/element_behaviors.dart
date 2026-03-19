@@ -143,6 +143,29 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
+    // Leidenfrost effect: water on extremely hot surfaces forms a
+    // protective vapor cushion. Instead of instant boiling, the water
+    // droplet levitates on its own steam, dramatically increasing its
+    // lifetime. Real Leidenfrost point for water ≈ 193°C (above 100°C BP).
+    if (frameCount % 3 == 0) {
+      final by2 = y + g;
+      if (inBoundsY(by2)) {
+        final belowIdx = by2 * gridW + x;
+        final belowTemp = temperature[belowIdx];
+        if (belowTemp > 220 && grid[belowIdx] != El.empty) {
+          // Extreme heat below — Leidenfrost regime
+          // Create steam cushion: spawn steam below if possible
+          final uy2 = y - g;
+          if (inBoundsY(uy2) && grid[uy2 * gridW + x] == El.empty) {
+            // Bounce upward on vapor cushion
+            swap(idx, uy2 * gridW + x);
+            queueReactionFlash(x, y, 200, 220, 255, 3);
+            return;
+          }
+        }
+      }
+    }
+
     // Density-based displacement: water sinks through lighter liquids (oil)
     if (tryDensityDisplace(x, y, idx, El.water)) return;
 

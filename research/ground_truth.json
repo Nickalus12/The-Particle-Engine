@@ -6754,6 +6754,15 @@
     "surface_water_boils_normally": true,
     "reference": "Perry's Chemical Engineers' Handbook"
   },
+  "leidenfrost_effect": {
+    "principle": "Water on extremely hot surfaces levitates on its own vapor cushion",
+    "leidenfrost_point_C": 193,
+    "water_bp_C": 100,
+    "mechanism": "Vapor film insulates droplet, dramatically increasing lifetime",
+    "our_temp_threshold": 220,
+    "behavior": "Water bounces upward on vapor cushion instead of instant boiling",
+    "reference": "Gottfried, Lee & Bell, Int. J. Heat Mass Transfer (1966)"
+  },
   "thermal_conductivity": {
     "real_W_per_mK": {
       "metal": 50.0,
