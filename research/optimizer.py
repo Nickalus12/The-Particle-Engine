@@ -232,6 +232,17 @@ def objective(trial) -> tuple[float, float]:
     infra = data.get("domain_scores", {}).get("Infrastructure", {}).get("score", 0.0)
     trial.set_user_attr("infra", infra)
 
+    # Log to MLflow (optional)
+    try:
+        from research.mlflow_setup import log_optuna_trial
+
+        overall = data.get("overall_score", 0.0)
+        log_optuna_trial(trial.number, params, physics, visuals, overall)
+    except ImportError:
+        pass
+    except Exception:
+        pass  # MLflow logging is best-effort
+
     return physics, visuals
 
 
