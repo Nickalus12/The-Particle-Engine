@@ -1967,6 +1967,31 @@ def generate_ground_truth() -> dict:
     # =========================================================================
     # Thermal buoyancy of smoke (temperature-dependent rise rate)
     # =========================================================================
+    # =========================================================================
+    # Darcy's law: pressure-driven seepage through porous media
+    # =========================================================================
+    results["darcy_seepage"] = {
+        "principle": "Darcy's law governs fluid flow through porous media: "
+                     "Q = -kA(dP/dL)/mu, where k is permeability, A is area, "
+                     "dP/dL is pressure gradient, and mu is dynamic viscosity. "
+                     "Water under hydrostatic pressure seeps through soil.",
+        "equation": "Q = -kA(ΔP/ΔL)/μ",
+        "variables": {
+            "k": "permeability (depends on porosity and grain size)",
+            "A": "cross-sectional area",
+            "dP/dL": "pressure gradient (hydrostatic head)",
+            "mu": "dynamic viscosity of water",
+        },
+        "our_mechanism": "Saturated dirt with water column above allows "
+                          "water to seep through to empty space below",
+        "our_permeability_factor": "Inversely proportional to compaction",
+        "our_min_water_head": 2,
+        "our_saturation_threshold": 4,
+        "applications": ["groundwater flow", "spring emergence",
+                         "levee seepage", "well drawdown"],
+        "reference": "Darcy, Les fontaines publiques de la ville de Dijon (1856)",
+    }
+
     results["smoke_buoyancy"] = {
         "principle": "Smoke rises due to thermal buoyancy: the density "
                      "difference between hot combustion gases and cooler "

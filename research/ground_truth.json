@@ -10294,6 +10294,27 @@
       "second_law_holds": true
     }
   },
+  "darcy_seepage": {
+    "principle": "Darcy's law governs fluid flow through porous media: Q = -kA(dP/dL)/mu, where k is permeability, A is area, dP/dL is pressure gradient, and mu is dynamic viscosity. Water under hydrostatic pressure seeps through soil.",
+    "equation": "Q = -kA(\u0394P/\u0394L)/\u03bc",
+    "variables": {
+      "k": "permeability (depends on porosity and grain size)",
+      "A": "cross-sectional area",
+      "dP/dL": "pressure gradient (hydrostatic head)",
+      "mu": "dynamic viscosity of water"
+    },
+    "our_mechanism": "Saturated dirt with water column above allows water to seep through to empty space below",
+    "our_permeability_factor": "Inversely proportional to compaction",
+    "our_min_water_head": 2,
+    "our_saturation_threshold": 4,
+    "applications": [
+      "groundwater flow",
+      "spring emergence",
+      "levee seepage",
+      "well drawdown"
+    ],
+    "reference": "Darcy, Les fontaines publiques de la ville de Dijon (1856)"
+  },
   "smoke_buoyancy": {
     "principle": "Smoke rises due to thermal buoyancy: the density difference between hot combustion gases and cooler ambient air creates an upward force per Archimedes' principle. As smoke cools to ambient temperature, buoyancy decreases and the plume transitions from vertical rise to lateral spreading.",
     "archimedes_formula": "F_b = (rho_air - rho_smoke) * g * V",

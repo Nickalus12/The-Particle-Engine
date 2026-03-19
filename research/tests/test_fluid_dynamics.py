@@ -236,3 +236,40 @@ class TestViscosityDetailed:
         ordering = gt["expected_spread_ordering"]
         assert ordering[0] == "water"
         assert ordering[-1] == "lava"
+
+
+class TestDarcySeepage:
+    """Darcy's law: pressure-driven water flow through porous soil."""
+
+    @pytest.mark.physics
+    def test_darcy_principle(self, ground_truth):
+        """Oracle should describe Darcy's law for porous media flow."""
+        gt = ground_truth.get("darcy_seepage")
+        if gt is None:
+            pytest.skip("No darcy_seepage oracle data")
+        assert "darcy" in gt["principle"].lower()
+        assert "permeability" in gt["equation"].lower() or "k" in gt["equation"]
+
+    @pytest.mark.physics
+    def test_darcy_requires_pressure_head(self, ground_truth):
+        """Seepage should require minimum water head above dirt."""
+        gt = ground_truth.get("darcy_seepage")
+        if gt is None:
+            pytest.skip("No darcy_seepage oracle data")
+        assert gt["our_min_water_head"] >= 1
+
+    @pytest.mark.physics
+    def test_darcy_requires_saturation(self, ground_truth):
+        """Seepage should require saturated soil."""
+        gt = ground_truth.get("darcy_seepage")
+        if gt is None:
+            pytest.skip("No darcy_seepage oracle data")
+        assert gt["our_saturation_threshold"] >= 3
+
+    @pytest.mark.physics
+    def test_permeability_depends_on_compaction(self, ground_truth):
+        """Compacted soil should have lower permeability."""
+        gt = ground_truth.get("darcy_seepage")
+        if gt is None:
+            pytest.skip("No darcy_seepage oracle data")
+        assert "compaction" in gt["our_permeability_factor"].lower()

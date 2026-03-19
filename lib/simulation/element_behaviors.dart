@@ -1320,6 +1320,56 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
+    // Darcy seepage: pressure-driven water percolation through porous
+    // soil. Darcy's law: Q = -kA(ΔP/ΔL)/μ. When a water column above
+    // creates hydrostatic pressure, water seeps through saturated dirt
+    // to emerge below. The seepage rate is proportional to the pressure
+    // head and inversely proportional to soil compaction (permeability).
+    // This models groundwater flow, spring emergence, and levee seepage.
+    if (frameCount % 8 == 0 && life[idx] >= 4) {
+      final g = gravityDir;
+      final belowY = y + g;
+      if (inBoundsY(belowY)) {
+        final belowIdx = belowY * gridW + x;
+        final belowEl = grid[belowIdx];
+        if (belowEl == El.empty) {
+          // Check for water pressure above
+          int waterHead = 0;
+          for (int sy = y - g; inBoundsY(sy) && waterHead < 8; sy -= g) {
+            final se = grid[sy * gridW + x];
+            if (se == El.water) {
+              waterHead++;
+            } else if (se != El.dirt) {
+              break;
+            }
+          }
+          // Compacted dirt (velY >= 3) is less permeable
+          final compaction = velY[idx].clamp(0, 5);
+          final permeability = 5 - compaction; // 5=loose, 0=packed
+          if (waterHead >= 2 && permeability > 0 &&
+              rng.nextInt(20 ~/ permeability) == 0) {
+            // Seep water through: spawn water below, consume from above
+            grid[belowIdx] = El.water;
+            life[belowIdx] = 100;
+            markProcessed(belowIdx);
+            // Remove one water cell from the column above
+            for (int sy = y - g; inBoundsY(sy); sy -= g) {
+              final si = sy * gridW + x;
+              if (grid[si] == El.water) {
+                grid[si] = El.empty;
+                life[si] = 0;
+                markProcessed(si);
+                break;
+              }
+              if (grid[si] != El.dirt) break;
+            }
+            life[idx] = (life[idx] - 1).clamp(0, 5); // partial desaturation
+            markDirty(x, y);
+          }
+        }
+      }
+    }
+
     // Galilean freefall: dirt falls at the same rate as sand in vacuum
     // (gravity is mass-independent). Use velocity-based fallGranular
     // for proper acceleration. In water, use displacement-based fall
