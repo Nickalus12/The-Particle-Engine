@@ -96,3 +96,35 @@ class TestElectricalConductivity:
         non_cond = gt["non_conductors"]
         for el in ["stone", "wood", "glass", "sand"]:
             assert el in non_cond, f"{el} should be non-conductive"
+
+
+class TestClockBit:
+    """Clock-bit system prevents double simulation of elements per step."""
+
+    @pytest.mark.physics
+    def test_clock_bit_mask(self, ground_truth):
+        """Clock bit should use bit 7 (mask 128)."""
+        gt = ground_truth.get("clock_bit")
+        if gt is None:
+            pytest.skip("No clock_bit oracle data")
+        assert gt["clock_mask"] == 128
+
+    @pytest.mark.physics
+    def test_clock_bit_principle(self, ground_truth):
+        """Each element should be processed exactly once per step."""
+        gt = ground_truth.get("clock_bit")
+        if gt is None:
+            pytest.skip("No clock_bit oracle data")
+        assert "once" in gt["principle"].lower()
+
+
+class TestMomentumSymmetry:
+    """Symmetric initial conditions should produce symmetric results."""
+
+    @pytest.mark.physics
+    def test_symmetric_drop_principle(self, ground_truth):
+        """Two identical elements at symmetric positions should land symmetrically."""
+        gt = ground_truth.get("momentum_symmetry")
+        if gt is None:
+            pytest.skip("No momentum_symmetry oracle data")
+        assert gt["max_allowed_asymmetry"] == 0

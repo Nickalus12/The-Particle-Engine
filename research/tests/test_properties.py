@@ -101,3 +101,44 @@ class TestConservationInvariants:
     def test_temperature_in_bounds(self, temp):
         """Temperature must always be in [0, 255]."""
         assert 0 <= temp <= 255
+
+
+class TestWindResistance:
+    """Wind resistance values should be physically plausible."""
+
+    @pytest.mark.physics
+    def test_wind_resistance_values_in_range(self, ground_truth):
+        """All wind resistance values should be in [0, 1]."""
+        gt = ground_truth.get("wind_resistance")
+        if gt is None:
+            pytest.skip("No wind_resistance oracle data")
+        for name, value in gt["values"].items():
+            assert 0 <= value <= 1, (
+                f"{name} wind resistance {value} out of [0, 1]"
+            )
+
+    @pytest.mark.physics
+    def test_solids_high_wind_resistance(self, ground_truth):
+        """Solid elements should have high wind resistance (heavy, not blown away)."""
+        gt = ground_truth.get("wind_resistance")
+        if gt is None:
+            pytest.skip("No wind_resistance oracle data")
+        values = gt["values"]
+        for solid in ["stone", "metal", "glass", "wood", "ice"]:
+            if solid in values:
+                assert values[solid] >= 0.8, (
+                    f"{solid} wind resistance {values[solid]} too low for a solid"
+                )
+
+    @pytest.mark.physics
+    def test_gases_low_wind_resistance(self, ground_truth):
+        """Gas elements should have low wind resistance (easily blown)."""
+        gt = ground_truth.get("wind_resistance")
+        if gt is None:
+            pytest.skip("No wind_resistance oracle data")
+        values = gt["values"]
+        for gas in ["fire", "steam", "smoke", "rainbow"]:
+            if gas in values:
+                assert values[gas] <= 0.3, (
+                    f"{gas} wind resistance {values[gas]} too high for a gas"
+                )

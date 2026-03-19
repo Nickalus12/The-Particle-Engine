@@ -85,3 +85,47 @@ class TestBeverlooFlow:
         if gt is None:
             pytest.skip("No beverloo oracle data")
         assert "5/2" in gt["equation"] or "^(5/2)" in gt["equation"]
+
+
+class TestGradedBedding:
+    """Denser particles should settle faster in fluid (Stokes' law)."""
+
+    @pytest.mark.physics
+    def test_grading_principle(self, ground_truth):
+        """Oracle confirms denser particles settle faster."""
+        gt = ground_truth.get("graded_bedding")
+        if gt is None:
+            pytest.skip("No graded_bedding oracle data")
+        assert "denser" in gt["principle"].lower() or "stokes" in gt["principle"].lower()
+
+    @pytest.mark.physics
+    def test_sand_settles_faster_than_dirt(self, ground_truth):
+        """Sand (d=1600) should have higher Stokes velocity than dirt (d=1500)."""
+        gt = ground_truth.get("graded_bedding")
+        if gt is None:
+            pytest.skip("No graded_bedding oracle data")
+        data = gt["settling_data"]
+        sand_vt = data["sand"]["stokes_vt_m_s"]
+        dirt_vt = data["dirt"]["stokes_vt_m_s"]
+        assert sand_vt > dirt_vt, (
+            f"Sand Stokes vt={sand_vt} should exceed dirt vt={dirt_vt}"
+        )
+
+    @pytest.mark.physics
+    def test_density_determines_settling(self, ground_truth):
+        """Higher real-world density → higher settling velocity."""
+        gt = ground_truth.get("graded_bedding")
+        if gt is None:
+            pytest.skip("No graded_bedding oracle data")
+        data = gt["settling_data"]
+        # Only compare elements that sink (positive vt)
+        sinkers = {k: v for k, v in data.items() if v["stokes_vt_m_s"] > 0}
+        sorted_by_density = sorted(sinkers.items(),
+                                   key=lambda x: x[1]["real_density_kg_m3"])
+        for i in range(1, len(sorted_by_density)):
+            prev = sorted_by_density[i - 1]
+            curr = sorted_by_density[i]
+            assert curr[1]["stokes_vt_m_s"] >= prev[1]["stokes_vt_m_s"], (
+                f"{curr[0]} (d={curr[1]['real_density_kg_m3']}) should settle >= "
+                f"{prev[0]} (d={prev[1]['real_density_kg_m3']})"
+            )

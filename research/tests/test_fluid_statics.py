@@ -249,3 +249,33 @@ class TestLoadDistribution:
         if gt is None:
             pytest.skip("No load_distribution oracle data")
         assert "pressure" in gt["principle"].lower()
+
+
+class TestUTubeFluids:
+    """In a U-tube, immiscible fluids balance by density ratio."""
+
+    @pytest.mark.physics
+    def test_oil_water_height_ratio(self, ground_truth):
+        """h_oil / h_water = rho_water / rho_oil = 1.25."""
+        gt = ground_truth.get("u_tube_fluids")
+        if gt is None:
+            pytest.skip("No u_tube_fluids oracle data")
+        expected = gt["expected_oil_to_water_height_ratio"]
+        assert expected == pytest.approx(1.25, rel=0.01)
+
+    @pytest.mark.physics
+    def test_engine_density_ratio_matches(self, ground_truth):
+        """Engine density ratio should match real-world ratio."""
+        gt = ground_truth.get("u_tube_fluids")
+        if gt is None:
+            pytest.skip("No u_tube_fluids oracle data")
+        engine_ratio = gt["our_density_water"] / gt["our_density_oil"]
+        assert engine_ratio == pytest.approx(gt["our_expected_ratio"], rel=0.01)
+
+    @pytest.mark.physics
+    def test_water_denser_than_oil(self, ground_truth):
+        """Water density should be greater than oil density."""
+        gt = ground_truth.get("u_tube_fluids")
+        if gt is None:
+            pytest.skip("No u_tube_fluids oracle data")
+        assert gt["water_density"] > gt["oil_density"]

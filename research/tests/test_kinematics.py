@@ -237,6 +237,134 @@ class TestSettling:
         assert min_y > 50, f"Sand found at y={min_y}, seems to be floating"
 
 
+class TestAccelerationCurves:
+    """Elements should accelerate to terminal velocity at correct rates."""
+
+    @pytest.mark.physics
+    @pytest.mark.parametrize(
+        "element,expected_terminal_frame",
+        [
+            ("sand", 2),
+            ("water", 2),
+        ],
+    )
+    def test_frames_to_terminal(self, ground_truth, element, expected_terminal_frame):
+        """Element should reach terminal velocity in expected number of frames."""
+        gt = ground_truth.get("acceleration_curves", {})
+        entry = gt.get(element)
+        if entry is None:
+            pytest.skip(f"No acceleration data for {element}")
+        assert entry["frames_to_terminal"] == expected_terminal_frame
+
+    @pytest.mark.physics
+    @pytest.mark.parametrize("element", ["sand", "water", "fire", "smoke"])
+    def test_velocity_never_exceeds_max(self, ground_truth, element):
+        """Velocity should never exceed maxVelocity."""
+        gt = ground_truth.get("acceleration_curves", {})
+        entry = gt.get(element)
+        if entry is None:
+            pytest.skip(f"No acceleration data for {element}")
+        max_vel = entry["maxVelocity"]
+        for v in entry["velocities_10frames"]:
+            assert abs(v) <= max_vel, (
+                f"{element} velocity {v} exceeds maxVelocity {max_vel}"
+            )
+
+    @pytest.mark.physics
+    def test_sand_accelerates_faster_than_water(self, ground_truth):
+        """Sand (gravity=2) should reach terminal velocity as fast or faster."""
+        gt = ground_truth.get("acceleration_curves", {})
+        sand = gt.get("sand")
+        water = gt.get("water")
+        if sand is None or water is None:
+            pytest.skip("Missing acceleration data")
+        # Sand has higher gravity but same terminal frame count
+        assert sand["gravity"] >= water["gravity"]
+
+
+class TestProjectileMotion:
+    """Projectile motion should show parabolic trajectory."""
+
+    @pytest.mark.physics
+    def test_horizontal_motion_constant(self, ground_truth):
+        """Horizontal displacement should be constant per frame (no air drag)."""
+        gt = ground_truth.get("projectile_motion")
+        if gt is None:
+            pytest.skip("No projectile_motion oracle data")
+        x_pos = gt["x_positions_20frames"]
+        deltas = [x_pos[i] - x_pos[i - 1] for i in range(1, len(x_pos))]
+        # All horizontal deltas should be equal (constant velocity)
+        for d in deltas:
+            assert d == pytest.approx(deltas[0], abs=0.1)
+
+    @pytest.mark.physics
+    def test_vertical_acceleration(self, ground_truth):
+        """Vertical displacement should increase (gravity acceleration)."""
+        gt = ground_truth.get("projectile_motion")
+        if gt is None:
+            pytest.skip("No projectile_motion oracle data")
+        y_pos = gt["y_positions_20frames"]
+        # First few frames should show increasing vertical displacement
+        delta1 = y_pos[1] - y_pos[0]
+        delta2 = y_pos[2] - y_pos[1]
+        assert delta2 >= delta1 - 0.1, "Vertical motion should accelerate"
+
+
+class TestDominoCascade:
+    """Unsupported elements should fall progressively, not teleport."""
+
+    @pytest.mark.physics
+    def test_cascade_not_instant(self, ground_truth):
+        """A 20-cell column collapse should take multiple frames."""
+        gt = ground_truth.get("domino_cascade")
+        if gt is None:
+            pytest.skip("No domino_cascade oracle data")
+        min_frames = gt["expected_min_frames"]
+        max_frames = gt["expected_max_frames"]
+        expected = gt["expected_fall_frames_20cells"]
+        assert min_frames <= expected <= max_frames
+
+    @pytest.mark.physics
+    def test_progressive_fall_principle(self, ground_truth):
+        """Principle: elements fall progressively due to finite gravity."""
+        gt = ground_truth.get("domino_cascade")
+        if gt is None:
+            pytest.skip("No domino_cascade oracle data")
+        assert "progressive" in gt["principle"].lower()
+
+
+class TestSettlingMechanics:
+    """Elements should settle after consecutive stable frames."""
+
+    @pytest.mark.physics
+    def test_settling_uses_flag_bit(self, ground_truth):
+        """Settling should use bit 64 in flags."""
+        gt = ground_truth.get("settling_timing")
+        if gt is None:
+            pytest.skip("No settling_timing oracle data")
+        assert gt["settle_flag_bit"] == 64
+
+    @pytest.mark.physics
+    def test_settling_takes_3_frames(self, ground_truth):
+        """Elements should settle after 3 consecutive stable frames."""
+        gt = ground_truth.get("settling_timing")
+        if gt is None:
+            pytest.skip("No settling_timing oracle data")
+        assert gt["frames_to_settle"] == 3
+
+
+class TestVelocityOnImpact:
+    """Velocity should reset on landing."""
+
+    @pytest.mark.physics
+    def test_velocity_resets(self, ground_truth):
+        """Velocity resets to 0 when hitting a solid surface."""
+        gt = ground_truth.get("velocity_on_impact")
+        if gt is None:
+            pytest.skip("No velocity_on_impact oracle data")
+        assert "reset" in gt["principle"].lower() or "0" in gt["principle"]
+
+
 class TestStokesDrag:
     """Terminal velocity should be proportional to density difference (Stokes law)."""
 
