@@ -417,3 +417,33 @@ class TestReactionTemperature:
         assert len(reactions) >= 5
         for r in reactions:
             assert 0 < r["probability"] <= 1.0
+
+
+class TestElectrolysis:
+    """Electrolysis: lightning through water produces gas bubbles."""
+
+    @pytest.mark.physics
+    def test_electrolysis_principle(self, ground_truth):
+        """Oracle should describe water splitting into gases."""
+        gt = ground_truth.get("electrolysis")
+        if gt is None:
+            pytest.skip("No electrolysis oracle data")
+        assert "water" in gt["principle"].lower()
+        assert "hydrogen" in gt["products"]
+        assert "oxygen" in gt["products"]
+
+    @pytest.mark.physics
+    def test_electrolysis_equation(self, ground_truth):
+        """Oracle should have the correct chemical equation."""
+        gt = ground_truth.get("electrolysis")
+        if gt is None:
+            pytest.skip("No electrolysis oracle data")
+        assert "H₂O" in gt["equation"]
+
+    @pytest.mark.physics
+    def test_electrolysis_produces_bubbles(self, ground_truth):
+        """Our engine should produce bubbles from lightning+water."""
+        gt = ground_truth.get("electrolysis")
+        if gt is None:
+            pytest.skip("No electrolysis oracle data")
+        assert gt["our_product"] == "bubble"

@@ -826,6 +826,20 @@ def generate_ground_truth() -> dict:
     }
 
     # =========================================================================
+    # Electrolysis (lightning + water → bubbles)
+    # =========================================================================
+    results["electrolysis"] = {
+        "principle": "Electrical energy splits water into hydrogen and oxygen gases",
+        "equation": "2H₂O → 2H₂ + O₂",
+        "minimum_voltage_V": 1.23,
+        "products": ["hydrogen", "oxygen"],
+        "our_trigger": "lightning adjacent to water",
+        "our_product": "bubble",
+        "probability": "1/3 per adjacent water cell",
+        "reference": "Faraday, Experimental Researches in Electricity (1834)",
+    }
+
+    # =========================================================================
     # 23. THERMAL CONDUCTIVITY (backward compat)
     # =========================================================================
 

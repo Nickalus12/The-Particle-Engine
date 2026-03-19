@@ -1047,6 +1047,14 @@ extension ElementBehaviors on SimulationEngine {
           life[ni] = 0;
           markProcessed(ni);
         }
+        // Electrolysis: lightning through water produces gas bubbles
+        // (H₂O → H₂ + O₂). Real electrolysis requires 1.23V minimum.
+        if (neighbor == El.water && rng.nextInt(3) == 0) {
+          grid[ni] = El.bubble;
+          life[ni] = 0;
+          markProcessed(ni);
+          queueReactionFlash(nx, ny, 180, 200, 255, 3);
+        }
       }
     }
 
