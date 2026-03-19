@@ -1,14 +1,13 @@
-import 'dart:async';
+import 'dart:math';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../game/particle_engine_game.dart';
-import '../../services/save_service.dart';
 import '../theme/colors.dart';
 import '../theme/particle_theme.dart';
 import '../theme/typography.dart';
-import 'hud_icon_badge.dart';
 
 /// Brush modes for painting elements on the grid.
 enum BrushMode {
@@ -21,23 +20,15 @@ enum BrushMode {
   final String label;
 }
 
-/// Right-side collapsible vertical tool panel with brush controls,
-/// simulation toggles, and world actions.
+/// Right-side vertical tool panel with brush controls, simulation toggles,
+/// and world actions. Slides in from the right edge with staggered sections.
+///
+/// Narrow (80px) glassmorphic panel mirroring the left element palette.
 class ToolBar extends StatefulWidget {
-  const ToolBar({
-    super.key,
-    required this.game,
-    this.onInteraction,
-    this.reservedBottom = 0,
-    this.panelInteractionKey,
-    this.toggleInteractionKey,
-  });
+  const ToolBar({super.key, required this.game, this.onInteraction});
 
   final ParticleEngineGame game;
   final VoidCallback? onInteraction;
-  final double reservedBottom;
-  final Key? panelInteractionKey;
-  final Key? toggleInteractionKey;
 
   @override
   State<ToolBar> createState() => _ToolBarState();
@@ -48,51 +39,90 @@ class _ToolBarState extends State<ToolBar> with TickerProviderStateMixin {
   BrushMode _brushMode = BrushMode.circle;
   bool _isPaused = false;
   bool _isNight = false;
-  bool _collapsed = false;
+  bool _confirmClear = false;
+  bool _isShaking = false;
 
   late final AnimationController _slideController;
   late final Animation<Offset> _slideAnimation;
-  late final AnimationController _collapseController;
 
-  static const List<int> _brushSizes = [1, 3, 5, 8, 12];
+  // Staggered entrance controllers for each section.
+  late final AnimationController _brushSectionController;
+  late final AnimationController _actionsSectionController;
+  late final AnimationController _worldSectionController;
+  late final Animation<double> _brushSectionAnim;
+  late final Animation<double> _actionsSectionAnim;
+  late final Animation<double> _worldSectionAnim;
 
   @override
   void initState() {
     super.initState();
+
+    // Main slide-in.
     _slideController = AnimationController(
       vsync: this,
-      duration: ParticleTheme.normalDuration,
+      duration: const Duration(milliseconds: 400),
     );
-    _slideAnimation = Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
-        .animate(
-          CurvedAnimation(
-            parent: _slideController,
-            curve: ParticleTheme.defaultCurve,
-          ),
-        );
-    _slideController.forward();
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(1, 0),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _slideController,
+      curve: Curves.easeOutBack,
+    ));
 
-    _collapseController = AnimationController(
+    // Staggered section fade/scale.
+    _brushSectionController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 250),
-      value: 1.0, // start expanded
+      duration: const Duration(milliseconds: 300),
     );
+    _actionsSectionController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+    _worldSectionController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+
+    _brushSectionAnim = CurvedAnimation(
+      parent: _brushSectionController,
+      curve: Curves.easeOutCubic,
+    );
+    _actionsSectionAnim = CurvedAnimation(
+      parent: _actionsSectionController,
+      curve: Curves.easeOutCubic,
+    );
+    _worldSectionAnim = CurvedAnimation(
+      parent: _worldSectionController,
+      curve: Curves.easeOutCubic,
+    );
+
+    // Start entrance sequence.
+    _slideController.forward();
+    Future.delayed(const Duration(milliseconds: 150), () {
+      if (mounted) _brushSectionController.forward();
+    });
+    Future.delayed(const Duration(milliseconds: 250), () {
+      if (mounted) _actionsSectionController.forward();
+    });
+    Future.delayed(const Duration(milliseconds: 350), () {
+      if (mounted) _worldSectionController.forward();
+    });
   }
 
   @override
   void dispose() {
     _slideController.dispose();
-    _collapseController.dispose();
+    _brushSectionController.dispose();
+    _actionsSectionController.dispose();
+    _worldSectionController.dispose();
     super.dispose();
   }
 
   void _interact() => widget.onInteraction?.call();
 
-  void _cycleBrushSize() {
-    setState(() {
-      final idx = _brushSizes.indexOf(_brushSize);
-      _brushSize = _brushSizes[(idx + 1) % _brushSizes.length];
-    });
+  void _setBrushSize(int size) {
+    setState(() => _brushSize = size);
     widget.game.sandboxWorld.sandboxComponent.brushSize = _brushSize;
     _interact();
   }
@@ -117,637 +147,918 @@ class _ToolBarState extends State<ToolBar> with TickerProviderStateMixin {
     _interact();
   }
 
-  void _toggleCollapse() {
-    setState(() => _collapsed = !_collapsed);
-    if (_collapsed) {
-      _collapseController.reverse();
+  void _handleClear() {
+    _interact();
+    if (_confirmClear) {
+      widget.game.sandboxWorld.simulation.clear();
+      setState(() => _confirmClear = false);
     } else {
-      _collapseController.forward();
+      setState(() => _confirmClear = true);
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _confirmClear = false);
+      });
     }
   }
 
-  void _clearGrid(BuildContext context) {
+  void _shake() {
+    widget.game.sandboxWorld.simulation.doShake();
+    setState(() => _isShaking = true);
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) setState(() => _isShaking = false);
+    });
     _interact();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(ParticleTheme.radiusMedium),
-        ),
-        title: Text('Clear World?', style: AppTypography.heading),
-        content: Text(
-          'This will remove all elements from the grid.',
-          style: AppTypography.body,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              'Cancel',
-              style: AppTypography.button.copyWith(
-                color: AppColors.textSecondary,
+  }
+
+  void _zoomIn() {
+    final vf = widget.game.camera.viewfinder;
+    final newZoom =
+        (vf.zoom + 0.5).clamp(ParticleEngineGame.minZoom, ParticleEngineGame.maxZoom);
+    vf.zoom = newZoom;
+    widget.game.clampCameraPosition();
+    _interact();
+    setState(() {});
+  }
+
+  void _zoomOut() {
+    final vf = widget.game.camera.viewfinder;
+    final newZoom =
+        (vf.zoom - 0.5).clamp(ParticleEngineGame.minZoom, ParticleEngineGame.maxZoom);
+    vf.zoom = newZoom;
+    widget.game.clampCameraPosition();
+    _interact();
+    setState(() {});
+  }
+
+  void _resetZoom() {
+    widget.game.onDoubleTap();
+    _interact();
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SlideTransition(
+      position: _slideAnimation,
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Padding(
+          padding: const EdgeInsets.only(right: 8, top: 8, bottom: 8),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(ParticleTheme.radiusLarge),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+              child: Container(
+                width: 80,
+                decoration: ParticleTheme.glassDecoration(
+                  borderRadius: ParticleTheme.radiusLarge,
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // -- Brush section --
+                    FadeTransition(
+                      opacity: _brushSectionAnim,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const _SectionLabel(label: 'BRUSH'),
+                          const SizedBox(height: 4),
+                          _BrushSizeSlider(
+                            size: _brushSize,
+                            onChanged: _setBrushSize,
+                          ),
+                          const SizedBox(height: 4),
+                          _ActiveToolButton(
+                            icon: _brushMode.icon,
+                            onTap: _cycleBrushMode,
+                            tooltip: _brushMode.label,
+                            label: _brushMode.label,
+                            isActive: true,
+                            activeColor: AppColors.primary,
+                          ),
+                        ],
+                      ),
+                    ),
+                    _gradientDivider(),
+                    // -- Actions section --
+                    FadeTransition(
+                      opacity: _actionsSectionAnim,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const _SectionLabel(label: 'ACTIONS'),
+                          const SizedBox(height: 4),
+                          _ClearButton(
+                            isConfirming: _confirmClear,
+                            onTap: _handleClear,
+                          ),
+                          const SizedBox(height: 4),
+                          _ShakeButton(
+                            isShaking: _isShaking,
+                            onTap: _shake,
+                          ),
+                        ],
+                      ),
+                    ),
+                    _gradientDivider(),
+                    // -- World section --
+                    FadeTransition(
+                      opacity: _worldSectionAnim,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const _SectionLabel(label: 'WORLD'),
+                          const SizedBox(height: 4),
+                          _PausePlayButton(
+                            isPaused: _isPaused,
+                            onTap: _togglePause,
+                          ),
+                          const SizedBox(height: 4),
+                          _DayNightButton(
+                            isNight: _isNight,
+                            onTap: _toggleDayNight,
+                          ),
+                          _gradientDivider(),
+                          const _SectionLabel(label: 'ZOOM'),
+                          const SizedBox(height: 4),
+                          _ZoomControls(
+                            onZoomIn: _zoomIn,
+                            onZoomOut: _zoomOut,
+                            onReset: _resetZoom,
+                            currentZoom: widget.game.camera.viewfinder.zoom,
+                          ),
+                        ],
+                      ),
+                    ),
+                    // -- Debug FPS --
+                    if (kDebugMode) ...[
+                      _gradientDivider(),
+                      _FpsCounter(game: widget.game),
+                    ],
+                  ],
+                ),
               ),
             ),
           ),
-          TextButton(
-            onPressed: () {
-              widget.game.sandboxWorld.clearWorld();
-              Navigator.pop(ctx);
-            },
-            child: Text(
-              'Clear',
-              style: AppTypography.button.copyWith(color: AppColors.danger),
+        ),
+      ),
+    );
+  }
+
+  Widget _gradientDivider() => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+        child: Container(
+          height: 1,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Colors.white.withValues(alpha: 0.0),
+                Colors.white.withValues(alpha: 0.12),
+                Colors.white.withValues(alpha: 0.0),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+// =============================================================================
+// Section label
+// =============================================================================
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: AppTypography.caption.copyWith(
+        fontSize: 8,
+        color: AppColors.textDim,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 1.6,
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// Brush size vertical slider with preview dot
+// =============================================================================
+
+class _BrushSizeSlider extends StatelessWidget {
+  const _BrushSizeSlider({required this.size, required this.onChanged});
+
+  final int size;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final diameter = 6.0 + (size * 2.0);
+    return SizedBox(
+      width: 62,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Preview dot.
+          AnimatedContainer(
+            duration: ParticleTheme.fastDuration,
+            curve: ParticleTheme.defaultCurve,
+            width: diameter,
+            height: diameter,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.textPrimary,
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.5),
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          // Vertical slider.
+          SizedBox(
+            height: 80,
+            child: RotatedBox(
+              quarterTurns: 3,
+              child: SliderTheme(
+                data: SliderThemeData(
+                  trackHeight: 3,
+                  thumbShape:
+                      const RoundSliderThumbShape(enabledThumbRadius: 7),
+                  activeTrackColor: AppColors.primary,
+                  inactiveTrackColor:
+                      AppColors.surfaceLight.withValues(alpha: 0.6),
+                  thumbColor: AppColors.primary,
+                  overlayColor: AppColors.primaryDim.withValues(alpha: 0.2),
+                  overlayShape:
+                      const RoundSliderOverlayShape(overlayRadius: 14),
+                ),
+                child: Slider(
+                  value: size.toDouble(),
+                  min: 1,
+                  max: 10,
+                  divisions: 9,
+                  onChanged: (v) => onChanged(v.round()),
+                ),
+              ),
+            ),
+          ),
+          Text(
+            '${size}px',
+            style: AppTypography.caption.copyWith(
+              fontSize: 9,
+              color: AppColors.textDim,
             ),
           ),
         ],
       ),
     );
   }
-
-  void _shake() {
-    // Multiple passes for a more dramatic shake
-    final sim = widget.game.sandboxWorld.simulation;
-    sim.doShake();
-    sim.doShake();
-    sim.doShake();
-    _interact();
-  }
-
-  void _openPeriodicTable() {
-    widget.game.overlays.add(ParticleEngineGame.overlayPeriodicTable);
-    _interact();
-  }
-
-  Future<void> _saveWorld(BuildContext context) async {
-    _interact();
-    final request = await showDialog<_SaveRequest>(
-      context: context,
-      builder: (ctx) => _SaveWorldDialog(initialName: widget.game.worldName),
-    );
-    if (request == null) return;
-
-    try {
-      await widget.game.sandboxWorld.saveCurrentWorld(
-        slot: request.slot,
-        name: request.name,
-      );
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: AppColors.surface,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(ParticleTheme.radiusSmall),
-          ),
-          content: Text(
-            'Saved to slot ${request.slot}',
-            style: AppTypography.body.copyWith(color: AppColors.success),
-          ),
-        ),
-      );
-    } catch (_) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: AppColors.surface,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(ParticleTheme.radiusSmall),
-          ),
-          content: Text(
-            'Save failed',
-            style: AppTypography.body.copyWith(color: AppColors.danger),
-          ),
-        ),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final safe = MediaQuery.of(context).padding;
-        final availableHeight =
-            (constraints.maxHeight -
-                    safe.top -
-                    safe.bottom -
-                    widget.reservedBottom -
-                    8)
-                .clamp(240.0, double.infinity)
-                .toDouble();
-        final compact = availableHeight < 620;
-        final ultraCompact = availableHeight < 520;
-        final panelWidth = ultraCompact ? 62.0 : (compact ? 68.0 : 72.0);
-        final iconButtonSize = ultraCompact ? 40.0 : (compact ? 44.0 : 48.0);
-        final iconSize = ultraCompact ? 16.0 : (compact ? 18.0 : 19.0);
-        final collapseSize = ultraCompact ? 28.0 : 30.0;
-        final collapseIconSize = ultraCompact ? 14.0 : 16.0;
-        final verticalPadding = ultraCompact ? 5.0 : 8.0;
-        final panelGap = ultraCompact ? 1.0 : 2.0;
-        final dividerVertical = ultraCompact ? 2.0 : 3.0;
-        final panelMaxHeight = (availableHeight - collapseSize - 8)
-            .clamp(80.0, availableHeight)
-            .toDouble();
-
-        return SlideTransition(
-          position: _slideAnimation,
-          child: SafeArea(
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: Padding(
-                key: const ValueKey('tool_bar_container'),
-                padding: EdgeInsets.only(
-                  left: 6,
-                  top: 4,
-                  bottom: 4 + widget.reservedBottom,
-                ),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxHeight: availableHeight),
-                  child: SingleChildScrollView(
-                    physics: const ClampingScrollPhysics(),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _CollapseToggle(
-                          collapsed: _collapsed,
-                          onTap: _toggleCollapse,
-                          size: collapseSize,
-                          iconSize: collapseIconSize,
-                          interactionKey: widget.toggleInteractionKey,
-                        ),
-                        const SizedBox(height: 4),
-                        SizeTransition(
-                          sizeFactor: CurvedAnimation(
-                            parent: _collapseController,
-                            curve: Curves.easeOutCubic,
-                          ),
-                          axisAlignment: -1.0,
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxHeight: panelMaxHeight,
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(
-                                ParticleTheme.radiusLarge,
-                              ),
-                              child: BackdropFilter(
-                                filter: ImageFilter.blur(
-                                  sigmaX: 24,
-                                  sigmaY: 24,
-                                ),
-                                child: Container(
-                                  key: widget.panelInteractionKey,
-                                  width: panelWidth,
-                                  decoration: BoxDecoration(
-                                    gradient: const LinearGradient(
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
-                                      colors: [
-                                        Color(0xE0141B28),
-                                        Color(0xD10A0F18),
-                                      ],
-                                    ),
-                                    borderRadius: BorderRadius.circular(
-                                      ParticleTheme.radiusLarge,
-                                    ),
-                                    border: Border.all(
-                                      color: AppColors.panelBorder,
-                                      width: 0.5,
-                                    ),
-                                    boxShadow: const [
-                                      BoxShadow(
-                                        color: Color(0x40000000),
-                                        blurRadius: 24,
-                                        offset: Offset(0, 4),
-                                      ),
-                                    ],
-                                  ),
-                                  padding: EdgeInsets.symmetric(
-                                    vertical: verticalPadding,
-                                  ),
-                                  child: SingleChildScrollView(
-                                    physics: const ClampingScrollPhysics(),
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        _BrushSizeButton(
-                                          size: _brushSize,
-                                          onTap: _cycleBrushSize,
-                                          width: iconButtonSize,
-                                          height: ultraCompact ? 32 : 36,
-                                        ),
-                                        SizedBox(height: panelGap),
-                                        _ToolIcon(
-                                          icon: _brushMode.icon,
-                                          onTap: _cycleBrushMode,
-                                          tooltip: _brushMode.label,
-                                          accent: const Color(0xFF7EE3FF),
-                                          motif: HudBadgeMotif.streak,
-                                          size: iconButtonSize,
-                                          iconSize: iconSize,
-                                        ),
-                                        _divider(vertical: dividerVertical),
-                                        _PausePlayIcon(
-                                          isPaused: _isPaused,
-                                          onTap: _togglePause,
-                                          size: iconButtonSize,
-                                          iconSize: iconSize + 1,
-                                        ),
-                                        SizedBox(height: panelGap),
-                                        _DayNightIcon(
-                                          isNight: _isNight,
-                                          onTap: _toggleDayNight,
-                                          size: iconButtonSize,
-                                          iconSize: iconSize,
-                                        ),
-                                        _divider(vertical: dividerVertical),
-                                        _ToolIcon(
-                                          icon: Icons.vibration_rounded,
-                                          onTap: _shake,
-                                          tooltip: 'Shake',
-                                          accent: const Color(0xFFFFA35C),
-                                          motif: HudBadgeMotif.streak,
-                                          size: iconButtonSize,
-                                          iconSize: iconSize,
-                                        ),
-                                        SizedBox(height: panelGap),
-                                        _ToolIcon(
-                                          icon: Icons.science_rounded,
-                                          onTap: _openPeriodicTable,
-                                          tooltip: 'Periodic Table',
-                                          iconColor: const Color(0xFF80B0E0),
-                                          accent: const Color(0xFF80B0E0),
-                                          motif: HudBadgeMotif.orbit,
-                                          size: iconButtonSize,
-                                          iconSize: iconSize,
-                                        ),
-                                        SizedBox(height: panelGap),
-                                        _ToolIcon(
-                                          icon: Icons.save_outlined,
-                                          onTap: () =>
-                                              unawaited(_saveWorld(context)),
-                                          tooltip: 'Save World',
-                                          iconColor: const Color(0xFF80D0A8),
-                                          accent: const Color(0xFF80D0A8),
-                                          motif: HudBadgeMotif.lattice,
-                                          size: iconButtonSize,
-                                          iconSize: iconSize,
-                                        ),
-                                        SizedBox(height: panelGap),
-                                        _ToolIcon(
-                                          icon: Icons.delete_outline_rounded,
-                                          onTap: () => _clearGrid(context),
-                                          tooltip: 'Clear',
-                                          iconColor: AppColors.danger,
-                                          accent: AppColors.danger,
-                                          motif: HudBadgeMotif.pulse,
-                                          size: iconButtonSize,
-                                          iconSize: iconSize,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _divider({double vertical = 3}) => Padding(
-    padding: EdgeInsets.symmetric(vertical: vertical, horizontal: 8),
-    child: Container(
-      height: 0.5,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.white.withValues(alpha: 0.0),
-            Colors.white.withValues(alpha: 0.10),
-            Colors.white.withValues(alpha: 0.0),
-          ],
-        ),
-      ),
-    ),
-  );
 }
 
-class _SaveRequest {
-  const _SaveRequest({required this.slot, required this.name});
+// =============================================================================
+// Active tool button with color fill when active
+// =============================================================================
 
-  final int slot;
-  final String? name;
-}
-
-class _SaveWorldDialog extends StatefulWidget {
-  const _SaveWorldDialog({this.initialName});
-
-  final String? initialName;
-
-  @override
-  State<_SaveWorldDialog> createState() => _SaveWorldDialogState();
-}
-
-class _SaveWorldDialogState extends State<_SaveWorldDialog> {
-  late final TextEditingController _nameController;
-  int _slot = 1;
-
-  @override
-  void initState() {
-    super.initState();
-    _nameController = TextEditingController(text: widget.initialName ?? '');
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final slots = List<int>.generate(
-      SaveService.maxSlots - 1,
-      (index) => index + 1,
-    );
-
-    return AlertDialog(
-      scrollable: true,
-      backgroundColor: AppColors.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(ParticleTheme.radiusMedium),
-      ),
-      title: Text('Save World', style: AppTypography.heading),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 360),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            DropdownButtonFormField<int>(
-              initialValue: _slot,
-              decoration: const InputDecoration(labelText: 'Slot'),
-              items: slots
-                  .map(
-                    (slot) => DropdownMenuItem<int>(
-                      value: slot,
-                      child: Text('Slot $slot'),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (value) {
-                if (value != null) {
-                  setState(() => _slot = value);
-                }
-              },
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: 'Name',
-                hintText: 'Optional',
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(
-            'Cancel',
-            style: AppTypography.button.copyWith(
-              color: AppColors.textSecondary,
-            ),
-          ),
-        ),
-        TextButton(
-          onPressed: () {
-            final trimmed = _nameController.text.trim();
-            Navigator.pop(
-              context,
-              _SaveRequest(slot: _slot, name: trimmed.isEmpty ? null : trimmed),
-            );
-          },
-          child: Text(
-            'Save',
-            style: AppTypography.button.copyWith(color: AppColors.success),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Small pill-shaped toggle to collapse/expand the toolbar.
-class _CollapseToggle extends StatelessWidget {
-  const _CollapseToggle({
-    required this.collapsed,
-    required this.onTap,
-    this.size = 30,
-    this.iconSize = 16,
-    this.interactionKey,
-  });
-  final bool collapsed;
-  final VoidCallback onTap;
-  final double size;
-  final double iconSize;
-  final Key? interactionKey;
-
-  @override
-  Widget build(BuildContext context) {
-    return HudIconBadge(
-      key: interactionKey,
-      icon: collapsed
-          ? Icons.chevron_left_rounded
-          : Icons.chevron_right_rounded,
-      onTap: onTap,
-      tooltip: collapsed ? 'Expand toolbar' : 'Collapse toolbar',
-      accent: const Color(0xFF74A8F5),
-      motif: HudBadgeMotif.orbit,
-      size: size,
-      iconSize: iconSize,
-    );
-  }
-}
-
-/// Compact icon button for the toolbar (no label, just icon + tooltip).
-class _ToolIcon extends StatefulWidget {
-  const _ToolIcon({
+class _ActiveToolButton extends StatefulWidget {
+  const _ActiveToolButton({
     required this.icon,
     required this.onTap,
     this.tooltip,
-    this.iconColor,
-    this.accent = const Color(0xFF74A8F5),
-    this.motif = HudBadgeMotif.orbit,
-    this.size = 48,
-    this.iconSize = 19,
+    this.label,
+    this.isActive = false,
+    this.activeColor,
   });
 
   final IconData icon;
   final VoidCallback onTap;
   final String? tooltip;
-  final Color? iconColor;
-  final Color accent;
-  final HudBadgeMotif motif;
-  final double size;
-  final double iconSize;
+  final String? label;
+  final bool isActive;
+  final Color? activeColor;
 
   @override
-  State<_ToolIcon> createState() => _ToolIconState();
+  State<_ActiveToolButton> createState() => _ActiveToolButtonState();
 }
 
-class _ToolIconState extends State<_ToolIcon> {
+class _ActiveToolButtonState extends State<_ActiveToolButton> {
+  bool _hovered = false;
+
   @override
   Widget build(BuildContext context) {
-    return HudIconBadge(
-      icon: widget.icon,
-      onTap: widget.onTap,
-      tooltip: widget.tooltip,
-      accent: widget.accent,
-      motif: widget.motif,
-      size: widget.size,
-      iconSize: widget.iconSize,
-      shape: BoxShape.rectangle,
-      borderRadius: BorderRadius.circular(12),
-      iconColor: widget.iconColor,
+    final color = widget.activeColor ?? AppColors.primary;
+    return Tooltip(
+      message: widget.tooltip ?? '',
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        cursor: SystemMouseCursors.click,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: widget.onTap,
+            child: AnimatedContainer(
+              duration: ParticleTheme.fastDuration,
+              width: 62,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              decoration: BoxDecoration(
+                color: widget.isActive
+                    ? color.withValues(alpha: 0.25)
+                    : (_hovered
+                        ? AppColors.surfaceLight.withValues(alpha: 0.3)
+                        : Colors.transparent),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: widget.isActive
+                      ? color.withValues(alpha: 0.6)
+                      : Colors.transparent,
+                  width: 1.5,
+                ),
+                boxShadow: widget.isActive
+                    ? [
+                        BoxShadow(
+                          color: color.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    widget.icon,
+                    size: 24,
+                    color: widget.isActive ? color : AppColors.textPrimary,
+                  ),
+                  if (widget.label != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.label!,
+                      style: AppTypography.caption.copyWith(
+                        fontSize: 9,
+                        color: widget.isActive
+                            ? color
+                            : (_hovered
+                                ? AppColors.textPrimary
+                                : AppColors.textSecondary),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
 
-/// Compact pause/play icon.
-class _PausePlayIcon extends StatelessWidget {
-  const _PausePlayIcon({
+// =============================================================================
+// Pause/Play — prominent with animated icon morph and pulse when paused
+// =============================================================================
+
+class _PausePlayButton extends StatefulWidget {
+  const _PausePlayButton({
     required this.isPaused,
     required this.onTap,
-    this.size = 48,
-    this.iconSize = 21,
   });
+
   final bool isPaused;
   final VoidCallback onTap;
-  final double size;
-  final double iconSize;
+
+  @override
+  State<_PausePlayButton> createState() => _PausePlayButtonState();
+}
+
+class _PausePlayButtonState extends State<_PausePlayButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseController;
+  late final Animation<double> _pulseAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+    _pulseAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+    if (widget.isPaused) _pulseController.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant _PausePlayButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isPaused && !_pulseController.isAnimating) {
+      _pulseController.repeat(reverse: true);
+    } else if (!widget.isPaused && _pulseController.isAnimating) {
+      _pulseController.stop();
+      _pulseController.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final color = isPaused ? AppColors.danger : AppColors.success;
-    return HudIconBadge(
-      icon: isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
-      onTap: onTap,
-      tooltip: isPaused ? 'Play' : 'Pause',
-      accent: color,
-      motif: HudBadgeMotif.pulse,
-      active: true,
-      size: size,
-      iconSize: iconSize,
-      shape: BoxShape.rectangle,
-      borderRadius: BorderRadius.circular(12),
+    final color = widget.isPaused ? AppColors.warning : AppColors.success;
+    return Tooltip(
+      message: widget.isPaused ? 'Resume simulation' : 'Pause simulation',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(ParticleTheme.radiusMedium),
+          onTap: widget.onTap,
+          child: AnimatedBuilder(
+            animation: _pulseAnim,
+            builder: (context, child) {
+              final pulseScale =
+                  widget.isPaused ? 1.0 + _pulseAnim.value * 0.04 : 1.0;
+              final pulseGlow =
+                  widget.isPaused ? _pulseAnim.value * 0.15 : 0.0;
+              return Transform.scale(
+                scale: pulseScale,
+                child: AnimatedContainer(
+                  duration: ParticleTheme.fastDuration,
+                  curve: ParticleTheme.defaultCurve,
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.18),
+                    borderRadius:
+                        BorderRadius.circular(ParticleTheme.radiusMedium),
+                    border: Border.all(
+                      color: color.withValues(alpha: 0.4),
+                      width: 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: color.withValues(alpha: 0.2 + pulseGlow),
+                        blurRadius: 12,
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        transitionBuilder: (child, anim) =>
+                            RotationTransition(
+                          turns:
+                              Tween(begin: 0.75, end: 1.0).animate(anim),
+                          child:
+                              FadeTransition(opacity: anim, child: child),
+                        ),
+                        child: Icon(
+                          widget.isPaused
+                              ? Icons.play_arrow_rounded
+                              : Icons.pause_rounded,
+                          key: ValueKey(widget.isPaused),
+                          size: 28,
+                          color: color,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        widget.isPaused ? 'Play' : 'Pause',
+                        style: AppTypography.caption.copyWith(
+                          fontSize: 9,
+                          color: color,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
     );
   }
 }
 
-/// Compact day/night toggle icon.
-class _DayNightIcon extends StatelessWidget {
-  const _DayNightIcon({
+// =============================================================================
+// Day/Night toggle with animated sun/moon transition
+// =============================================================================
+
+class _DayNightButton extends StatelessWidget {
+  const _DayNightButton({
     required this.isNight,
     required this.onTap,
-    this.size = 48,
-    this.iconSize = 19,
   });
+
   final bool isNight;
   final VoidCallback onTap;
-  final double size;
-  final double iconSize;
 
   @override
   Widget build(BuildContext context) {
     final color = isNight ? AppColors.accent : AppColors.warning;
-    return HudIconBadge(
-      icon: isNight ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
-      onTap: onTap,
-      tooltip: isNight ? 'Night' : 'Day',
-      accent: color,
-      motif: isNight ? HudBadgeMotif.orbit : HudBadgeMotif.streak,
-      active: true,
-      size: size,
-      iconSize: iconSize,
-      shape: BoxShape.rectangle,
-      borderRadius: BorderRadius.circular(12),
+    return Tooltip(
+      message: isNight ? 'Switch to day' : 'Switch to night',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(ParticleTheme.radiusSmall),
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: ParticleTheme.defaultCurve,
+            width: 62,
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              borderRadius:
+                  BorderRadius.circular(ParticleTheme.radiusSmall),
+              border: Border.all(
+                color: color.withValues(alpha: 0.3),
+                width: 1,
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  transitionBuilder: (child, anim) {
+                    return RotationTransition(
+                      turns: Tween(begin: 0.5, end: 1.0).animate(
+                        CurvedAnimation(
+                            parent: anim, curve: Curves.easeOutBack),
+                      ),
+                      child: FadeTransition(opacity: anim, child: child),
+                    );
+                  },
+                  child: Icon(
+                    isNight
+                        ? Icons.dark_mode_rounded
+                        : Icons.light_mode_rounded,
+                    key: ValueKey(isNight),
+                    size: 24,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: Text(
+                    isNight ? 'Night' : 'Day',
+                    key: ValueKey(isNight),
+                    style: AppTypography.caption.copyWith(
+                      fontSize: 9,
+                      color: color,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
 
-/// Visual brush size indicator that shows a filled circle proportional to size.
-class _BrushSizeButton extends StatelessWidget {
-  const _BrushSizeButton({
-    required this.size,
+// =============================================================================
+// Clear button — double-tap-to-confirm
+// =============================================================================
+
+class _ClearButton extends StatelessWidget {
+  const _ClearButton({
+    required this.isConfirming,
     required this.onTap,
-    this.width = 48,
-    this.height = 36,
   });
 
-  final int size;
+  final bool isConfirming;
   final VoidCallback onTap;
-  final double width;
-  final double height;
 
   @override
   Widget build(BuildContext context) {
-    final diameter = 4.0 + (size * 1.5);
+    final color = isConfirming ? AppColors.danger : AppColors.textPrimary;
     return Tooltip(
-      message: 'Brush: ${size}px',
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: width,
-          height: height,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0x331FC7FF), Color(0x140A0F18)],
-            ),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.10),
-              width: 0.8,
-            ),
-          ),
-          alignment: Alignment.center,
-          child: Container(
-            width: diameter.clamp(6, 28),
-            height: diameter.clamp(6, 28),
+      message: isConfirming ? 'Tap again to clear' : 'Clear world',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(ParticleTheme.radiusSmall),
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: ParticleTheme.fastDuration,
+            width: 62,
+            padding: const EdgeInsets.symmetric(vertical: 4),
             decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFFEAF8FF), Color(0xFF81D8FF)],
+              color: isConfirming
+                  ? AppColors.danger.withValues(alpha: 0.2)
+                  : Colors.transparent,
+              borderRadius:
+                  BorderRadius.circular(ParticleTheme.radiusSmall),
+              border: Border.all(
+                color: isConfirming
+                    ? AppColors.danger.withValues(alpha: 0.5)
+                    : Colors.transparent,
+                width: 1.5,
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF74A8F5).withValues(alpha: 0.22),
-                  blurRadius: 12,
-                  spreadRadius: 1,
+              boxShadow: isConfirming
+                  ? [
+                      BoxShadow(
+                        color: AppColors.danger.withValues(alpha: 0.25),
+                        blurRadius: 8,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.delete_outline_rounded,
+                  size: 24,
+                  color: color,
+                ),
+                const SizedBox(height: 2),
+                AnimatedSwitcher(
+                  duration: ParticleTheme.fastDuration,
+                  child: Text(
+                    isConfirming ? 'Confirm' : 'Clear',
+                    key: ValueKey(isConfirming),
+                    style: AppTypography.caption.copyWith(
+                      fontSize: 9,
+                      color: color,
+                      fontWeight:
+                          isConfirming ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                  ),
                 ),
               ],
-              border: Border.all(color: AppColors.textPrimary, width: 1),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// Shake button with rotation animation
+// =============================================================================
+
+class _ShakeButton extends StatelessWidget {
+  const _ShakeButton({
+    required this.isShaking,
+    required this.onTap,
+  });
+
+  final bool isShaking;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Shake world',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(ParticleTheme.radiusSmall),
+          onTap: onTap,
+          child: SizedBox(
+            width: 62,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0, end: isShaking ? 1.0 : 0.0),
+                    duration: const Duration(milliseconds: 500),
+                    curve: Curves.elasticOut,
+                    builder: (context, value, child) {
+                      return Transform.rotate(
+                        angle: sin(value * pi * 6) * 0.15,
+                        child: child,
+                      );
+                    },
+                    child: const Icon(
+                      Icons.vibration_rounded,
+                      size: 24,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Shake',
+                    style: AppTypography.caption.copyWith(
+                      fontSize: 9,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// Zoom controls
+// =============================================================================
+
+class _ZoomControls extends StatelessWidget {
+  const _ZoomControls({
+    required this.onZoomIn,
+    required this.onZoomOut,
+    required this.onReset,
+    required this.currentZoom,
+  });
+
+  final VoidCallback onZoomIn;
+  final VoidCallback onZoomOut;
+  final VoidCallback onReset;
+  final double currentZoom;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 62,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _SmallIconButton(
+            icon: Icons.add_rounded,
+            onTap: onZoomIn,
+            tooltip: 'Zoom in',
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '${(currentZoom * 100).round()}%',
+            style: AppTypography.caption.copyWith(
+              fontSize: 9,
+              color: AppColors.textDim,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 2),
+          _SmallIconButton(
+            icon: Icons.remove_rounded,
+            onTap: onZoomOut,
+            tooltip: 'Zoom out',
+          ),
+          const SizedBox(height: 4),
+          _SmallIconButton(
+            icon: Icons.fit_screen_rounded,
+            onTap: onReset,
+            tooltip: 'Reset view',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SmallIconButton extends StatefulWidget {
+  const _SmallIconButton({
+    required this.icon,
+    required this.onTap,
+    this.tooltip,
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+  final String? tooltip;
+
+  @override
+  State<_SmallIconButton> createState() => _SmallIconButtonState();
+}
+
+class _SmallIconButtonState extends State<_SmallIconButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: widget.tooltip ?? '',
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: AnimatedContainer(
+            duration: ParticleTheme.fastDuration,
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: _hovered
+                  ? AppColors.surfaceLight.withValues(alpha: 0.4)
+                  : AppColors.surfaceLight.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              widget.icon,
+              size: 18,
+              color:
+                  _hovered ? AppColors.textPrimary : AppColors.textSecondary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// FPS counter (debug only)
+// =============================================================================
+
+class _FpsCounter extends StatefulWidget {
+  const _FpsCounter({required this.game});
+  final ParticleEngineGame game;
+
+  @override
+  State<_FpsCounter> createState() => _FpsCounterState();
+}
+
+class _FpsCounterState extends State<_FpsCounter> {
+  int _frameCount = 0;
+  double _fps = 0;
+  DateTime _lastSample = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _tick();
+  }
+
+  void _tick() {
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
+      final now = DateTime.now();
+      final elapsed = now.difference(_lastSample).inMilliseconds;
+      // Read game's internal frame count for accuracy.
+      final currentFrame =
+          widget.game.sandboxWorld.simulation.frameCount;
+      final delta = currentFrame - _frameCount;
+      if (elapsed > 0 && delta > 0) {
+        setState(() {
+          _fps = (delta / elapsed * 1000).roundToDouble();
+        });
+      }
+      _frameCount = currentFrame;
+      _lastSample = now;
+      _tick();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _fps >= 25
+        ? AppColors.success
+        : (_fps >= 15 ? AppColors.warning : AppColors.danger);
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, bottom: 4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '${_fps.round()}',
+            style: AppTypography.caption.copyWith(
+              fontSize: 11,
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          Text(
+            'FPS',
+            style: AppTypography.caption.copyWith(
+              fontSize: 7,
+              color: AppColors.textDim,
+              letterSpacing: 1.0,
+            ),
+          ),
+        ],
       ),
     );
   }
