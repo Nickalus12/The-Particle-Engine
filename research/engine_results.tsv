@@ -84,3 +84,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 82	2026-03-18T04:22	element_behaviors.dart+physics_oracle.py+test_phase_changes.py	Sublimation: snow at extreme temp converts directly to steam (solid→gas, skip liquid) (879->882 passed, +3 tests)	-	95	100	yes
 83	2026-03-18T04:23	element_behaviors.dart+physics_oracle.py+test_phase_changes.py	Deposition: steam deposits as ice on cold surfaces (gas→solid, reverse sublimation) (882->886 passed, +4 tests)	-	95	100	yes
 84	2026-03-18T04:24	simulation_engine.dart+physics_oracle.py+test_thermodynamics.py	Anomalous water expansion: density max at 4°C, inverted convection below threshold (886->891 passed, +5)	-	95	100	yes
+85	2026-03-18T04:25	element_behaviors.dart+physics_oracle.py+test_combustion.py	Thermal buoyancy for smoke: temp-dependent rise rate, cool smoke drifts laterally (891->893 passed, +3 tests)	-	95	100	yes

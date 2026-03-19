@@ -1964,6 +1964,26 @@ def generate_ground_truth() -> dict:
     # =========================================================================
     # Anomalous water expansion (density maximum at 4°C)
     # =========================================================================
+    # =========================================================================
+    # Thermal buoyancy of smoke (temperature-dependent rise rate)
+    # =========================================================================
+    results["smoke_buoyancy"] = {
+        "principle": "Smoke rises due to thermal buoyancy: the density "
+                     "difference between hot combustion gases and cooler "
+                     "ambient air creates an upward force per Archimedes' "
+                     "principle. As smoke cools to ambient temperature, "
+                     "buoyancy decreases and the plume transitions from "
+                     "vertical rise to lateral spreading.",
+        "archimedes_formula": "F_b = (rho_air - rho_smoke) * g * V",
+        "behavior_hot": "Vigorous vertical rise, tight column",
+        "behavior_cool": "Lateral spreading, mushroom cap formation",
+        "transition_point": "When smoke temperature equals ambient air",
+        "our_ambient_temp": 128,
+        "our_hot_threshold": 168,
+        "our_cool_behavior": "Rise probability decreases, drift increases",
+        "reference": "Morton, Taylor & Turner, Proc. R. Soc. A (1956)",
+    }
+
     results["anomalous_expansion"] = {
         "principle": "Water has a density maximum at 3.98°C. Below this "
                      "temperature, water expands as it cools (anomalous "

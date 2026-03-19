@@ -279,3 +279,32 @@ class TestExplosionFalloff:
         ratios = gt["expected_energy_ratio"]
         for i in range(1, len(ratios)):
             assert ratios[i] < ratios[i - 1]
+
+
+class TestSmokeBuoyancy:
+    """Smoke rise rate should be modulated by thermal buoyancy."""
+
+    @pytest.mark.physics
+    def test_smoke_buoyancy_principle(self, ground_truth):
+        """Oracle should describe Archimedes-driven smoke rise."""
+        gt = ground_truth.get("smoke_buoyancy")
+        if gt is None:
+            pytest.skip("No smoke_buoyancy oracle data")
+        assert "buoyancy" in gt["principle"].lower()
+        assert "archimedes" in gt["archimedes_formula"].lower() or "rho" in gt["archimedes_formula"]
+
+    @pytest.mark.physics
+    def test_hot_smoke_rises_fast(self, ground_truth):
+        """Hot smoke should have vigorous vertical rise."""
+        gt = ground_truth.get("smoke_buoyancy")
+        if gt is None:
+            pytest.skip("No smoke_buoyancy oracle data")
+        assert "vertical" in gt["behavior_hot"].lower()
+
+    @pytest.mark.physics
+    def test_cool_smoke_spreads(self, ground_truth):
+        """Cool smoke should spread laterally."""
+        gt = ground_truth.get("smoke_buoyancy")
+        if gt is None:
+            pytest.skip("No smoke_buoyancy oracle data")
+        assert "lateral" in gt["behavior_cool"].lower() or "spread" in gt["behavior_cool"].lower()

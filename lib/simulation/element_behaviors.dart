@@ -2306,20 +2306,38 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     final uy = y - gravityDir;
-    // Smoke rises mostly straight with occasional drift for natural look
-    int drift = rng.nextInt(5) == 0 ? (rng.nextBool() ? 1 : -1) : 0;
+
+    // Thermal buoyancy: smoke rises due to density difference with
+    // surrounding air. By Archimedes' principle, buoyancy force
+    // F_b = (ρ_air - ρ_smoke) × g × V. Hot smoke (high temp) has
+    // lower density and rises vigorously. As smoke cools toward ambient
+    // (temp ≈ 128), it loses buoyancy and becomes neutrally buoyant,
+    // transitioning from vertical rise to lateral drift — forming the
+    // characteristic mushroom shape of real smoke plumes.
+    final smokeTemp = temperature[idx];
+    final heatExcess = (smokeTemp - 128).clamp(0, 127); // 0 = ambient, 127 = very hot
+
+    // Rise probability: hot smoke rises every frame, cool smoke
+    // rises less frequently. At ambient temp, smoke barely rises.
+    // heatExcess 0 → rise ~1/4 frames, 40+ → every frame
+    final riseChance = heatExcess > 40 ? 1 : (heatExcess > 15 ? 2 : 4);
+    final shouldRise = riseChance <= 1 || rng.nextInt(riseChance) == 0;
+
+    // Drift increases as buoyancy decreases (cool smoke spreads laterally)
+    final driftChance = heatExcess > 40 ? 20 : (heatExcess > 15 ? 5 : 3);
+    int drift = rng.nextInt(driftChance) == 0 ? (rng.nextBool() ? 1 : -1) : 0;
     if (windForce != 0) {
       final windBias = windForce > 0 ? 1 : -1;
       if (rng.nextInt(3) < 2) drift = windBias;
     }
 
-    if (inBoundsY(uy)) {
+    if (shouldRise && inBoundsY(uy)) {
       final nx = wrapX(x + drift);
       if (grid[uy * gridW + nx] == El.empty) { swap(idx, uy * gridW + nx); return; }
       if (grid[uy * gridW + x] == El.empty) { swap(idx, uy * gridW + x); return; }
     }
-    // Occasional lateral drift when can't rise (wind or random)
-    if (windForce != 0 || rng.nextInt(3) == 0) {
+    // Lateral drift when not rising or blocked (cool smoke disperses)
+    if (!shouldRise || windForce != 0 || rng.nextInt(3) == 0) {
       final side = wrapX(windForce != 0
           ? x + (windForce > 0 ? 1 : -1)
           : (rng.nextBool() ? x - 1 : x + 1));
