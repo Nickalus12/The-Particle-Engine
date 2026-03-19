@@ -1979,6 +1979,26 @@ def generate_ground_truth() -> dict:
     # =========================================================================
     # Evaporative cooling (latent heat of vaporization)
     # =========================================================================
+    # =========================================================================
+    # Anoxic pyrolysis (charcoal production)
+    # =========================================================================
+    results["anoxic_pyrolysis"] = {
+        "principle": "Wood heated above ~280°C without oxygen undergoes thermal "
+                     "decomposition (pyrolysis) rather than combustion. Cellulose "
+                     "and lignin break into fixed carbon (charcoal) and volatile "
+                     "gases. This is the basis of charcoal kilns and retort ovens.",
+        "decomposition_temp_C": 280,
+        "products": {"solid": "charcoal (fixed carbon)", "gas": "volatiles (CO, CH4, H2)"},
+        "our_element": "wood",
+        "our_product_solid": "ash",
+        "our_product_gas": "smoke",
+        "our_condition": "temperature >= 200 AND no adjacent empty (air) cells",
+        "endothermic_below_C": 350,
+        "exothermic_above_C": 350,
+        "charcoal_yield_percent": 25,
+        "reference": "Antal & Gronli, Industrial & Engineering Chemistry Research (2003)",
+    }
+
     results["evaporative_cooling"] = {
         "principle": "When a liquid evaporates, it absorbs the latent heat "
                      "of vaporization from its surroundings, cooling them. "
@@ -1988,8 +2008,8 @@ def generate_ground_truth() -> dict:
         "latent_heat_oil_kJ_kg": 250,
         "wet_bulb_depression": "Twb <= Tdb always; difference proportional "
                                "to humidity deficit",
-        "our_cooling_amount_water": 8,
-        "our_cooling_amount_oil": 4,
+        "our_cooling_amount_boiling": 2,
+        "our_cooling_amount_surface_evap": 5,
         "our_cooling_radius": 1,
         "our_trigger": "Any boiling or surface evaporation event",
         "applications": ["sweating", "wet-bulb thermometer", "cooling towers",

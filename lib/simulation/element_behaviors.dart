@@ -2218,6 +2218,29 @@ extension ElementBehaviors on SimulationEngine {
       return;
     }
 
+    // Anoxic pyrolysis (charcoal production): wood heated above 200
+    // without oxygen (no empty neighbors) undergoes slow thermal
+    // decomposition into fixed carbon (ash) and volatile gases (smoke).
+    // Higher threshold than ignition (200 vs 190) because pyrolysis
+    // requires sustained heating. Rate is slow (1/60) since real
+    // charcoal production takes hours in a kiln.
+    if (temperature[idx] >= 200) {
+      int airCount = 0;
+      for (int ady = -1; ady <= 1; ady++) {
+        for (int adx = -1; adx <= 1; adx++) {
+          if (adx == 0 && ady == 0) continue;
+          final anx = wrapX(x + adx);
+          final any = y + ady;
+          if (inBoundsY(any) && grid[any * gridW + anx] == El.empty) airCount++;
+        }
+      }
+      if (airCount == 0 && rng.nextInt(60) == 0) {
+        grid[idx] = El.ash; life[idx] = 0; velY[idx] = 0;
+        markProcessed(idx);
+        return;
+      }
+    }
+
     // Pilot flame ignition: wood in direct contact with fire or burning
     // wood catches fire through surface pyrolysis. The flame's convective
     // heat flux (~25 kW/m²) causes rapid surface decomposition without

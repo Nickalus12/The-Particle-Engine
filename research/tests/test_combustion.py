@@ -338,3 +338,32 @@ class TestTNTDetonation:
         if gt is None:
             pytest.skip("No tnt_detonation oracle data")
         assert gt["detonation_velocity_m_s"] > 5000
+
+
+class TestAnoxicPyrolysis:
+    """Anoxic pyrolysis: wood decomposes without oxygen into charcoal + gas."""
+
+    @pytest.mark.physics
+    def test_pyrolysis_principle(self, ground_truth):
+        """Oracle should describe thermal decomposition without oxygen."""
+        gt = ground_truth.get("anoxic_pyrolysis")
+        if gt is None:
+            pytest.skip("No anoxic_pyrolysis oracle data")
+        assert "oxygen" in gt["principle"].lower() or "pyrolysis" in gt["principle"].lower()
+
+    @pytest.mark.physics
+    def test_pyrolysis_products(self, ground_truth):
+        """Pyrolysis should produce solid (ash) and gas (smoke)."""
+        gt = ground_truth.get("anoxic_pyrolysis")
+        if gt is None:
+            pytest.skip("No anoxic_pyrolysis oracle data")
+        assert gt["our_product_solid"] == "ash"
+        assert gt["our_product_gas"] == "smoke"
+
+    @pytest.mark.physics
+    def test_pyrolysis_requires_no_air(self, ground_truth):
+        """Pyrolysis should require absence of air (no empty cells)."""
+        gt = ground_truth.get("anoxic_pyrolysis")
+        if gt is None:
+            pytest.skip("No anoxic_pyrolysis oracle data")
+        assert "no" in gt["our_condition"].lower() and "empty" in gt["our_condition"].lower()

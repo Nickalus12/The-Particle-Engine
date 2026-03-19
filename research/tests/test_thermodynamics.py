@@ -395,12 +395,12 @@ class TestEvaporativeCooling:
         assert gt["latent_heat_water_kJ_kg"] == pytest.approx(2260, rel=0.05)
 
     @pytest.mark.physics
-    def test_water_cools_more_than_oil(self, ground_truth):
-        """Water evaporation should cool more than oil evaporation."""
+    def test_surface_evap_cools_more_than_boiling(self, ground_truth):
+        """Surface evaporation should cool more than forced boiling per event."""
         gt = ground_truth.get("evaporative_cooling")
         if gt is None:
             pytest.skip("No evaporative_cooling oracle data")
-        assert gt["our_cooling_amount_water"] > gt["our_cooling_amount_oil"]
+        assert gt["our_cooling_amount_surface_evap"] > gt["our_cooling_amount_boiling"]
 
     @pytest.mark.physics
     def test_wet_bulb_always_lower(self, ground_truth):
