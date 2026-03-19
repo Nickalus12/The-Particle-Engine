@@ -197,3 +197,44 @@ class TestSedimentDeposition:
             assert entry["acid_result"] == "empty", (
                 f"Acid on {name} should produce empty, got {entry['acid_result']}"
             )
+
+
+class TestFreezeThawWeathering:
+    """Frost wedging: ice expansion fractures stone."""
+
+    @pytest.mark.physics
+    def test_freeze_thaw_principle(self, ground_truth):
+        """Oracle should describe ice expansion fracturing rock."""
+        gt = ground_truth.get("freeze_thaw_weathering")
+        if gt is None:
+            pytest.skip("No freeze_thaw_weathering oracle data")
+        assert "expand" in gt["principle"].lower()
+        assert gt["expansion_percent"] == pytest.approx(9.0, abs=1.0)
+
+    @pytest.mark.physics
+    def test_ice_pressure_exceeds_rock_strength(self, ground_truth):
+        """Ice expansion pressure must exceed rock tensile strength."""
+        gt = ground_truth.get("freeze_thaw_weathering")
+        if gt is None:
+            pytest.skip("No freeze_thaw_weathering oracle data")
+        ice_pressure = gt["ice_expansion_pressure_MPa"]
+        max_rock_strength = max(gt["rock_tensile_strength_MPa"].values())
+        assert ice_pressure > max_rock_strength
+
+    @pytest.mark.physics
+    def test_products_are_granular(self, ground_truth):
+        """Frost-shattered stone should become sand or dirt."""
+        gt = ground_truth.get("freeze_thaw_weathering")
+        if gt is None:
+            pytest.skip("No freeze_thaw_weathering oracle data")
+        products = gt["our_products"]
+        assert "sand" in products
+        assert "dirt" in products
+
+    @pytest.mark.physics
+    def test_faster_than_water_weathering(self, ground_truth):
+        """Freeze-thaw should be faster than plain water weathering."""
+        gt = ground_truth.get("freeze_thaw_weathering")
+        if gt is None:
+            pytest.skip("No freeze_thaw_weathering oracle data")
+        assert gt["our_rate_vs_water"] >= 2

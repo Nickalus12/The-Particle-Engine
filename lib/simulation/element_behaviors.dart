@@ -3183,6 +3183,36 @@ extension ElementBehaviors on SimulationEngine {
         return;
       }
     }
+    // Freeze-thaw weathering (frost wedging): when water in stone pores
+    // freezes, it expands ~9% by volume, generating pressures up to
+    // 207 MPa — far exceeding the tensile strength of most rocks
+    // (5-25 MPa). This accelerates mechanical breakdown when stone
+    // alternates between frozen and thawed states. Adjacent ice indicates
+    // freezing conditions; temperature fluctuation above freezing indicates
+    // thaw cycles. This is the dominant weathering process in alpine and
+    // periglacial environments (Matsuoka, 2001).
+    if (life[idx] == 0 && frameCount % 30 == 0 && checkAdjacent(x, y, El.ice)) {
+      final stoneTemp = temperature[idx];
+      // Stone near ice with temperature fluctuation = active freeze-thaw
+      // Higher temp near freezing point = more effective (water refreezes)
+      if (stoneTemp > 40 && stoneTemp < 140) {
+        final weathering = velY[idx].clamp(0, 5);
+        if (weathering < 5) {
+          // ~3x faster than water weathering alone
+          if (rng.nextInt(20) == 0) {
+            velY[idx] = (weathering + 1);
+            markDirty(x, y);
+          }
+        } else if (rng.nextInt(15) == 0) {
+          // Frost-shattered stone breaks to sand/dirt mixture
+          grid[idx] = rng.nextBool() ? El.sand : El.dirt;
+          life[idx] = 0; velX[idx] = 0; velY[idx] = 0;
+          markProcessed(idx);
+          queueReactionFlash(x, y, 160, 170, 180, 2);
+          return;
+        }
+      }
+    }
     // Weathering resets when stone dries out (no water contact)
     if (life[idx] == 0 && velY[idx] > 0 && !checkAdjacent(x, y, El.water)) {
       if (frameCount % 80 == 0) {

@@ -1973,6 +1973,25 @@ def generate_ground_truth() -> dict:
     # =========================================================================
     # TNT detonation physics (thermal + sympathetic)
     # =========================================================================
+    # =========================================================================
+    # Freeze-thaw weathering (frost wedging)
+    # =========================================================================
+    results["freeze_thaw_weathering"] = {
+        "principle": "Water infiltrating rock pores freezes and expands ~9% "
+                     "by volume, generating pressures up to 207 MPa — far "
+                     "exceeding the tensile strength of most rocks (5-25 MPa). "
+                     "Repeated freeze-thaw cycles progressively fracture rock.",
+        "expansion_percent": 9.0,
+        "ice_expansion_pressure_MPa": 207,
+        "rock_tensile_strength_MPa": {"granite": 10, "sandstone": 5, "limestone": 8},
+        "our_element": "stone",
+        "our_products": ["sand", "dirt"],
+        "our_requirement": "adjacent ice + temperature between 40-140",
+        "our_rate_vs_water": 3,
+        "dominant_environment": "alpine and periglacial",
+        "reference": "Matsuoka, Earth-Science Reviews 55 (2001) 121-143",
+    }
+
     results["tnt_detonation"] = {
         "principle": "TNT (trinitrotoluene) detonates via two mechanisms: "
                      "thermal auto-ignition when heated above its decomposition "
