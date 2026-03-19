@@ -367,3 +367,24 @@ class TestAnoxicPyrolysis:
         if gt is None:
             pytest.skip("No anoxic_pyrolysis oracle data")
         assert "no" in gt["our_condition"].lower() and "empty" in gt["our_condition"].lower()
+
+
+class TestFireConvectivePlume:
+    """Fire should heat cells above more than lateral/below (convective plume)."""
+
+    @pytest.mark.physics
+    def test_convective_plume_principle(self, ground_truth):
+        """Oracle should describe anisotropic heat from convection."""
+        gt = ground_truth.get("fire_convective_plume")
+        if gt is None:
+            pytest.skip("No fire_convective_plume oracle data")
+        assert "convection" in gt["principle"].lower()
+
+    @pytest.mark.physics
+    def test_above_heated_more(self, ground_truth):
+        """Cells above fire should receive more heat than lateral cells."""
+        gt = ground_truth.get("fire_convective_plume")
+        if gt is None:
+            pytest.skip("No fire_convective_plume oracle data")
+        assert gt["our_heat_above"] > gt["our_heat_lateral"]
+        assert gt["our_ratio"] >= 1.5

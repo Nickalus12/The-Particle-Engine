@@ -814,22 +814,28 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
-    // Radiative heating: fire preheats adjacent cells through thermal
-    // radiation (Stefan-Boltzmann law: q ∝ T⁴). This supplements the
-    // conduction system and creates a smooth temperature gradient ahead
-    // of the fire front, enabling consistent Fisher-KPP propagation
-    // velocity v = 2*sqrt(k*α).
-    for (int dy = -1; dy <= 1; dy++) {
-      for (int dx = -1; dx <= 1; dx++) {
-        if (dx == 0 && dy == 0) continue;
-        final hx = wrapX(x + dx);
-        final hy = y + dy;
-        if (!inBoundsY(hy)) continue;
-        final hi = hy * gridW + hx;
-        final nt = temperature[hi];
-        if (nt < 220) {
-          // +8 per frame models radiative heat transfer from flames
-          temperature[hi] = nt + 8;
+    // Anisotropic heat transfer: fire heats via both radiation (isotropic)
+    // and convection (anisotropic — hot gases rise). The Grashof number
+    // Gr = gβΔTL³/ν² >> 1 for fire, meaning convection dominates above
+    // the flame. Cells above fire receive convective + radiative heating
+    // (~12 units), while lateral and below cells get radiation only (~6).
+    // This creates the characteristic thermal plume shape above fires.
+    {
+      final g = gravityDir;
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final hx = wrapX(x + dx);
+          final hy = y + dy;
+          if (!inBoundsY(hy)) continue;
+          final hi = hy * gridW + hx;
+          final nt = temperature[hi];
+          if (nt < 220) {
+            // Convective bonus for cells above the fire (against gravity)
+            final isAbove = (g == 1 && dy == -1) || (g == -1 && dy == 1);
+            final heatAmount = isAbove ? 12 : 6;
+            temperature[hi] = nt + heatAmount;
+          }
         }
       }
     }

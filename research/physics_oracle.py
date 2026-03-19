@@ -1982,6 +1982,23 @@ def generate_ground_truth() -> dict:
     # =========================================================================
     # Anoxic pyrolysis (charcoal production)
     # =========================================================================
+    # =========================================================================
+    # Anisotropic fire heat transfer (convective plume)
+    # =========================================================================
+    results["fire_convective_plume"] = {
+        "principle": "Fire heats surrounding cells via two mechanisms: "
+                     "isotropic thermal radiation (Stefan-Boltzmann) and "
+                     "anisotropic convection. Hot combustion gases rise, "
+                     "creating a thermal plume above the flame with higher "
+                     "heat transfer rates than lateral or downward radiation.",
+        "grashof_number": "Gr = gβΔTL³/ν² >> 1 for fire (convection dominates)",
+        "our_heat_above": 12,
+        "our_heat_lateral": 6,
+        "our_ratio": 2.0,
+        "consequence": "Thermal plume shape: more heating above flames",
+        "reference": "Bejan, Convection Heat Transfer (4th ed.)",
+    }
+
     results["anoxic_pyrolysis"] = {
         "principle": "Wood heated above ~280°C without oxygen undergoes thermal "
                      "decomposition (pyrolysis) rather than combustion. Cellulose "

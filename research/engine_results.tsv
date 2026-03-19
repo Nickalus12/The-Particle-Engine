@@ -90,3 +90,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 88	2026-03-18T04:28	element_behaviors.dart+physics_oracle.py+test_erosion.py	Freeze-thaw weathering: ice expansion fractures stone 3x faster than water erosion (900->904 passed, +4 tests)	-	95	100	yes
 89	2026-03-18T04:29	element_behaviors.dart+simulation_engine.dart+physics_oracle.py+test_thermodynamics.py	Evaporative cooling: boiling/evaporation absorbs latent heat, cools adjacent cells (904->908 passed, +4 tests)	-	95	100	yes
 90	2026-03-18T04:30	element_behaviors.dart+physics_oracle.py+test_combustion.py	Anoxic pyrolysis: wood at temp>200 without air decomposes to charcoal (908->911 passed, +3 tests)	-	95	100	yes
+91	2026-03-18T04:31	element_behaviors.dart+physics_oracle.py+test_combustion.py	Anisotropic fire heat: convective plume heats above 2x more than lateral (911->913 passed, +2 tests)	-	95	100	yes
