@@ -1154,6 +1154,38 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
+    // Capillary wicking: water below dirt gets pulled upward through pores.
+    // Washburn equation: L² ∝ (γ·r·cos θ·t) / (2·η)
+    // Higher porosity = faster wicking. Check below for water and above for empty.
+    if (frameCount % 6 == 0 && life[idx] >= 2) {
+      // Only wick upward if there's space above
+      final uy = y - 1;
+      if (uy >= 0) {
+        final ui = uy * gridW + x;
+        if (grid[ui] == El.dirt && life[ui] < life[idx] - 1) {
+          // Transfer moisture upward (capillary action)
+          life[ui]++;
+          life[idx]--;
+          markDirty(x, uy);
+          markDirty(x, y);
+        } else if (grid[ui] == El.empty) {
+          // Saturated dirt with water below: pull water up through the column
+          final dy2 = y + 1;
+          if (dy2 < gridH) {
+            final di = dy2 * gridW + x;
+            if (grid[di] == El.water && life[idx] >= 4) {
+              // Absorb water from below and push moisture up
+              grid[di] = El.empty;
+              life[di] = 0;
+              markProcessed(di);
+              life[idx] = 5; // re-saturate
+              markDirty(x, y);
+            }
+          }
+        }
+      }
+    }
+
     // Underground compaction: dirt surrounded by stone compacts over time
     // Uses velY to track compaction level (0-5). Higher = denser, darker.
     if (frameCount % 30 == 0) {

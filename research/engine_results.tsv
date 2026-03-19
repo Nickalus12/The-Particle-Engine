@@ -75,3 +75,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 73	2026-03-18T04:13	element_behaviors.dart+pixel_renderer.dart	Glass thermal shock shattering: spatial ΔT>45 fracture + integer stone depth (751->754 passed, +3)	-	95	100	yes
 74	2026-03-18T04:14	pixel_renderer.dart	Integer night transition: _prevNightT256 replaces float _prevDayNightT, t256>0 replaces t>0.0 in sky loop	-	95	100	yes
 75	2026-03-18T04:15	element_registry.dart+simulation_engine.dart+test_benchmark.py+test_properties.py	Specific heat capacity Q=mcΔT: per-element heat capacity (water=10, metal=1) + resolve merge conflicts + entropy bounds + oracle (890 physics passed, +5 thermo tests)	-	95	100	yes
+76	2026-03-18T04:16	element_behaviors.dart	Capillary wicking: Washburn equation moisture transport upward through porous dirt columns (867 passed, +1)	-	95	100	yes
