@@ -1961,6 +1961,28 @@ def generate_ground_truth() -> dict:
     # =========================================================================
     # Sublimation (solid → gas, skipping liquid)
     # =========================================================================
+    # =========================================================================
+    # Deposition (desublimation): gas → solid, skipping liquid
+    # =========================================================================
+    results["deposition"] = {
+        "principle": "Direct phase transition from gas to solid without passing "
+                     "through liquid, the thermodynamic reverse of sublimation. "
+                     "Occurs when vapor is deeply subcooled near a cold nucleation "
+                     "surface, and the Gibbs free energy of the solid phase is "
+                     "lower than both liquid and gas phases.",
+        "common_examples": ["frost on windows", "hoarfrost", "snowflake formation",
+                            "black frost on metal"],
+        "equation": "ΔG_deposition = ΔG_condensation + ΔG_freezing (both negative)",
+        "our_element": "steam",
+        "our_product": "ice",
+        "our_threshold_temp": 50,
+        "our_surface_temp_max": 80,
+        "our_nucleation_surfaces": ["ice", "stone", "metal", "glass"],
+        "our_scale_note": "On 0-255 scale, temp < 50 represents extreme cold "
+                          "where vapor pressure is far below saturation",
+        "reference": "Pruppacher & Klett, Microphysics of Clouds and Precipitation (2010)",
+    }
+
     results["sublimation"] = {
         "principle": "Direct phase transition from solid to gas without passing "
                      "through liquid, occurring when vapor pressure exceeds "

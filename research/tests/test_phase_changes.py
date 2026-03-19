@@ -196,3 +196,46 @@ class TestSublimation:
         threshold = gt["our_threshold"]
         assert threshold >= 180, "Sublimation must require extreme heat"
         assert threshold <= 240, "Threshold must be reachable on 0-255 scale"
+
+
+class TestDeposition:
+    """Deposition (desublimation): gas -> solid without passing through liquid."""
+
+    @pytest.mark.physics
+    def test_deposition_principle(self, ground_truth):
+        """Oracle should describe direct gas-to-solid transition."""
+        gt = ground_truth.get("deposition")
+        if gt is None:
+            pytest.skip("No deposition oracle data")
+        assert "gas" in gt["principle"].lower() or "solid" in gt["principle"].lower()
+        assert "liquid" in gt["principle"].lower()
+
+    @pytest.mark.physics
+    def test_deposition_product(self, ground_truth):
+        """Steam should deposit as ice."""
+        gt = ground_truth.get("deposition")
+        if gt is None:
+            pytest.skip("No deposition oracle data")
+        assert gt["our_element"] == "steam"
+        assert gt["our_product"] == "ice"
+
+    @pytest.mark.physics
+    def test_deposition_requires_cold_surface(self, ground_truth):
+        """Deposition requires a cold nucleation surface."""
+        gt = ground_truth.get("deposition")
+        if gt is None:
+            pytest.skip("No deposition oracle data")
+        surfaces = gt["our_nucleation_surfaces"]
+        assert "ice" in surfaces
+        assert "stone" in surfaces
+        assert gt["our_surface_temp_max"] < 128, "Surface must be below neutral"
+
+    @pytest.mark.physics
+    def test_deposition_threshold_deeply_subcooled(self, ground_truth):
+        """Deposition threshold must be well below freezing."""
+        gt = ground_truth.get("deposition")
+        if gt is None:
+            pytest.skip("No deposition oracle data")
+        threshold = gt["our_threshold_temp"]
+        assert threshold < 80, "Deposition needs deep subcooling"
+        assert threshold > 0, "Threshold must be above absolute zero"

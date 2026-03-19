@@ -82,3 +82,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 80	2026-03-18T04:20	element_behaviors.dart+physics_oracle.py+test_phase_changes.py	Regelation: ice melts under pressure via anomalous Clausius-Clapeyron (873->876 passed, +3 tests)	-	95	100	yes
 81	2026-03-18T04:21	element_behaviors.dart+physics_oracle.py+test_reactions.py	Electrolysis: lightning+water→bubbles (Faraday's law) (876->879 passed, +3 tests)	-	95	100	yes
 82	2026-03-18T04:22	element_behaviors.dart+physics_oracle.py+test_phase_changes.py	Sublimation: snow at extreme temp converts directly to steam (solid→gas, skip liquid) (879->882 passed, +3 tests)	-	95	100	yes
+83	2026-03-18T04:23	element_behaviors.dart+physics_oracle.py+test_phase_changes.py	Deposition: steam deposits as ice on cold surfaces (gas→solid, reverse sublimation) (882->886 passed, +4 tests)	-	95	100	yes

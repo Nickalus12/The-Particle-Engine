@@ -2659,6 +2659,46 @@ extension ElementBehaviors on SimulationEngine {
       return;
     }
 
+    // Deposition (desublimation): gas → solid directly, skipping liquid.
+    // The thermodynamic reverse of sublimation. When steam is deeply
+    // subcooled (temp < 50) near a cold surface, water vapor deposits
+    // as frost/ice crystals. This is how hoarfrost forms on cold
+    // mornings and how frost patterns grow on windows. The Gibbs free
+    // energy favors direct solid nucleation when ΔT is large enough
+    // that the liquid phase is entirely bypassed.
+    {
+      final st = temperature[idx];
+      if (st < 50) {
+        // Check for cold solid surfaces (nucleation sites)
+        bool coldSurfaceAdjacent = false;
+        for (int dy = -1; dy <= 1; dy++) {
+          for (int dx = -1; dx <= 1; dx++) {
+            if (dx == 0 && dy == 0) continue;
+            final nx = wrapX(x + dx);
+            final ny = y + dy;
+            if (!inBoundsY(ny)) continue;
+            final n = grid[ny * gridW + nx];
+            if (n == El.ice || n == El.stone || n == El.metal || n == El.glass) {
+              if (temperature[ny * gridW + nx] < 80) {
+                coldSurfaceAdjacent = true;
+              }
+            }
+          }
+          if (coldSurfaceAdjacent) break;
+        }
+        if (coldSurfaceAdjacent) {
+          // Deep subcooling → deterministic deposition
+          if (st < 30 || rng.nextInt(3) == 0) {
+            grid[idx] = El.ice; life[idx] = 0;
+            temperature[idx] = (st + 15).clamp(0, 255); // latent heat release
+            markProcessed(idx);
+            queueReactionFlash(x, y, 180, 220, 255, 3);
+            return;
+          }
+        }
+      }
+    }
+
     // Temperature-driven condensation: steam below the dew point
     // condenses spontaneously. The Clausius-Clapeyron relation shows
     // that saturation vapor pressure drops exponentially with temperature.
