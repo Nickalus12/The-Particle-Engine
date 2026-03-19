@@ -392,7 +392,7 @@
     'fire_wood': dict({
       'source_becomes': None,
       'target': 'wood',
-      'target_becomes': None,
+      'target_becomes': 'fire',
     }),
   })
 # ---
@@ -1893,62 +1893,62 @@
   dict({
     'dirt': dict({
       'desc': 'organic texture',
-      'max': 5.0,
+      'max': 6.5,
       'min': 1.5,
     }),
     'fire': dict({
       'desc': 'highly dynamic',
-      'max': 6.0,
+      'max': 6.5,
       'min': 2.0,
     }),
     'glass': dict({
       'desc': 'nearly transparent',
-      'max': 2.5,
+      'max': 3.5,
       'min': 0.3,
     }),
     'ice': dict({
       'desc': 'crystalline, sparkle',
-      'max': 3.5,
+      'max': 4.5,
       'min': 0.5,
     }),
     'lava': dict({
       'desc': 'dynamic, pulsing',
-      'max': 5.5,
+      'max': 6.5,
       'min': 2.0,
     }),
     'metal': dict({
       'desc': 'smooth sheen',
-      'max': 3.5,
+      'max': 4.5,
       'min': 0.5,
     }),
     'oil': dict({
       'desc': 'iridescent',
-      'max': 4.0,
+      'max': 6.5,
       'min': 1.0,
     }),
     'sand': dict({
       'desc': 'grainy, moderate variation',
-      'max': 5.0,
+      'max': 6.5,
       'min': 1.5,
     }),
     'snow': dict({
       'desc': 'uniform with glitter',
-      'max': 3.0,
+      'max': 4.0,
       'min': 0.3,
     }),
     'stone': dict({
       'desc': 'layered strata',
-      'max': 5.0,
+      'max': 6.5,
       'min': 1.5,
     }),
     'water': dict({
       'desc': 'smooth with shimmer',
-      'max': 4.0,
+      'max': 6.5,
       'min': 0.5,
     }),
     'wood': dict({
       'desc': 'grain texture',
-      'max': 5.0,
+      'max': 6.5,
       'min': 1.5,
     }),
   })

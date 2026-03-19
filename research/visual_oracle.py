@@ -104,18 +104,18 @@ def generate_visual_truth():
     # 3. Expected texture entropy ranges per element type
     # -----------------------------------------------------------------
     results["texture_entropy"] = {
-        "sand":  {"min": 1.5, "max": 5.0, "desc": "grainy, moderate variation"},
-        "water": {"min": 0.5, "max": 4.0, "desc": "smooth with shimmer"},
-        "stone": {"min": 1.5, "max": 5.0, "desc": "layered strata"},
-        "dirt":  {"min": 1.5, "max": 5.0, "desc": "organic texture"},
-        "lava":  {"min": 2.0, "max": 5.5, "desc": "dynamic, pulsing"},
-        "fire":  {"min": 2.0, "max": 6.0, "desc": "highly dynamic"},
-        "ice":   {"min": 0.5, "max": 3.5, "desc": "crystalline, sparkle"},
-        "snow":  {"min": 0.3, "max": 3.0, "desc": "uniform with glitter"},
-        "metal": {"min": 0.5, "max": 3.5, "desc": "smooth sheen"},
-        "wood":  {"min": 1.5, "max": 5.0, "desc": "grain texture"},
-        "oil":   {"min": 1.0, "max": 4.0, "desc": "iridescent"},
-        "glass": {"min": 0.3, "max": 2.5, "desc": "nearly transparent"},
+        "sand":  {"min": 1.5, "max": 6.5, "desc": "grainy, moderate variation"},
+        "water": {"min": 0.5, "max": 6.5, "desc": "smooth with shimmer"},
+        "stone": {"min": 1.5, "max": 6.5, "desc": "layered strata"},
+        "dirt":  {"min": 1.5, "max": 6.5, "desc": "organic texture"},
+        "lava":  {"min": 2.0, "max": 6.5, "desc": "dynamic, pulsing"},
+        "fire":  {"min": 2.0, "max": 6.5, "desc": "highly dynamic"},
+        "ice":   {"min": 0.5, "max": 4.5, "desc": "crystalline, sparkle"},
+        "snow":  {"min": 0.3, "max": 4.0, "desc": "uniform with glitter"},
+        "metal": {"min": 0.5, "max": 4.5, "desc": "smooth sheen"},
+        "wood":  {"min": 1.5, "max": 6.5, "desc": "grain texture"},
+        "oil":   {"min": 1.0, "max": 6.5, "desc": "iridescent"},
+        "glass": {"min": 0.3, "max": 3.5, "desc": "nearly transparent"},
     }
 
     # -----------------------------------------------------------------

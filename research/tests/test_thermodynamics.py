@@ -205,3 +205,66 @@ class TestHeatDiffusion:
             assert s == pytest.approx(avg_sum, rel=0.05), (
                 f"Heat not conserved: frame {keys[i]} sum={s:.1f} vs avg={avg_sum:.1f}"
             )
+
+
+class TestSpecificHeatCapacity:
+    """Specific heat capacity: Q = mcΔT, different materials heat at different rates."""
+
+    @pytest.mark.physics
+    def test_water_highest_capacity(self, ground_truth):
+        """Water should have the highest heat capacity (real: 4.18 J/g·K)."""
+        gt = ground_truth.get("specific_heat_capacity")
+        if gt is None:
+            pytest.skip("No specific_heat_capacity oracle data")
+        assert gt["water_highest"] is True
+        caps = gt["our_1_to_10"]
+        water_cap = caps["water"]
+        for name, cap in caps.items():
+            assert water_cap >= cap, f"water ({water_cap}) < {name} ({cap})"
+
+    @pytest.mark.physics
+    def test_metal_lowest_capacity(self, ground_truth):
+        """Metal should have the lowest heat capacity (real: 0.45 J/g·K)."""
+        gt = ground_truth.get("specific_heat_capacity")
+        if gt is None:
+            pytest.skip("No specific_heat_capacity oracle data")
+        assert gt["metal_lowest"] is True
+        caps = gt["our_1_to_10"]
+        metal_cap = caps["metal"]
+        for name, cap in caps.items():
+            assert metal_cap <= cap, f"metal ({metal_cap}) > {name} ({cap})"
+
+    @pytest.mark.physics
+    def test_ordering_preserves_real_physics(self, ground_truth):
+        """Our capacity ordering should broadly match real-world ordering."""
+        gt = ground_truth.get("specific_heat_capacity")
+        if gt is None:
+            pytest.skip("No specific_heat_capacity oracle data")
+        real = gt["real_ordering"]
+        ours = gt["our_ordering"]
+        # Water should be first in both
+        assert real[0] == "water"
+        assert ours[0] == "water"
+        # Metal should be last in real ordering
+        assert real[-1] == "metal"
+
+    @pytest.mark.physics
+    def test_liquids_higher_than_solids(self, ground_truth):
+        """Liquids generally have higher heat capacity than solids."""
+        gt = ground_truth.get("specific_heat_capacity")
+        if gt is None:
+            pytest.skip("No specific_heat_capacity oracle data")
+        caps = gt["our_1_to_10"]
+        # Water > stone, water > metal, water > sand
+        assert caps["water"] > caps["stone"]
+        assert caps["water"] > caps["metal"]
+        assert caps["water"] > caps["sand"]
+
+    @pytest.mark.physics
+    def test_all_values_in_range(self, ground_truth):
+        """All heat capacity values should be in [1, 10]."""
+        gt = ground_truth.get("specific_heat_capacity")
+        if gt is None:
+            pytest.skip("No specific_heat_capacity oracle data")
+        for name, cap in gt["our_1_to_10"].items():
+            assert 1 <= cap <= 10, f"{name} capacity {cap} out of [1, 10]"

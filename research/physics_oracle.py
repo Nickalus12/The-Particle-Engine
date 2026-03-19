@@ -753,6 +753,36 @@ def generate_ground_truth() -> dict:
     }
 
     # =========================================================================
+    # Specific heat capacity (Q = mcΔT)
+    # =========================================================================
+    # Real specific heat capacities in J/(g·K)
+    real_heat_capacity = {
+        "water": 4.18, "ice": 2.09, "steam": 2.01, "oil": 2.0,
+        "mud": 2.5, "wood": 1.76, "lava": 1.5, "plant": 1.7,
+        "sand": 0.84, "stone": 0.84, "glass": 0.84, "dirt": 0.80,
+        "metal": 0.45, "fire": 1.0, "smoke": 1.0, "ash": 0.8,
+    }
+    # Our engine values (1-10 scale, water=10)
+    our_heat_capacity = {
+        "water": 10, "ice": 5, "steam": 5, "oil": 5,
+        "mud": 6, "wood": 4, "lava": 4, "plant": 4,
+        "sand": 2, "stone": 2, "glass": 2, "dirt": 2,
+        "metal": 1, "fire": 1, "smoke": 1, "ash": 1,
+    }
+    real_order = sorted(real_heat_capacity.keys(), key=lambda x: -real_heat_capacity[x])
+    our_order = sorted(our_heat_capacity.keys(), key=lambda x: -our_heat_capacity[x])
+    results["specific_heat_capacity"] = {
+        "principle": "Q = mcΔT — higher heat capacity means more energy to change temperature",
+        "real_J_per_gK": real_heat_capacity,
+        "our_1_to_10": our_heat_capacity,
+        "real_ordering": real_order,
+        "our_ordering": our_order,
+        "water_highest": True,
+        "metal_lowest": True,
+        "reference": "CRC Handbook of Chemistry and Physics",
+    }
+
+    # =========================================================================
     # 23. THERMAL CONDUCTIVITY (backward compat)
     # =========================================================================
 

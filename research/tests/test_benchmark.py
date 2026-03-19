@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 """Comprehensive pytest-benchmark performance tests.
 
 Tracks every performance-critical path in The Particle Engine's research
@@ -13,7 +11,6 @@ Usage:
 """
 
 import json
->>>>>>> worktree-pytest-test-suite
 import shutil
 import subprocess
 import sys
@@ -26,17 +23,6 @@ import pytest
 RESEARCH_DIR = Path(__file__).parent.parent
 PROJECT_DIR = RESEARCH_DIR.parent
 
-<<<<<<< HEAD
-class TestSimulationPerformance:
-    def test_simulation_step_speed(self, benchmark):
-        """Measure raw simulation step performance."""
-        dart_exe = shutil.which("dart")
-        if dart_exe is None:
-            pytest.skip("Dart not found on PATH")
-        result = benchmark(subprocess.run,
-            [dart_exe, "run", "research/export_frame.dart", "100"],
-            capture_output=True, timeout=30)
-=======
 
 def _dart_available():
     return shutil.which("dart") is not None
@@ -144,7 +130,6 @@ class TestSimulationExport:
             _run_dart_export, args=(10,), kwargs={},
             rounds=3, warmup_rounds=1,
         )
->>>>>>> worktree-pytest-test-suite
         assert result.returncode == 0
 
     @pytest.mark.benchmark(group="export")

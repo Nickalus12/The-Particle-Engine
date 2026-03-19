@@ -1,7 +1,7 @@
 {
   "width": 320,
   "height": 180,
-  "frames": 100,
+  "frames": 500,
   "elements": {
     "Empty": 0,
     "Sand": 1,

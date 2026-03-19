@@ -1266,6 +1266,7 @@ class SimulationEngine {
     final temp = temperature;
     final baseT = elementBaseTemp;
     final cond = elementHeatCond;
+    final cap = elementHeatCapacity;
     final dc = dirtyChunks;
     final cols = chunkCols;
 
@@ -1293,6 +1294,7 @@ class SimulationEngine {
         // Diffuse heat to cardinal neighbors
         final myCond = cond[el];
         if (myCond == 0) continue;
+        final myCap = cap[el];
         int myTemp = temp[idx];
         if ((myTemp - 128).abs() < 3) continue; // near neutral, skip
 
@@ -1300,6 +1302,7 @@ class SimulationEngine {
         final xr = (x + 1) % w;
 
         // Transfer heat to 4 cardinal neighbors (unrolled, no allocation)
+        // Q = mcΔT: energy divided by heat capacity gives temperature change
         final ni0 = idx - w; // up
         final ni1 = idx + w; // down
         final ni2 = y * w + xl; // left
@@ -1307,64 +1310,77 @@ class SimulationEngine {
 
         // Neighbor 0 (up)
         if (ni0 >= 0) {
-          final nCond = cond[g[ni0]];
+          final nEl = g[ni0];
+          final nCond = cond[nEl];
           if (nCond > 0) {
             final tDiff = myTemp - temp[ni0];
             if (tDiff.abs() >= 3) {
               final rate = myCond < nCond ? myCond : nCond;
-              final transfer = (tDiff * rate) >> 9;
-              if (transfer != 0) {
-                myTemp = (myTemp - transfer).clamp(0, 255);
+              final energy = (tDiff * rate) >> 9;
+              if (energy != 0) {
+                final myDelta = energy ~/ myCap;
+                final nDelta = energy ~/ cap[nEl];
+                // Ensure at least 1 unit transfer in the correct direction
+                myTemp = (myTemp - (myDelta != 0 ? myDelta : (energy > 0 ? 1 : -1))).clamp(0, 255);
                 temp[idx] = myTemp;
-                temp[ni0] = (temp[ni0] + transfer).clamp(0, 255);
+                temp[ni0] = (temp[ni0] + (nDelta != 0 ? nDelta : (energy > 0 ? 1 : -1))).clamp(0, 255);
               }
             }
           }
         }
         // Neighbor 1 (down)
         if (ni1 < g.length) {
-          final nCond = cond[g[ni1]];
+          final nEl = g[ni1];
+          final nCond = cond[nEl];
           if (nCond > 0) {
             final tDiff = myTemp - temp[ni1];
             if (tDiff.abs() >= 3) {
               final rate = myCond < nCond ? myCond : nCond;
-              final transfer = (tDiff * rate) >> 9;
-              if (transfer != 0) {
-                myTemp = (myTemp - transfer).clamp(0, 255);
+              final energy = (tDiff * rate) >> 9;
+              if (energy != 0) {
+                final myDelta = energy ~/ myCap;
+                final nDelta = energy ~/ cap[nEl];
+                myTemp = (myTemp - (myDelta != 0 ? myDelta : (energy > 0 ? 1 : -1))).clamp(0, 255);
                 temp[idx] = myTemp;
-                temp[ni1] = (temp[ni1] + transfer).clamp(0, 255);
+                temp[ni1] = (temp[ni1] + (nDelta != 0 ? nDelta : (energy > 0 ? 1 : -1))).clamp(0, 255);
               }
             }
           }
         }
         // Neighbor 2 (left)
         {
-          final nCond = cond[g[ni2]];
+          final nEl = g[ni2];
+          final nCond = cond[nEl];
           if (nCond > 0) {
             final tDiff = myTemp - temp[ni2];
             if (tDiff.abs() >= 3) {
               final rate = myCond < nCond ? myCond : nCond;
-              final transfer = (tDiff * rate) >> 9;
-              if (transfer != 0) {
-                myTemp = (myTemp - transfer).clamp(0, 255);
+              final energy = (tDiff * rate) >> 9;
+              if (energy != 0) {
+                final myDelta = energy ~/ myCap;
+                final nDelta = energy ~/ cap[nEl];
+                myTemp = (myTemp - (myDelta != 0 ? myDelta : (energy > 0 ? 1 : -1))).clamp(0, 255);
                 temp[idx] = myTemp;
-                temp[ni2] = (temp[ni2] + transfer).clamp(0, 255);
+                temp[ni2] = (temp[ni2] + (nDelta != 0 ? nDelta : (energy > 0 ? 1 : -1))).clamp(0, 255);
               }
             }
           }
         }
         // Neighbor 3 (right)
         {
-          final nCond = cond[g[ni3]];
+          final nEl = g[ni3];
+          final nCond = cond[nEl];
           if (nCond > 0) {
             final tDiff = myTemp - temp[ni3];
             if (tDiff.abs() >= 3) {
               final rate = myCond < nCond ? myCond : nCond;
-              final transfer = (tDiff * rate) >> 9;
-              if (transfer != 0) {
-                myTemp = (myTemp - transfer).clamp(0, 255);
+              final energy = (tDiff * rate) >> 9;
+              if (energy != 0) {
+                final myDelta = energy ~/ myCap;
+                final nDelta = energy ~/ cap[nEl];
+                myTemp = (myTemp - (myDelta != 0 ? myDelta : (energy > 0 ? 1 : -1))).clamp(0, 255);
                 temp[idx] = myTemp;
-                temp[ni3] = (temp[ni3] + transfer).clamp(0, 255);
+                temp[ni3] = (temp[ni3] + (nDelta != 0 ? nDelta : (energy > 0 ? 1 : -1))).clamp(0, 255);
               }
             }
           }
