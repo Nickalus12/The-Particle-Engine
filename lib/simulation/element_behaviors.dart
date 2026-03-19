@@ -1929,7 +1929,23 @@ extension ElementBehaviors on SimulationEngine {
         final ni = ny * gridW + nx;
         final neighbor = grid[ni];
         if (neighbor == El.water) {
-          grid[idx] = El.stone;
+          // Rapid quenching: lava submerged in water (3+ water neighbors)
+          // cools too fast for crystals to form, producing volcanic glass
+          // (obsidian). This is the real mechanism behind pillow lava at
+          // mid-ocean ridges. Surface lava with less water contact cools
+          // slowly enough to crystallize into stone.
+          int waterNeighborCount = 0;
+          for (int wdy = -1; wdy <= 1; wdy++) {
+            for (int wdx = -1; wdx <= 1; wdx++) {
+              if (wdx == 0 && wdy == 0) continue;
+              final wnx = wrapX(x + wdx);
+              final wny = y + wdy;
+              if (inBoundsY(wny) && grid[wny * gridW + wnx] == El.water) {
+                waterNeighborCount++;
+              }
+            }
+          }
+          grid[idx] = waterNeighborCount >= 3 ? El.glass : El.stone;
           life[idx] = 0;
           markProcessed(idx);
           grid[ni] = El.steam;

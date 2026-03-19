@@ -239,3 +239,33 @@ class TestDeposition:
         threshold = gt["our_threshold_temp"]
         assert threshold < 80, "Deposition needs deep subcooling"
         assert threshold > 0, "Threshold must be above absolute zero"
+
+
+class TestVolcanicGlassQuenching:
+    """Rapid lava quenching in water produces volcanic glass, not stone."""
+
+    @pytest.mark.physics
+    def test_quenching_principle(self, ground_truth):
+        """Oracle should describe rapid cooling preventing crystallization."""
+        gt = ground_truth.get("volcanic_glass_quenching")
+        if gt is None:
+            pytest.skip("No volcanic_glass_quenching oracle data")
+        assert "crystal" in gt["principle"].lower()
+        assert "glass" in gt["principle"].lower()
+
+    @pytest.mark.physics
+    def test_submerged_produces_glass(self, ground_truth):
+        """Submerged lava (3+ water neighbors) should produce glass."""
+        gt = ground_truth.get("volcanic_glass_quenching")
+        if gt is None:
+            pytest.skip("No volcanic_glass_quenching oracle data")
+        assert gt["our_submerged_product"] == "glass"
+        assert gt["our_submerged_threshold"] >= 2
+
+    @pytest.mark.physics
+    def test_surface_produces_stone(self, ground_truth):
+        """Surface lava (few water neighbors) should still produce stone."""
+        gt = ground_truth.get("volcanic_glass_quenching")
+        if gt is None:
+            pytest.skip("No volcanic_glass_quenching oracle data")
+        assert gt["our_surface_product"] == "stone"

@@ -2021,6 +2021,21 @@ def generate_ground_truth() -> dict:
         "reference": "Atkins, Physical Chemistry (11th ed.), electrochemical series",
     }
 
+    results["volcanic_glass_quenching"] = {
+        "principle": "Lava that solidifies rapidly in contact with water cools "
+                     "too fast for mineral crystals to nucleate and grow, producing "
+                     "volcanic glass (obsidian). Slow cooling allows crystalline "
+                     "structures to form (basalt/granite). At mid-ocean ridges, "
+                     "pillow lava forms glassy rinds from rapid seawater quenching.",
+        "glass_cooling_rate_C_per_s": 100,
+        "crystal_cooling_rate_C_per_s": 1,
+        "our_submerged_threshold": 3,
+        "our_submerged_product": "glass",
+        "our_surface_product": "stone",
+        "real_examples": ["obsidian", "pillow basalt rind", "volcanic glass"],
+        "reference": "Best, Igneous and Metamorphic Petrology (2nd ed.)",
+    }
+
     results["fire_convective_plume"] = {
         "principle": "Fire heats surrounding cells via two mechanisms: "
                      "isotropic thermal radiation (Stefan-Boltzmann) and "

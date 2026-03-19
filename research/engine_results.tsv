@@ -93,3 +93,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 91	2026-03-18T04:31	element_behaviors.dart+physics_oracle.py+test_combustion.py	Anisotropic fire heat: convective plume heats above 2x more than lateral (911->913 passed, +2 tests)	-	95	100	yes
 92	2026-03-18T04:32	element_behaviors.dart+physics_oracle.py+test_reactions.py	Arrhenius acid reactivity: hot acid dissolves 2x faster, cold acid 2x slower (913->916 passed, +3 tests)	-	95	100	yes
 93	2026-03-18T04:33	element_behaviors.dart+physics_oracle.py+test_reactions.py	Hydrogen evolution: acid dissolving metal produces H₂ gas bubbles (916->919 passed, +3 tests)	-	95	100	yes
+94	2026-03-18T04:34	element_behaviors.dart+physics_oracle.py+test_phase_changes.py	Volcanic glass quenching: submerged lava produces obsidian glass, not stone (919->922 passed, +3 tests)	-	95	100	yes
