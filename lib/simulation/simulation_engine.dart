@@ -582,8 +582,14 @@ class SimulationEngine {
         }
 
         // Accelerate: increment velY
+        // Stokes drag: submerged grains have reduced terminal velocity
+        // v_t = 2r²(ρ_p - ρ_f)g / (9η) — in a liquid medium, cap at 1
         final curVel = velY[idx];
-        final newVel = (curVel + 1).clamp(0, maxVel);
+        final aboveEl = y > 0 ? grid[(y - g) * gridW + x] : El.empty;
+        final submerged = aboveEl == El.water || aboveEl == El.oil ||
+                          aboveEl == El.acid || aboveEl == El.mud;
+        final effectiveMax = submerged ? 1 : maxVel;
+        final newVel = (curVel + 1).clamp(0, effectiveMax);
         velY[idx] = newVel;
 
         // Multi-cell fall: when velY > 1, try to skip intermediate empty cells
