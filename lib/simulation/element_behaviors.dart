@@ -2914,6 +2914,14 @@ extension ElementBehaviors on SimulationEngine {
 
     if (heat <= 0) return;
 
+    // Blackbody radiation: heated stone radiates thermal energy to
+    // surroundings (Stefan-Boltzmann law: q ∝ T⁴). At heat level 3+,
+    // stone glows visibly and warms adjacent cells. This creates
+    // realistic heat halos around recently solidified lava.
+    if (heat >= 3 && frameCount % 12 == 0) {
+      emitRadiantHeat(x, y, idx, 2, heat * 5);
+    }
+
     // Slow cooling when not adjacent to heat sources
     if (frameCount % 8 == 0) {
       final nearHeat = checkAdjacent(x, y, El.lava) || checkAdjacent(x, y, El.fire);
