@@ -6763,6 +6763,19 @@
     "behavior": "Water bounces upward on vapor cushion instead of instant boiling",
     "reference": "Gottfried, Lee & Bell, Int. J. Heat Mass Transfer (1966)"
   },
+  "regelation": {
+    "principle": "Ice melting point decreases under pressure (anomalous Clausius-Clapeyron)",
+    "melting_point_depression_C_per_atm": 0.0075,
+    "mechanism": "Water is denser than ice, so pressure favors the denser phase",
+    "enables": [
+      "glacial flow",
+      "ice skating",
+      "wire through ice block"
+    ],
+    "our_pressure_threshold": 8,
+    "our_behavior": "Ice melts at lower temp when pressure > 8, probabilistic 1/4",
+    "reference": "Thomson, Proc. Roy. Soc. Edinburgh (1849)"
+  },
   "thermal_conductivity": {
     "real_W_per_mK": {
       "metal": 50.0,

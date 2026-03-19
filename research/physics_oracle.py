@@ -813,6 +813,19 @@ def generate_ground_truth() -> dict:
     }
 
     # =========================================================================
+    # Regelation (pressure-dependent ice melting)
+    # =========================================================================
+    results["regelation"] = {
+        "principle": "Ice melting point decreases under pressure (anomalous Clausius-Clapeyron)",
+        "melting_point_depression_C_per_atm": 0.0075,
+        "mechanism": "Water is denser than ice, so pressure favors the denser phase",
+        "enables": ["glacial flow", "ice skating", "wire through ice block"],
+        "our_pressure_threshold": 8,
+        "our_behavior": "Ice melts at lower temp when pressure > 8, probabilistic 1/4",
+        "reference": "Thomson, Proc. Roy. Soc. Edinburgh (1849)",
+    }
+
+    # =========================================================================
     # 23. THERMAL CONDUCTIVITY (backward compat)
     # =========================================================================
 

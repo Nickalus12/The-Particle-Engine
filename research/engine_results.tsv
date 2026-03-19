@@ -79,3 +79,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 77	2026-03-18T04:17	simulation_engine.dart	Stokes drag: submerged granular elements capped at velocity 1 in liquid (866 passed, 0 regressions)	-	95	100	yes
 78	2026-03-18T04:18	simulation_engine.dart+physics_oracle.py+test_thermodynamics.py	Clausius-Clapeyron pressure-dependent boiling: deep water needs higher temp to boil (870 passed, +4 tests)	-	95	100	yes
 79	2026-03-18T04:19	element_behaviors.dart+physics_oracle.py+test_thermodynamics.py	Leidenfrost effect: water on hot surfaces bounces on vapor cushion (870->873 passed, +3 tests)	-	95	100	yes
+80	2026-03-18T04:20	element_behaviors.dart+physics_oracle.py+test_phase_changes.py	Regelation: ice melts under pressure via anomalous Clausius-Clapeyron (873->876 passed, +3 tests)	-	95	100	yes

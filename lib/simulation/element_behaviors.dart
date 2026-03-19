@@ -954,6 +954,27 @@ extension ElementBehaviors on SimulationEngine {
     // Temperature-driven melting (ice -> water)
     if (checkTemperatureReaction(x, y, idx, El.ice)) return;
 
+    // Regelation: ice under high pressure melts at lower temperature.
+    // Real ice melting point decreases ~0.0075°C/atm (Clausius-Clapeyron
+    // with negative slope due to water's anomalous density).
+    // In our engine: if pressure > 8, ice can melt even at slightly
+    // below-freezing temperatures (enables glacial flow).
+    if (frameCount % 8 == 0) {
+      final p = pressure[idx];
+      if (p > 8) {
+        final t = temperature[idx];
+        // Normal freeze point is ~128 - 30/2 = 113. Regelation lowers it.
+        // At pressure 8: melt at 120, pressure 16: melt at 115
+        final regelationThreshold = 120 - (p >> 2);
+        if (t > regelationThreshold && rng.nextInt(4) == 0) {
+          grid[idx] = El.water;
+          life[idx] = 100;
+          markProcessed(idx);
+          return;
+        }
+      }
+    }
+
     // Gravity: ice falls when unsupported but floats on water
     // (ice density 90 < water density 100, so sinkThroughLiquids still
     // won't sink through water due to density check in fallSolid)

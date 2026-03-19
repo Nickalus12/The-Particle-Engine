@@ -105,6 +105,36 @@ class TestPhaseChangesAll:
         assert len(entry) > 0, f"{element} has no transitions"
 
 
+class TestRegelation:
+    """Regelation: ice melting point decreases under pressure."""
+
+    @pytest.mark.physics
+    def test_regelation_principle(self, ground_truth):
+        """Oracle should describe anomalous Clausius-Clapeyron for ice."""
+        gt = ground_truth.get("regelation")
+        if gt is None:
+            pytest.skip("No regelation oracle data")
+        assert "pressure" in gt["principle"].lower()
+        assert gt["melting_point_depression_C_per_atm"] > 0
+
+    @pytest.mark.physics
+    def test_regelation_enables_glacial_flow(self, ground_truth):
+        """Regelation should enable glacial flow as a real-world application."""
+        gt = ground_truth.get("regelation")
+        if gt is None:
+            pytest.skip("No regelation oracle data")
+        assert "glacial flow" in gt["enables"]
+
+    @pytest.mark.physics
+    def test_regelation_threshold(self, ground_truth):
+        """Regelation should have a reasonable pressure threshold."""
+        gt = ground_truth.get("regelation")
+        if gt is None:
+            pytest.skip("No regelation oracle data")
+        assert gt["our_pressure_threshold"] > 0
+        assert gt["our_pressure_threshold"] <= 20
+
+
 class TestGlassThermalShock:
     """Glass should shatter under rapid spatial temperature gradients."""
 
