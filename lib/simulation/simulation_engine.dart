@@ -1596,7 +1596,23 @@ class SimulationEngine {
     // to temperature difference, with a low threshold for activation.
     if (aboveEl == el) {
       final aboveTemp = temperature[ui];
-      final diff = myTemp - aboveTemp;
+      int diff = myTemp - aboveTemp;
+
+      // Anomalous expansion of water: water is densest at 4°C (temp≈40
+      // on our 0-255 scale). Below this temperature, water EXPANDS as it
+      // cools — its density decreases. This means near-freezing water
+      // (temp < 40) is less dense than water at 4°C, so it RISES.
+      // This is why ponds freeze from the top down: the coldest water
+      // floats to the surface where it can freeze, insulating the
+      // liquid below. Without this, ice would form at the bottom and
+      // lakes would freeze solid, killing aquatic life.
+      // Reference: CRC Handbook, water density maximum at 3.98°C.
+      if (el == El.water && myTemp < 40 && aboveTemp < 40) {
+        // Both cells below the density maximum — invert convection.
+        // Colder water is now LESS dense and should rise.
+        diff = aboveTemp - myTemp; // flip: colder rises
+      }
+
       // Hot cell below cold cell — swap (hot rises).
       // In real fluids, convection dominates conduction (Prandtl number
       // Pr_water ≈ 7, meaning momentum diffuses 7x faster than heat).

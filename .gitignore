@@ -43,4 +43,12 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
-.claude/worktrees/
+
+# MLflow artifacts
+research/mlflow.db
+research/mlruns/
+
+# Optuna optimizer artifacts
+research/optuna_study.db
+research/trial_config.json
+research/plots/*.html

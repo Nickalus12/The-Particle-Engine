@@ -334,3 +334,42 @@ class TestLeidenfrostEffect:
             pytest.skip("No leidenfrost_effect oracle data")
         # Threshold should be > 200 (well above neutral 128)
         assert gt["our_temp_threshold"] > 200
+
+
+class TestAnomalousExpansion:
+    """Water density maximum at 4C: anomalous expansion below this temperature."""
+
+    @pytest.mark.physics
+    def test_anomalous_expansion_principle(self, ground_truth):
+        """Oracle should describe water's density maximum."""
+        gt = ground_truth.get("anomalous_expansion")
+        if gt is None:
+            pytest.skip("No anomalous_expansion oracle data")
+        assert "density" in gt["principle"].lower()
+        assert gt["density_max_temp_C"] == pytest.approx(3.98, abs=0.1)
+
+    @pytest.mark.physics
+    def test_density_inversion_below_4C(self, ground_truth):
+        """Water at 0C should be less dense than water at 4C."""
+        gt = ground_truth.get("anomalous_expansion")
+        if gt is None:
+            pytest.skip("No anomalous_expansion oracle data")
+        assert gt["density_at_0C_kg_m3"] < gt["density_at_max_kg_m3"]
+
+    @pytest.mark.physics
+    def test_our_threshold_reasonable(self, ground_truth):
+        """Our engine's density max temperature should be in cold range."""
+        gt = ground_truth.get("anomalous_expansion")
+        if gt is None:
+            pytest.skip("No anomalous_expansion oracle data")
+        threshold = gt["our_density_max_temp"]
+        assert 20 <= threshold <= 60, "Threshold should map to cold range"
+
+    @pytest.mark.physics
+    def test_top_down_freezing_consequence(self, ground_truth):
+        """Top-down freezing should be listed as a consequence."""
+        gt = ground_truth.get("anomalous_expansion")
+        if gt is None:
+            pytest.skip("No anomalous_expansion oracle data")
+        consequences = " ".join(gt["consequences"]).lower()
+        assert "top" in consequences and "freeze" in consequences

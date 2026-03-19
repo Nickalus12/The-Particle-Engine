@@ -1962,6 +1962,30 @@ def generate_ground_truth() -> dict:
     # Sublimation (solid → gas, skipping liquid)
     # =========================================================================
     # =========================================================================
+    # Anomalous water expansion (density maximum at 4°C)
+    # =========================================================================
+    results["anomalous_expansion"] = {
+        "principle": "Water has a density maximum at 3.98°C. Below this "
+                     "temperature, water expands as it cools (anomalous "
+                     "thermal expansion), making near-freezing water less "
+                     "dense than water at 4°C. This causes cold water to "
+                     "rise, enabling top-down freezing of lakes.",
+        "density_max_temp_C": 3.98,
+        "density_at_max_kg_m3": 999.97,
+        "density_at_0C_kg_m3": 999.84,
+        "our_density_max_temp": 40,
+        "our_scale_note": "On 0-255 scale, 40 represents ~4°C. Below this, "
+                          "convection inverts: colder water rises.",
+        "consequences": [
+            "Lakes freeze from the top down",
+            "Bottom water stays at 4°C under ice",
+            "Aquatic life survives winter",
+            "Seasonal lake turnover",
+        ],
+        "reference": "CRC Handbook of Chemistry and Physics, Water density table",
+    }
+
+    # =========================================================================
     # Deposition (desublimation): gas → solid, skipping liquid
     # =========================================================================
     results["deposition"] = {
