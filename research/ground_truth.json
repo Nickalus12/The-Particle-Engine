@@ -10294,6 +10294,16 @@
       "second_law_holds": true
     }
   },
+  "tnt_detonation": {
+    "principle": "TNT (trinitrotoluene) detonates via two mechanisms: thermal auto-ignition when heated above its decomposition temperature (~240\u00b0C), and sympathetic detonation from shock waves of nearby explosions. The detonation wave propagates through connected TNT at the Chapman-Jouguet velocity (~6900 m/s).",
+    "auto_ignition_temp_C": 240,
+    "detonation_velocity_m_s": 6900,
+    "our_auto_ignition_temp": 210,
+    "our_sympathetic_trigger": "adjacent fire from prior explosion",
+    "our_radius_scaling": "6 + (connected_count - 1) * 2, clamped to [6, 30]",
+    "cook_off": "Ordnance heated by fire detonates without flame contact",
+    "reference": "Cooper, Explosives Engineering (1996)"
+  },
   "darcy_seepage": {
     "principle": "Darcy's law governs fluid flow through porous media: Q = -kA(dP/dL)/mu, where k is permeability, A is area, dP/dL is pressure gradient, and mu is dynamic viscosity. Water under hydrostatic pressure seeps through soil.",
     "equation": "Q = -kA(\u0394P/\u0394L)/\u03bc",

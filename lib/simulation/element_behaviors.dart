@@ -2548,6 +2548,29 @@ extension ElementBehaviors on SimulationEngine {
   // =========================================================================
 
   void simTNT(int x, int y, int idx) {
+    // Thermal detonation: TNT has an auto-ignition temperature of ~240°C.
+    // In our system, when temperature exceeds 210, the nitro groups
+    // undergo exothermic decomposition without needing a flame source.
+    // This models cook-off: ordnance heated by fire eventually detonates
+    // without direct flame contact (Chapman-Jouguet theory).
+    final tntTemp = temperature[idx];
+    if (tntTemp > 210) {
+      pendingExplosions.add(Explosion(x, y, calculateTNTRadius(x, y)));
+      grid[idx] = El.empty; life[idx] = 0; markProcessed(idx);
+      return;
+    }
+
+    // Sympathetic detonation: shock waves from nearby explosions
+    // can trigger TNT. If any adjacent cell is fire AND has high
+    // temperature (indicating it was just created by an explosion),
+    // this TNT detonates in the same frame — modeling the detonation
+    // wave propagation velocity (~6900 m/s for TNT).
+    if (checkAdjacent(x, y, El.fire)) {
+      pendingExplosions.add(Explosion(x, y, calculateTNTRadius(x, y)));
+      grid[idx] = El.empty; life[idx] = 0; markProcessed(idx);
+      return;
+    }
+
     fallGranular(x, y, idx, El.tnt);
   }
 

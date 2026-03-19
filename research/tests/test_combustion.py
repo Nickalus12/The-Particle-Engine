@@ -308,3 +308,33 @@ class TestSmokeBuoyancy:
         if gt is None:
             pytest.skip("No smoke_buoyancy oracle data")
         assert "lateral" in gt["behavior_cool"].lower() or "spread" in gt["behavior_cool"].lower()
+
+
+class TestTNTDetonation:
+    """TNT detonation: thermal auto-ignition and sympathetic detonation."""
+
+    @pytest.mark.physics
+    def test_tnt_detonation_principle(self, ground_truth):
+        """Oracle should describe thermal and sympathetic detonation."""
+        gt = ground_truth.get("tnt_detonation")
+        if gt is None:
+            pytest.skip("No tnt_detonation oracle data")
+        assert "auto-ignition" in gt["principle"].lower() or "thermal" in gt["principle"].lower()
+        assert "sympathetic" in gt["principle"].lower()
+
+    @pytest.mark.physics
+    def test_auto_ignition_temperature(self, ground_truth):
+        """Auto-ignition threshold should be in high temperature range."""
+        gt = ground_truth.get("tnt_detonation")
+        if gt is None:
+            pytest.skip("No tnt_detonation oracle data")
+        threshold = gt["our_auto_ignition_temp"]
+        assert 180 <= threshold <= 240
+
+    @pytest.mark.physics
+    def test_detonation_velocity_fast(self, ground_truth):
+        """Real TNT detonation velocity should be very high."""
+        gt = ground_truth.get("tnt_detonation")
+        if gt is None:
+            pytest.skip("No tnt_detonation oracle data")
+        assert gt["detonation_velocity_m_s"] > 5000
