@@ -237,6 +237,72 @@ class TestSettling:
         assert min_y > 50, f"Sand found at y={min_y}, seems to be floating"
 
 
+class TestFirstFrameDisplacement:
+    """Each element should move by gravity cells on the first frame."""
+
+    @pytest.mark.physics
+    @pytest.mark.parametrize(
+        "element,expected_vel",
+        [
+            ("sand", 2),
+            ("water", 1),
+            ("fire", -1),
+        ],
+    )
+    def test_first_frame_velocity(self, ground_truth, element, expected_vel):
+        """First frame velocity should equal gravity."""
+        gt = ground_truth.get("first_frame_displacement", {})
+        entry = gt.get(element)
+        if entry is None:
+            pytest.skip(f"No first_frame data for {element}")
+        assert entry["first_frame_vel"] == expected_vel
+
+    @pytest.mark.physics
+    @pytest.mark.parametrize(
+        "element,direction",
+        [
+            ("sand", "down"),
+            ("water", "down"),
+            ("fire", "up"),
+            ("smoke", "up"),
+        ],
+    )
+    def test_direction(self, ground_truth, element, direction):
+        """Element should move in the expected direction."""
+        gt = ground_truth.get("first_frame_displacement", {})
+        entry = gt.get(element)
+        if entry is None:
+            pytest.skip(f"No first_frame data for {element}")
+        assert entry["direction"] == direction
+
+
+class TestWrappingEdgeCases:
+    """X-coordinate wrapping should handle all edge cases correctly."""
+
+    @pytest.mark.physics
+    def test_wrapping_values(self, ground_truth):
+        """All wrapping edge cases should produce expected results."""
+        gt = ground_truth.get("wrapping_edge_cases")
+        if gt is None:
+            pytest.skip("No wrapping_edge_cases oracle data")
+        width = gt["grid_width"]
+        inputs = gt["inputs"]
+        expected = gt["expected"]
+        for inp, exp in zip(inputs, expected):
+            result = inp % width
+            if result < 0:
+                result += width
+            assert result == exp, f"wrapX({inp}) = {result}, expected {exp}"
+
+    @pytest.mark.physics
+    def test_grid_width_320(self, ground_truth):
+        """Grid width should be 320."""
+        gt = ground_truth.get("wrapping_edge_cases")
+        if gt is None:
+            pytest.skip("No wrapping_edge_cases oracle data")
+        assert gt["grid_width"] == 320
+
+
 class TestAccelerationCurves:
     """Elements should accelerate to terminal velocity at correct rates."""
 

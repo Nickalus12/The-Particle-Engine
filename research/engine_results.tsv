@@ -69,3 +69,4 @@ id	timestamp	file	description	fps	physics	visuals	kept
 67	2026-03-18T04:07	pixel_renderer.dart	Integer dirt moisture + metal rust: replace mFrac/5.0 and rustLevel/120.0 with fixed-point	-	95	100	yes
 68	2026-03-18T04:08	element_behaviors.dart	Lava solidification latent heat: Stefan problem energy release warms adjacent cells during crystallization	-	95	100	yes
 69	2026-03-18T04:09	pixel_renderer.dart	Pass nightT256 to _writeElementColor: eliminate per-cell (dayNightT*256).round() float multiply	-	95	100	yes
+70	2026-03-18T04:10	test_*.py	Add conservation laws, non-reactive pairs, first-frame displacement, wrapping edge cases tests (670->693 passed, +23)	-	95	100	yes
