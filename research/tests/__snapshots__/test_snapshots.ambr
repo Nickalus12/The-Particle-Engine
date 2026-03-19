@@ -1,4 +1,281 @@
 # serializer version: 1
+# name: TestOracleSnapshots.test_acid_reactions_stable
+  dict({
+    'acid_ant': dict({
+      'source_becomes': None,
+      'target': 'ant',
+      'target_becomes': 'empty',
+    }),
+    'acid_dirt': dict({
+      'source_becomes': None,
+      'target': 'dirt',
+      'target_becomes': 'empty',
+    }),
+    'acid_glass': dict({
+      'source_becomes': 'empty',
+      'target': 'glass',
+      'target_becomes': 'empty',
+    }),
+    'acid_ice': dict({
+      'source_becomes': None,
+      'target': 'ice',
+      'target_becomes': 'water',
+    }),
+    'acid_lava': dict({
+      'source_becomes': 'smoke',
+      'target': 'lava',
+      'target_becomes': 'steam',
+    }),
+    'acid_metal': dict({
+      'source_becomes': None,
+      'target': 'metal',
+      'target_becomes': None,
+    }),
+    'acid_plant': dict({
+      'source_becomes': None,
+      'target': 'plant',
+      'target_becomes': 'empty',
+    }),
+    'acid_seed': dict({
+      'source_becomes': None,
+      'target': 'seed',
+      'target_becomes': 'empty',
+    }),
+    'acid_stone': dict({
+      'source_becomes': 'empty',
+      'target': 'stone',
+      'target_becomes': 'empty',
+    }),
+    'acid_water': dict({
+      'source_becomes': 'water',
+      'target': 'water',
+      'target_becomes': None,
+    }),
+    'acid_wood': dict({
+      'source_becomes': 'empty',
+      'target': 'wood',
+      'target_becomes': 'empty',
+    }),
+  })
+# ---
+# name: TestOracleSnapshots.test_angle_of_repose_values_stable
+  dict({
+    'ash': dict({
+      'max': 39,
+      'min': 31,
+      'typical': 35,
+    }),
+    'dirt': dict({
+      'max': 44,
+      'min': 36,
+      'typical': 40,
+    }),
+    'sand': dict({
+      'max': 38,
+      'min': 30,
+      'typical': 34,
+    }),
+    'snow': dict({
+      'max': 42,
+      'min': 34,
+      'typical': 38,
+    }),
+  })
+# ---
+# name: TestOracleSnapshots.test_beverloo_flow_rates_stable
+  list([
+    0,
+    0.1617,
+    1.8781,
+    6.3221,
+    14.2621,
+    26.3222,
+    64.9064,
+    125.7981,
+  ])
+# ---
+# name: TestOracleSnapshots.test_beverloo_openings_stable
+  list([
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    8,
+    10,
+  ])
+# ---
+# name: TestOracleSnapshots.test_buoyancy_predictions_stable
+  dict({
+    'ash': dict({
+      'float': True,
+      'sink': False,
+    }),
+    'dirt': dict({
+      'float': False,
+      'sink': True,
+    }),
+    'glass': dict({
+      'float': False,
+      'sink': True,
+    }),
+    'ice': dict({
+      'float': True,
+      'sink': False,
+    }),
+    'metal': dict({
+      'float': False,
+      'sink': True,
+    }),
+    'mud': dict({
+      'float': False,
+      'sink': True,
+    }),
+    'oil': dict({
+      'float': True,
+      'sink': False,
+    }),
+    'sand': dict({
+      'float': False,
+      'sink': True,
+    }),
+    'snow': dict({
+      'float': True,
+      'sink': False,
+    }),
+    'stone': dict({
+      'float': False,
+      'sink': True,
+    }),
+    'wood': dict({
+      'float': True,
+      'sink': False,
+    }),
+  })
+# ---
+# name: TestOracleSnapshots.test_conduction_ordering_stable
+  list([
+    'lightning',
+    'metal',
+    'lava',
+    'fire',
+    'ice',
+    'stone',
+    'glass',
+    'water',
+    'acid',
+    'sand',
+    'steam',
+    'mud',
+    'dirt',
+    'tnt',
+    'oil',
+    'snow',
+    'wood',
+    'plant',
+    'ash',
+    'seed',
+    'ant',
+    'smoke',
+    'bubble',
+    'rainbow',
+  ])
+# ---
+# name: TestOracleSnapshots.test_conduction_values_stable
+  dict({
+    'acid': 0.35,
+    'ant': 0.1,
+    'ash': 0.1,
+    'bubble': 0.01,
+    'dirt': 0.2,
+    'fire': 0.8,
+    'glass': 0.4,
+    'ice': 0.6,
+    'lava': 0.9,
+    'lightning': 1.0,
+    'metal': 0.9,
+    'mud': 0.25,
+    'oil': 0.15,
+    'plant': 0.1,
+    'rainbow': 0.0,
+    'sand': 0.3,
+    'seed': 0.1,
+    'smoke': 0.05,
+    'snow': 0.15,
+    'steam': 0.3,
+    'stone': 0.5,
+    'tnt': 0.2,
+    'water': 0.4,
+    'wood': 0.1,
+  })
+# ---
+# name: TestOracleSnapshots.test_connected_vessels_tolerance_stable
+  2
+# ---
+# name: TestOracleSnapshots.test_conservation_energy_tolerance_stable
+  5.0
+# ---
+# name: TestOracleSnapshots.test_conservation_mass_tolerance_stable
+  1.0
+# ---
+# name: TestOracleSnapshots.test_cooling_half_lives_stable
+  dict({
+    'acid': 23.86,
+    'ant': 83.5,
+    'ash': 83.5,
+    'bubble': 835.04,
+    'dirt': 41.75,
+    'fire': 10.44,
+    'glass': 20.88,
+    'ice': 13.92,
+    'lava': 9.28,
+    'lightning': 8.35,
+    'metal': 9.28,
+    'mud': 33.4,
+    'oil': 55.67,
+    'plant': 83.5,
+    'sand': 27.83,
+    'seed': 83.5,
+    'smoke': 167.01,
+    'snow': 55.67,
+    'steam': 27.83,
+    'stone': 16.7,
+    'tnt': 41.75,
+    'water': 20.88,
+    'wood': 83.5,
+  })
+# ---
+# name: TestOracleSnapshots.test_cooling_k_values_stable
+  dict({
+    'acid': 0.029053,
+    'ant': 0.008301,
+    'ash': 0.008301,
+    'bubble': 0.00083,
+    'dirt': 0.016602,
+    'fire': 0.066406,
+    'glass': 0.033203,
+    'ice': 0.049805,
+    'lava': 0.074707,
+    'lightning': 0.083008,
+    'metal': 0.074707,
+    'mud': 0.020752,
+    'oil': 0.012451,
+    'plant': 0.008301,
+    'sand': 0.024902,
+    'seed': 0.008301,
+    'smoke': 0.00415,
+    'snow': 0.012451,
+    'steam': 0.024902,
+    'stone': 0.041504,
+    'tnt': 0.016602,
+    'water': 0.033203,
+    'wood': 0.008301,
+  })
+# ---
+# name: TestOracleSnapshots.test_density_accuracy_stable
+  0.9545
+# ---
 # name: TestOracleSnapshots.test_density_ordering_stable
   list([
     'stone',
@@ -15,8 +292,200 @@
     'ash',
   ])
 # ---
+# name: TestOracleSnapshots.test_density_values_stable
+  dict({
+    'ash': 30,
+    'dirt': 145,
+    'glass': 220,
+    'ice': 90,
+    'metal': 240,
+    'mud': 120,
+    'oil': 80,
+    'sand': 150,
+    'snow': 50,
+    'stone': 255,
+    'water': 100,
+    'wood': 85,
+  })
+# ---
 # name: TestOracleSnapshots.test_element_count_stable
   23
+# ---
+# name: TestOracleSnapshots.test_element_names_stable
+  list([
+    'acid',
+    'ant',
+    'ash',
+    'bubble',
+    'dirt',
+    'fire',
+    'glass',
+    'ice',
+    'lava',
+    'lightning',
+    'metal',
+    'mud',
+    'oil',
+    'rainbow',
+    'sand',
+    'seed',
+    'smoke',
+    'snow',
+    'steam',
+    'stone',
+    'tnt',
+    'water',
+    'wood',
+  ])
+# ---
+# name: TestOracleSnapshots.test_explosion_energy_ratios_stable
+  list([
+    1.0,
+    0.25,
+    0.111111,
+    0.0625,
+    0.04,
+    0.027778,
+    0.020408,
+    0.015625,
+    0.012346,
+    0.01,
+    0.008264,
+    0.006944,
+    0.005917,
+    0.005102,
+    0.004444,
+  ])
+# ---
+# name: TestOracleSnapshots.test_fire_reactions_stable
+  dict({
+    'fire_ice': dict({
+      'source_becomes': None,
+      'target': 'ice',
+      'target_becomes': 'water',
+    }),
+    'fire_oil': dict({
+      'source_becomes': None,
+      'target': 'oil',
+      'target_becomes': 'fire',
+    }),
+    'fire_plant': dict({
+      'source_becomes': None,
+      'target': 'plant',
+      'target_becomes': 'fire',
+    }),
+    'fire_seed': dict({
+      'source_becomes': None,
+      'target': 'seed',
+      'target_becomes': 'fire',
+    }),
+    'fire_snow': dict({
+      'source_becomes': None,
+      'target': 'snow',
+      'target_becomes': 'water',
+    }),
+    'fire_tnt': dict({
+      'source_becomes': None,
+      'target': 'tnt',
+      'target_becomes': None,
+    }),
+    'fire_wood': dict({
+      'source_becomes': None,
+      'target': 'wood',
+      'target_becomes': None,
+    }),
+  })
+# ---
+# name: TestOracleSnapshots.test_flammable_materials_stable
+  list([
+    'ant',
+    'oil',
+    'plant',
+    'seed',
+    'tnt',
+    'wood',
+  ])
+# ---
+# name: TestOracleSnapshots.test_gravity_directions_stable
+  dict({
+    'acid': 'down',
+    'ant': 'down',
+    'ash': 'down',
+    'bubble': 'up',
+    'dirt': 'down',
+    'fire': 'up',
+    'glass': 'down',
+    'ice': 'down',
+    'lava': 'down',
+    'lightning': 'down',
+    'metal': 'down',
+    'mud': 'down',
+    'oil': 'down',
+    'rainbow': 'up',
+    'sand': 'down',
+    'seed': 'down',
+    'smoke': 'up',
+    'snow': 'down',
+    'steam': 'up',
+    'stone': 'down',
+    'tnt': 'down',
+    'water': 'down',
+    'wood': 'down',
+  })
+# ---
+# name: TestOracleSnapshots.test_gravity_final_positions_stable
+  dict({
+    'acid': 119.0,
+    'ant': 119.0,
+    'ash': 119.0,
+    'bubble': -119.0,
+    'dirt': 177.0,
+    'fire': -119.0,
+    'glass': 119.0,
+    'ice': 119.0,
+    'lava': 60.0,
+    'lightning': 119.0,
+    'metal': 119.0,
+    'mud': 60.0,
+    'oil': 119.0,
+    'rainbow': -119.0,
+    'sand': 179.0,
+    'seed': 119.0,
+    'smoke': -119.0,
+    'snow': 119.0,
+    'steam': -119.0,
+    'stone': 119.0,
+    'tnt': 120.0,
+    'water': 119.0,
+    'wood': 119.0,
+  })
+# ---
+# name: TestOracleSnapshots.test_gravity_max_velocities_stable
+  dict({
+    'acid': 2,
+    'ant': 2,
+    'ash': 2,
+    'bubble': 2,
+    'dirt': 3,
+    'fire': 2,
+    'glass': 2,
+    'ice': 2,
+    'lava': 1,
+    'lightning': 2,
+    'metal': 2,
+    'mud': 1,
+    'oil': 2,
+    'rainbow': 2,
+    'sand': 3,
+    'seed': 2,
+    'smoke': 2,
+    'snow': 2,
+    'steam': 2,
+    'stone': 2,
+    'tnt': 2,
+    'water': 2,
+    'wood': 2,
+  })
 # ---
 # name: TestOracleSnapshots.test_gravity_oracle_stable
   dict({
@@ -183,18 +652,388 @@
     ]),
   })
 # ---
+# name: TestOracleSnapshots.test_gravity_trajectory_frames_stable
+  list([
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60,
+  ])
+# ---
+# name: TestOracleSnapshots.test_gravity_trajectory_real_physics_stable
+  list([
+    0.55,
+    2.18,
+    4.91,
+    8.72,
+    13.62,
+    19.62,
+    26.71,
+    34.88,
+    44.15,
+    54.5,
+    65.94,
+    78.48,
+    92.11,
+    106.82,
+    122.62,
+    139.52,
+    157.5,
+    176.58,
+    196.74,
+    218.0,
+    240.34,
+    263.78,
+    288.31,
+    313.92,
+    340.63,
+    368.42,
+    397.31,
+    427.28,
+    458.34,
+    490.5,
+    523.74,
+    558.08,
+    593.51,
+    630.02,
+    667.63,
+    706.32,
+    746.11,
+    786.98,
+    828.95,
+    872.0,
+    916.15,
+    961.38,
+    1007.71,
+    1055.12,
+    1103.62,
+    1153.22,
+    1203.9,
+    1255.68,
+    1308.54,
+    1362.5,
+    1417.54,
+    1473.68,
+    1530.9,
+    1589.22,
+    1648.62,
+    1709.12,
+    1770.7,
+    1833.38,
+    1897.14,
+    1962.0,
+  ])
+# ---
+# name: TestOracleSnapshots.test_gravity_values_stable
+  dict({
+    'acid': 1,
+    'ant': 1,
+    'ash': 1,
+    'bubble': -1,
+    'dirt': 1,
+    'fire': -1,
+    'glass': 1,
+    'ice': 1,
+    'lava': 1,
+    'lightning': 1,
+    'metal': 1,
+    'mud': 1,
+    'oil': 1,
+    'rainbow': -1,
+    'sand': 2,
+    'seed': 1,
+    'smoke': -1,
+    'snow': 1,
+    'steam': -1,
+    'stone': 1,
+    'tnt': 2,
+    'water': 1,
+    'wood': 1,
+  })
+# ---
+# name: TestOracleSnapshots.test_heat_conduction_steady_state_stable
+  list([
+    250.0,
+    245.93,
+    241.87,
+    237.8,
+    233.73,
+    229.67,
+    225.6,
+    221.53,
+    217.47,
+    213.4,
+    209.33,
+    205.27,
+    201.2,
+    197.13,
+    193.07,
+    189.0,
+    184.93,
+    180.87,
+    176.8,
+    172.73,
+    168.67,
+    164.6,
+    160.53,
+    156.47,
+    152.4,
+    148.33,
+    144.27,
+    140.2,
+    136.13,
+    132.07,
+  ])
+# ---
+# name: TestOracleSnapshots.test_lava_reactions_stable
+  dict({
+    'lava_ice': dict({
+      'source_becomes': None,
+      'target': 'ice',
+      'target_becomes': 'water',
+    }),
+    'lava_snow': dict({
+      'source_becomes': None,
+      'target': 'snow',
+      'target_becomes': 'steam',
+    }),
+    'lava_stone': dict({
+      'source_becomes': None,
+      'target': 'stone',
+      'target_becomes': None,
+    }),
+    'lava_water': dict({
+      'source_becomes': 'stone',
+      'target': 'water',
+      'target_becomes': 'steam',
+    }),
+    'lava_wood': dict({
+      'source_becomes': None,
+      'target': 'wood',
+      'target_becomes': 'fire',
+    }),
+  })
+# ---
+# name: TestOracleSnapshots.test_lightning_reactions_stable
+  dict({
+    'lightning_metal': dict({
+      'source_becomes': None,
+      'target': 'metal',
+      'target_becomes': None,
+    }),
+    'lightning_sand': dict({
+      'source_becomes': None,
+      'target': 'sand',
+      'target_becomes': 'glass',
+    }),
+    'lightning_tnt': dict({
+      'source_becomes': None,
+      'target': 'tnt',
+      'target_becomes': None,
+    }),
+    'lightning_water': dict({
+      'source_becomes': None,
+      'target': 'water',
+      'target_becomes': None,
+    }),
+  })
+# ---
+# name: TestOracleSnapshots.test_non_flammable_materials_stable
+  list([
+    'glass',
+    'ice',
+    'metal',
+    'stone',
+  ])
+# ---
+# name: TestOracleSnapshots.test_phase_change_count_stable
+  10
+# ---
 # name: TestOracleSnapshots.test_phase_change_products_stable
   dict({
-    'glass': '',
-    'ice': '',
-    'lava': '',
-    'metal': '',
-    'oil': '',
-    'sand': '',
-    'snow': '',
-    'steam': '',
-    'stone': '',
-    'water': '',
+    'glass_melt': 'sand',
+    'ice_melt': 'water',
+    'lava_freeze': 'stone',
+    'metal_melt': 'lava',
+    'oil_boil': 'smoke',
+    'sand_melt': 'glass',
+    'snow_melt': 'water',
+    'steam_freeze': 'water',
+    'stone_melt': 'lava',
+    'water_boil': 'steam',
+    'water_freeze': 'ice',
+  })
+# ---
+# name: TestOracleSnapshots.test_phase_change_thresholds_stable
+  dict({
+    'glass_melt': 200,
+    'ice_melt': 40,
+    'lava_freeze': 60,
+    'metal_melt': 240,
+    'oil_boil': 160,
+    'sand_melt': 248,
+    'snow_melt': 50,
+    'steam_freeze': 60,
+    'stone_melt': 220,
+    'water_boil': 180,
+    'water_freeze': 30,
+  })
+# ---
+# name: TestOracleSnapshots.test_phase_change_triggers_stable
+  dict({
+    'glass_melt': 'temperature_above',
+    'ice_melt': 'temperature_above',
+    'lava_freeze': 'temperature_below',
+    'metal_melt': 'temperature_above',
+    'oil_boil': 'temperature_above',
+    'sand_melt': 'temperature_above',
+    'snow_melt': 'temperature_above',
+    'steam_freeze': 'temperature_below',
+    'stone_melt': 'temperature_above',
+    'water_boil': 'temperature_above',
+    'water_freeze': 'temperature_below',
+  })
+# ---
+# name: TestOracleSnapshots.test_pressure_depth_linearity_stable
+  1.0
+# ---
+# name: TestOracleSnapshots.test_reaction_count_stable
+  36
+# ---
+# name: TestOracleSnapshots.test_reaction_determinism_flags_stable
+  dict({
+    'acid_ant': True,
+    'acid_dirt': False,
+    'acid_glass': False,
+    'acid_ice': False,
+    'acid_lava': False,
+    'acid_metal': False,
+    'acid_plant': False,
+    'acid_seed': False,
+    'acid_stone': False,
+    'acid_water': False,
+    'acid_wood': False,
+    'fire_ice': False,
+    'fire_oil': False,
+    'fire_plant': False,
+    'fire_seed': False,
+    'fire_snow': False,
+    'fire_tnt': False,
+    'fire_wood': False,
+    'ice_fire': True,
+    'lava_ice': True,
+    'lava_snow': True,
+    'lava_stone': False,
+    'lava_water': True,
+    'lava_wood': False,
+    'lightning_metal': True,
+    'lightning_sand': True,
+    'lightning_tnt': True,
+    'lightning_water': True,
+    'mud_fire': False,
+    'mud_lava': False,
+    'sand_lightning': True,
+    'sand_water': True,
+    'seed_water': False,
+    'snow_fire': True,
+    'water_fire': True,
+    'water_lava': True,
+  })
+# ---
+# name: TestOracleSnapshots.test_reaction_probabilities_stable
+  dict({
+    'acid_ant': 1.0,
+    'acid_dirt': 0.15,
+    'acid_glass': 0.1,
+    'acid_ice': 0.1,
+    'acid_lava': 0.2,
+    'acid_metal': 0.05,
+    'acid_plant': 0.33,
+    'acid_seed': 0.33,
+    'acid_stone': 0.08,
+    'acid_water': 0.125,
+    'acid_wood': 0.12,
+    'fire_ice': 0.1,
+    'fire_oil': 0.5,
+    'fire_plant': 0.3,
+    'fire_seed': 0.3,
+    'fire_snow': 0.15,
+    'fire_tnt': 0.3,
+    'fire_wood': 0.15,
+    'ice_fire': 1.0,
+    'lava_ice': 1.0,
+    'lava_snow': 1.0,
+    'lava_stone': 0.08,
+    'lava_water': 1.0,
+    'lava_wood': 0.4,
+    'lightning_metal': 1.0,
+    'lightning_sand': 1.0,
+    'lightning_tnt': 1.0,
+    'lightning_water': 1.0,
+    'mud_fire': 0.05,
+    'mud_lava': 0.05,
+    'sand_lightning': 1.0,
+    'sand_water': 1.0,
+    'seed_water': 0.02,
+    'snow_fire': 1.0,
+    'water_fire': 1.0,
+    'water_lava': 1.0,
   })
 # ---
 # name: TestOracleSnapshots.test_reaction_products_stable
@@ -343,5 +1182,807 @@
       'source_becomes': 'steam',
       'target_becomes': 'stone',
     }),
+  })
+# ---
+# name: TestOracleSnapshots.test_torricelli_heights_stable
+  list([
+    5,
+    10,
+    15,
+    20,
+    25,
+    30,
+    40,
+    50,
+  ])
+# ---
+# name: TestOracleSnapshots.test_torricelli_velocities_stable
+  list([
+    3.162,
+    4.472,
+    5.477,
+    6.325,
+    7.071,
+    7.746,
+    8.944,
+    10.0,
+  ])
+# ---
+# name: TestOracleSnapshots.test_u_tube_ratio_stable
+  1.25
+# ---
+# name: TestOracleSnapshots.test_viscosity_ordering_stable
+  list([
+    'water',
+    'acid',
+    'oil',
+    'mud',
+    'lava',
+  ])
+# ---
+# name: TestOracleSnapshots.test_viscosity_values_stable
+  dict({
+    'acid': 1,
+    'lava': 4,
+    'mud': 3,
+    'oil': 2,
+    'water': 1,
+  })
+# ---
+# name: TestOracleSnapshots.test_water_reactions_stable
+  dict({
+    'water_fire': dict({
+      'source_becomes': 'steam',
+      'target': 'fire',
+      'target_becomes': 'empty',
+    }),
+    'water_lava': dict({
+      'source_becomes': 'steam',
+      'target': 'lava',
+      'target_becomes': 'stone',
+    }),
+  })
+# ---
+# name: TestVisualOracleSnapshots.test_base_alphas_stable
+  dict({
+    'acid': 255,
+    'ant': 255,
+    'ash': 221,
+    'bubble': 160,
+    'dirt': 255,
+    'fire': 255,
+    'glass': 204,
+    'ice': 255,
+    'lava': 255,
+    'lightning': 255,
+    'metal': 255,
+    'mud': 255,
+    'oil': 255,
+    'plant': 255,
+    'rainbow': 255,
+    'sand': 255,
+    'seed': 255,
+    'smoke': 176,
+    'snow': 255,
+    'steam': 48,
+    'stone': 255,
+    'tnt': 255,
+    'water': 255,
+    'wood': 255,
+  })
+# ---
+# name: TestVisualOracleSnapshots.test_base_rgb_stable
+  dict({
+    'acid': dict({
+      'b': 48,
+      'g': 240,
+      'r': 48,
+    }),
+    'ant': dict({
+      'b': 34,
+      'g': 34,
+      'r': 34,
+    }),
+    'ash': dict({
+      'b': 184,
+      'g': 176,
+      'r': 176,
+    }),
+    'bubble': dict({
+      'b': 255,
+      'g': 232,
+      'r': 200,
+    }),
+    'dirt': dict({
+      'b': 48,
+      'g': 104,
+      'r': 140,
+    }),
+    'fire': dict({
+      'b': 32,
+      'g': 136,
+      'r': 255,
+    }),
+    'glass': dict({
+      'b': 255,
+      'g': 232,
+      'r': 221,
+    }),
+    'ice': dict({
+      'b': 255,
+      'g': 229,
+      'r': 189,
+    }),
+    'lava': dict({
+      'b': 16,
+      'g': 80,
+      'r': 255,
+    }),
+    'lightning': dict({
+      'b': 160,
+      'g': 255,
+      'r': 255,
+    }),
+    'metal': dict({
+      'b': 184,
+      'g': 168,
+      'r': 168,
+    }),
+    'mud': dict({
+      'b': 48,
+      'g': 80,
+      'r': 122,
+    }),
+    'oil': dict({
+      'b': 32,
+      'g': 40,
+      'r': 58,
+    }),
+    'plant': dict({
+      'b': 64,
+      'g': 176,
+      'r': 40,
+    }),
+    'rainbow': dict({
+      'b': 255,
+      'g': 0,
+      'r': 255,
+    }),
+    'sand': dict({
+      'b': 144,
+      'g': 195,
+      'r': 217,
+    }),
+    'seed': dict({
+      'b': 85,
+      'g': 115,
+      'r': 139,
+    }),
+    'smoke': dict({
+      'b': 160,
+      'g': 154,
+      'r': 154,
+    }),
+    'snow': dict({
+      'b': 255,
+      'g': 244,
+      'r': 240,
+    }),
+    'steam': dict({
+      'b': 224,
+      'g': 208,
+      'r': 200,
+    }),
+    'stone': dict({
+      'b': 144,
+      'g': 128,
+      'r': 128,
+    }),
+    'tnt': dict({
+      'b': 34,
+      'g': 34,
+      'r': 204,
+    }),
+    'water': dict({
+      'b': 255,
+      'g': 154,
+      'r': 46,
+    }),
+    'wood': dict({
+      'b': 48,
+      'g': 85,
+      'r': 160,
+    }),
+  })
+# ---
+# name: TestVisualOracleSnapshots.test_contrast_pairs_stable
+  dict({
+    'critical_pairs': list([
+      list([
+        'fire',
+        'lava',
+      ]),
+      list([
+        'sand',
+        'dirt',
+      ]),
+      list([
+        'stone',
+        'metal',
+      ]),
+      list([
+        'smoke',
+        'steam',
+      ]),
+    ]),
+    'min_contrast_ratio': 1.3,
+  })
+# ---
+# name: TestVisualOracleSnapshots.test_delta_e_pairs_stable
+  dict({
+    'acid_ant': 76.45,
+    'acid_ash': 36.47,
+    'acid_bubble': 43.66,
+    'acid_glass': 42.69,
+    'acid_lightning': 22.85,
+    'acid_mud': 59.25,
+    'acid_plant': 16.56,
+    'acid_rainbow': 108.2,
+    'acid_seed': 43.9,
+    'acid_smoke': 37.63,
+    'acid_snow': 37.92,
+    'acid_steam': 39.71,
+    'acid_tnt': 84.21,
+    'ash_ant': 53.93,
+    'ash_bubble': 17.03,
+    'ash_lightning': 33.81,
+    'ash_rainbow': 31.48,
+    'ash_seed': 26.3,
+    'ash_tnt': 39.05,
+    'bubble_ant': 77.37,
+    'bubble_lightning': 37.6,
+    'dirt_acid': 47.7,
+    'dirt_ant': 32.91,
+    'dirt_ash': 33.35,
+    'dirt_bubble': 48.42,
+    'dirt_glass': 46.62,
+    'dirt_ice': 48.85,
+    'dirt_lava': 27.27,
+    'dirt_lightning': 41.82,
+    'dirt_metal': 34.73,
+    'dirt_mud': 11.09,
+    'dirt_oil': 27.21,
+    'dirt_plant': 37.38,
+    'dirt_rainbow': 56.9,
+    'dirt_seed': 7.97,
+    'dirt_smoke': 28.67,
+    'dirt_snow': 45.68,
+    'dirt_steam': 41.24,
+    'dirt_tnt': 27.68,
+    'dirt_wood': 13.92,
+    'fire_acid': 58.79,
+    'fire_ant': 57.14,
+    'fire_ash': 31.75,
+    'fire_bubble': 43.72,
+    'fire_dirt': 25.59,
+    'fire_glass': 40.47,
+    'fire_ice': 45.19,
+    'fire_lava': 14.5,
+    'fire_lightning': 37.53,
+    'fire_metal': 34.38,
+    'fire_mud': 33.17,
+    'fire_oil': 52.1,
+    'fire_plant': 54.29,
+    'fire_rainbow': 55.01,
+    'fire_seed': 25.75,
+    'fire_smoke': 31.22,
+    'fire_snow': 37.8,
+    'fire_steam': 36.69,
+    'fire_stone': 36.86,
+    'fire_tnt': 29.65,
+    'fire_wood': 24.92,
+    'glass_ant': 77.76,
+    'glass_ash': 14.84,
+    'glass_bubble': 7.55,
+    'glass_lightning': 37.2,
+    'glass_mud': 51.87,
+    'glass_plant': 42.98,
+    'glass_rainbow': 36.77,
+    'glass_seed': 39.99,
+    'glass_smoke': 21.07,
+    'glass_snow': 5.41,
+    'glass_steam': 5.96,
+    'glass_tnt': 51.65,
+    'ice_acid': 44.82,
+    'ice_ant': 76.69,
+    'ice_ash': 17.84,
+    'ice_bubble': 2.08,
+    'ice_glass': 9.41,
+    'ice_lightning': 39.1,
+    'ice_metal': 19.69,
+    'ice_mud': 54.06,
+    'ice_oil': 73.52,
+    'ice_plant': 43.63,
+    'ice_rainbow': 37.49,
+    'ice_seed': 41.82,
+    'ice_smoke': 22.6,
+    'ice_snow': 12.15,
+    'ice_steam': 10.33,
+    'ice_tnt': 57.76,
+    'ice_wood': 52.02,
+    'lava_acid': 75.38,
+    'lava_ant': 48.59,
+    'lava_ash': 34.0,
+    'lava_bubble': 49.25,
+    'lava_glass': 44.59,
+    'lava_ice': 50.9,
+    'lava_lightning': 50.95,
+    'lava_metal': 35.37,
+    'lava_mud': 28.23,
+    'lava_oil': 42.95,
+    'lava_plant': 67.89,
+    'lava_rainbow': 45.51,
+    'lava_seed': 26.63,
+    'lava_smoke': 32.05,
+    'lava_snow': 42.85,
+    'lava_steam': 40.4,
+    'lava_tnt': 17.09,
+    'lava_wood': 18.87,
+    'lightning_ant': 82.87,
+    'metal_acid': 40.42,
+    'metal_ant': 50.84,
+    'metal_ash': 4.19,
+    'metal_bubble': 18.96,
+    'metal_glass': 16.2,
+    'metal_lightning': 38.97,
+    'metal_mud': 38.41,
+    'metal_oil': 49.66,
+    'metal_plant': 35.61,
+    'metal_rainbow': 29.89,
+    'metal_seed': 27.29,
+    'metal_smoke': 6.37,
+    'metal_snow': 18.43,
+    'metal_steam': 10.81,
+    'metal_tnt': 39.06,
+    'mud_ant': 26.19,
+    'mud_ash': 38.61,
+    'mud_bubble': 53.73,
+    'mud_lightning': 52.7,
+    'mud_plant': 47.64,
+    'mud_rainbow': 49.75,
+    'mud_seed': 13.35,
+    'mud_smoke': 32.99,
+    'mud_snow': 51.9,
+    'mud_steam': 46.75,
+    'mud_tnt': 20.87,
+    'oil_acid': 76.61,
+    'oil_ant': 10.96,
+    'oil_ash': 52.6,
+    'oil_bubble': 73.44,
+    'oil_glass': 72.26,
+    'oil_lightning': 76.34,
+    'oil_mud': 18.17,
+    'oil_plant': 53.99,
+    'oil_rainbow': 50.91,
+    'oil_seed': 27.43,
+    'oil_smoke': 42.37,
+    'oil_snow': 73.02,
+    'oil_steam': 67.17,
+    'oil_tnt': 30.78,
+    'plant_ant': 51.19,
+    'plant_ash': 32.65,
+    'plant_bubble': 43.04,
+    'plant_lightning': 30.4,
+    'plant_rainbow': 97.63,
+    'plant_seed': 33.56,
+    'plant_smoke': 31.04,
+    'plant_steam': 38.46,
+    'plant_tnt': 74.08,
+    'rainbow_ant': 51.01,
+    'rainbow_bubble': 35.99,
+    'rainbow_lightning': 79.02,
+    'sand_acid': 29.94,
+    'sand_ant': 66.38,
+    'sand_ash': 22.87,
+    'sand_bubble': 31.67,
+    'sand_dirt': 28.53,
+    'sand_fire': 23.36,
+    'sand_glass': 29.31,
+    'sand_ice': 32.87,
+    'sand_lava': 34.01,
+    'sand_lightning': 15.89,
+    'sand_metal': 27.29,
+    'sand_mud': 39.0,
+    'sand_oil': 63.0,
+    'sand_plant': 29.48,
+    'sand_rainbow': 58.66,
+    'sand_seed': 25.17,
+    'sand_smoke': 24.33,
+    'sand_snow': 25.57,
+    'sand_steam': 25.72,
+    'sand_stone': 33.56,
+    'sand_tnt': 44.15,
+    'sand_water': 47.39,
+    'sand_wood': 35.38,
+    'seed_ant': 32.39,
+    'seed_bubble': 41.47,
+    'seed_lightning': 39.2,
+    'seed_rainbow': 48.06,
+    'seed_tnt': 26.74,
+    'smoke_ant': 43.67,
+    'smoke_ash': 6.64,
+    'smoke_bubble': 22.26,
+    'smoke_lightning': 36.51,
+    'smoke_rainbow': 30.46,
+    'smoke_seed': 21.4,
+    'smoke_steam': 15.28,
+    'smoke_tnt': 35.0,
+    'snow_ant': 79.08,
+    'snow_ash': 16.12,
+    'snow_bubble': 10.03,
+    'snow_lightning': 30.61,
+    'snow_plant': 40.24,
+    'snow_rainbow': 38.27,
+    'snow_seed': 39.55,
+    'snow_smoke': 22.56,
+    'snow_steam': 8.42,
+    'snow_tnt': 50.97,
+    'steam_ant': 69.83,
+    'steam_ash': 9.03,
+    'steam_bubble': 9.02,
+    'steam_lightning': 34.97,
+    'steam_rainbow': 33.19,
+    'steam_seed': 34.52,
+    'steam_tnt': 46.91,
+    'stone_acid': 45.7,
+    'stone_ant': 34.01,
+    'stone_ash': 15.69,
+    'stone_bubble': 30.0,
+    'stone_dirt': 29.25,
+    'stone_glass': 28.62,
+    'stone_ice': 30.11,
+    'stone_lava': 34.79,
+    'stone_lightning': 46.82,
+    'stone_metal': 13.11,
+    'stone_mud': 28.43,
+    'stone_oil': 33.3,
+    'stone_plant': 36.51,
+    'stone_rainbow': 29.42,
+    'stone_seed': 21.96,
+    'stone_smoke': 9.94,
+    'stone_snow': 30.97,
+    'stone_steam': 23.35,
+    'stone_tnt': 33.17,
+    'stone_wood': 29.11,
+    'tnt_ant': 36.96,
+    'tnt_bubble': 56.32,
+    'tnt_lightning': 61.9,
+    'tnt_rainbow': 40.17,
+    'water_acid': 64.18,
+    'water_ant': 49.03,
+    'water_ash': 26.53,
+    'water_bubble': 23.35,
+    'water_dirt': 49.36,
+    'water_fire': 52.75,
+    'water_glass': 27.28,
+    'water_ice': 22.14,
+    'water_lava': 51.88,
+    'water_lightning': 64.87,
+    'water_metal': 24.81,
+    'water_mud': 48.53,
+    'water_oil': 51.06,
+    'water_plant': 55.89,
+    'water_rainbow': 42.88,
+    'water_seed': 41.77,
+    'water_smoke': 25.65,
+    'water_snow': 32.2,
+    'water_steam': 24.74,
+    'water_stone': 25.26,
+    'water_tnt': 52.08,
+    'water_wood': 48.31,
+    'wood_acid': 64.5,
+    'wood_ant': 33.31,
+    'wood_ash': 35.42,
+    'wood_bubble': 51.24,
+    'wood_glass': 48.43,
+    'wood_lightning': 51.02,
+    'wood_metal': 35.6,
+    'wood_mud': 9.48,
+    'wood_oil': 25.66,
+    'wood_plant': 54.58,
+    'wood_rainbow': 45.68,
+    'wood_seed': 15.28,
+    'wood_smoke': 30.92,
+    'wood_snow': 48.0,
+    'wood_steam': 43.42,
+    'wood_tnt': 13.44,
+  })
+# ---
+# name: TestVisualOracleSnapshots.test_delta_e_threshold_stable
+  5.0
+# ---
+# name: TestVisualOracleSnapshots.test_element_lab_colors_stable
+  dict({
+    'acid': dict({
+      'L': 83.53,
+      'a': -77.89,
+      'b': 72.48,
+    }),
+    'ant': dict({
+      'L': 13.23,
+      'a': -0.0,
+      'b': 0.0,
+    }),
+    'ash': dict({
+      'L': 72.06,
+      'a': 1.53,
+      'b': -4.07,
+    }),
+    'bubble': dict({
+      'L': 90.42,
+      'a': -5.62,
+      'b': -14.59,
+    }),
+    'dirt': dict({
+      'L': 46.57,
+      'a': 8.11,
+      'b': 36.42,
+    }),
+    'fire': dict({
+      'L': 68.74,
+      'a': 39.22,
+      'b': 68.99,
+    }),
+    'glass': dict({
+      'L': 91.82,
+      'a': 0.8,
+      'b': -12.34,
+    }),
+    'ice': dict({
+      'L': 88.96,
+      'a': -7.31,
+      'b': -16.85,
+    }),
+    'lava': dict({
+      'L': 59.01,
+      'a': 64.07,
+      'b': 66.46,
+    }),
+    'lightning': dict({
+      'L': 98.16,
+      'a': -13.5,
+      'b': 45.41,
+    }),
+    'metal': dict({
+      'L': 69.32,
+      'a': 3.15,
+      'b': -8.19,
+    }),
+    'mud': dict({
+      'L': 38.0,
+      'a': 14.02,
+      'b': 25.85,
+    }),
+    'oil': dict({
+      'L': 18.02,
+      'a': 7.15,
+      'b': 8.59,
+    }),
+    'plant': dict({
+      'L': 63.24,
+      'a': -58.04,
+      'b': 46.11,
+    }),
+    'rainbow': dict({
+      'L': 60.32,
+      'a': 98.23,
+      'b': -60.82,
+    }),
+    'sand': dict({
+      'L': 79.5,
+      'a': 0.34,
+      'b': 28.51,
+    }),
+    'seed': dict({
+      'L': 49.99,
+      'a': 4.91,
+      'b': 20.13,
+    }),
+    'smoke': dict({
+      'L': 63.77,
+      'a': 1.17,
+      'b': -3.13,
+    }),
+    'snow': dict({
+      'L': 96.18,
+      'a': 0.68,
+      'b': -5.73,
+    }),
+    'steam': dict({
+      'L': 83.32,
+      'a': 0.39,
+      'b': -8.82,
+    }),
+    'stone': dict({
+      'L': 54.07,
+      'a': 3.35,
+      'b': -8.59,
+    }),
+    'tnt': dict({
+      'L': 44.38,
+      'a': 63.35,
+      'b': 44.52,
+    }),
+    'water': dict({
+      'L': 62.43,
+      'a': 5.09,
+      'b': -58.48,
+    }),
+    'wood': dict({
+      'L': 44.5,
+      'a': 27.85,
+      'b': 34.8,
+    }),
+  })
+# ---
+# name: TestVisualOracleSnapshots.test_glow_params_stable
+  dict({
+    'falloff_type': 'quadratic',
+    'max_radius': 6,
+    'no_black_halos': True,
+  })
+# ---
+# name: TestVisualOracleSnapshots.test_known_similar_pairs_stable
+  list([
+    'ice_bubble',
+    'metal_ash',
+  ])
+# ---
+# name: TestVisualOracleSnapshots.test_light_emission_params_stable
+  dict({
+    'acid': dict({
+      'b': 20,
+      'g': 255,
+      'intensity': 30,
+      'r': 20,
+    }),
+    'fire': dict({
+      'b': 20,
+      'g': 120,
+      'intensity': 180,
+      'r': 255,
+    }),
+    'lava': dict({
+      'b': 10,
+      'g': 80,
+      'intensity': 220,
+      'r': 255,
+    }),
+    'lightning': dict({
+      'b': 180,
+      'g': 255,
+      'intensity': 255,
+      'r': 255,
+    }),
+    'rainbow': dict({
+      'b': 255,
+      'g': 100,
+      'intensity': 100,
+      'r': 200,
+    }),
+  })
+# ---
+# name: TestVisualOracleSnapshots.test_sky_gradient_params_stable
+  dict({
+    'bottom_L_range': list([
+      60,
+      85,
+    ]),
+    'max_second_derivative': 25,
+    'night_top_L_range': list([
+      5,
+      25,
+    ]),
+    'top_L_range': list([
+      55,
+      75,
+    ]),
+  })
+# ---
+# name: TestVisualOracleSnapshots.test_texture_entropy_ranges_stable
+  dict({
+    'dirt': dict({
+      'desc': 'organic texture',
+      'max': 5.0,
+      'min': 1.5,
+    }),
+    'fire': dict({
+      'desc': 'highly dynamic',
+      'max': 6.0,
+      'min': 2.0,
+    }),
+    'glass': dict({
+      'desc': 'nearly transparent',
+      'max': 2.5,
+      'min': 0.3,
+    }),
+    'ice': dict({
+      'desc': 'crystalline, sparkle',
+      'max': 3.5,
+      'min': 0.5,
+    }),
+    'lava': dict({
+      'desc': 'dynamic, pulsing',
+      'max': 5.5,
+      'min': 2.0,
+    }),
+    'metal': dict({
+      'desc': 'smooth sheen',
+      'max': 3.5,
+      'min': 0.5,
+    }),
+    'oil': dict({
+      'desc': 'iridescent',
+      'max': 4.0,
+      'min': 1.0,
+    }),
+    'sand': dict({
+      'desc': 'grainy, moderate variation',
+      'max': 5.0,
+      'min': 1.5,
+    }),
+    'snow': dict({
+      'desc': 'uniform with glitter',
+      'max': 3.0,
+      'min': 0.3,
+    }),
+    'stone': dict({
+      'desc': 'layered strata',
+      'max': 5.0,
+      'min': 1.5,
+    }),
+    'water': dict({
+      'desc': 'smooth with shimmer',
+      'max': 4.0,
+      'min': 0.5,
+    }),
+    'wood': dict({
+      'desc': 'grain texture',
+      'max': 5.0,
+      'min': 1.5,
+    }),
+  })
+# ---
+# name: TestVisualOracleSnapshots.test_transparency_ranges_stable
+  dict({
+    'bubble': dict({
+      'max_alpha': 180,
+      'min_alpha': 60,
+    }),
+    'glass': dict({
+      'max_alpha': 220,
+      'min_alpha': 120,
+    }),
+    'smoke': dict({
+      'max_alpha': 190,
+      'min_alpha': 30,
+    }),
+    'steam': dict({
+      'max_alpha': 80,
+      'min_alpha': 5,
+    }),
+  })
+# ---
+# name: TestVisualOracleSnapshots.test_underground_thresholds_stable
+  dict({
+    'max_avg_brightness': 120,
+    'max_brightness_std': 40,
+  })
+# ---
+# name: TestVisualOracleSnapshots.test_water_depth_params_stable
+  dict({
+    'deep_brightness_max': 80,
+    'gradient_direction': 'darker_with_depth',
+    'surface_brightness_min': 120,
   })
 # ---
