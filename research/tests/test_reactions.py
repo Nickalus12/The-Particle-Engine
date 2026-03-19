@@ -476,3 +476,32 @@ class TestArrheniusAcid:
         if gt is None:
             pytest.skip("No arrhenius_acid oracle data")
         assert gt["our_cold_slowdown"] <= 0.75
+
+
+class TestHydrogenEvolution:
+    """Acid + metal produces hydrogen gas bubbles (H₂↑)."""
+
+    @pytest.mark.physics
+    def test_hydrogen_evolution_principle(self, ground_truth):
+        """Oracle should describe single-displacement redox reaction."""
+        gt = ground_truth.get("hydrogen_evolution")
+        if gt is None:
+            pytest.skip("No hydrogen_evolution oracle data")
+        assert "redox" in gt["principle"].lower() or "oxidize" in gt["principle"].lower()
+
+    @pytest.mark.physics
+    def test_hydrogen_product_is_bubble(self, ground_truth):
+        """Dissolved metal should produce bubble element as H₂ gas."""
+        gt = ground_truth.get("hydrogen_evolution")
+        if gt is None:
+            pytest.skip("No hydrogen_evolution oracle data")
+        assert gt["our_product_gas"] == "bubble"
+
+    @pytest.mark.physics
+    def test_reaction_involves_acid_and_metal(self, ground_truth):
+        """Reaction should involve acid and metal elements."""
+        gt = ground_truth.get("hydrogen_evolution")
+        if gt is None:
+            pytest.skip("No hydrogen_evolution oracle data")
+        assert gt["our_acid_element"] == "acid"
+        assert gt["our_metal_element"] == "metal"

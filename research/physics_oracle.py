@@ -2003,6 +2003,24 @@ def generate_ground_truth() -> dict:
         "reference": "Arrhenius, Z. Phys. Chem. 4 (1889) 226-248",
     }
 
+    results["hydrogen_evolution"] = {
+        "principle": "When acid contacts a reactive metal, a single-displacement "
+                     "redox reaction produces a metal salt and hydrogen gas. "
+                     "The metal oxidizes (loses electrons) while H⁺ ions are "
+                     "reduced to H₂ gas, which rises as visible bubbles.",
+        "reaction_example": "2HCl + Fe → FeCl₂ + H₂↑",
+        "standard_potential_V": -0.44,  # Fe²⁺/Fe
+        "gas_produced": "H₂ (hydrogen)",
+        "our_acid_element": "acid",
+        "our_metal_element": "metal",
+        "our_product_gas": "bubble",
+        "our_bubble_position": "above dissolved metal cell",
+        "reactive_metals": ["iron", "zinc", "aluminum", "magnesium"],
+        "noble_metals_no_reaction": ["gold", "platinum"],
+        "applications": ["metal pickling", "battery chemistry", "corrosion"],
+        "reference": "Atkins, Physical Chemistry (11th ed.), electrochemical series",
+    }
+
     results["fire_convective_plume"] = {
         "principle": "Fire heats surrounding cells via two mechanisms: "
                      "isotropic thermal radiation (Stefan-Boltzmann) and "

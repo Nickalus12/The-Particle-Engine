@@ -3060,10 +3060,26 @@ extension ElementBehaviors on SimulationEngine {
           ? (baseChance + 1) ~/ 2 // hot: halve the delay
           : (tempFactor == 0 ? baseChance * 2 : baseChance); // cold: double
       if (rng.nextInt(dissolveChance.clamp(1, 255)) == 0) {
+        final dissolvedEl = grid[bestNi];
         grid[bestNi] = El.empty; life[bestNi] = 0; markProcessed(bestNi);
         final bnx = bestNi % gridW;
         final bny = bestNi ~/ gridW;
         queueReactionFlash(bnx, bny, 60, 230, 60, 4);
+        // Hydrogen evolution: acid dissolving metal produces H₂ gas.
+        // Real reaction: 2HCl + Fe → FeCl₂ + H₂↑. The hydrogen gas
+        // rises as visible bubbles. Only metals trigger this — their
+        // electrochemical potential drives the redox half-reaction.
+        if (dissolvedEl == El.metal) {
+          final bubbleY = bny - gravityDir;
+          if (inBoundsY(bubbleY)) {
+            final bi = bubbleY * gridW + bnx;
+            if (grid[bi] == El.empty || grid[bi] == El.water ||
+                grid[bi] == El.acid) {
+              grid[bi] = El.bubble; life[bi] = 0; markProcessed(bi);
+              queueReactionFlash(bnx, bubbleY, 200, 220, 240, 3);
+            }
+          }
+        }
         // Acid consumed when dissolving very hard materials (metal/glass).
         // Moderate materials age the acid (gradual neutralization).
         if (bestResist >= 80) {

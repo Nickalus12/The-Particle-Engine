@@ -10309,6 +10309,32 @@
     ],
     "reference": "Arrhenius, Z. Phys. Chem. 4 (1889) 226-248"
   },
+  "hydrogen_evolution": {
+    "principle": "When acid contacts a reactive metal, a single-displacement redox reaction produces a metal salt and hydrogen gas. The metal oxidizes (loses electrons) while H\u207a ions are reduced to H\u2082 gas, which rises as visible bubbles.",
+    "reaction_example": "2HCl + Fe \u2192 FeCl\u2082 + H\u2082\u2191",
+    "standard_potential_V": -0.44,
+    "gas_produced": "H\u2082 (hydrogen)",
+    "our_acid_element": "acid",
+    "our_metal_element": "metal",
+    "our_product_gas": "bubble",
+    "our_bubble_position": "above dissolved metal cell",
+    "reactive_metals": [
+      "iron",
+      "zinc",
+      "aluminum",
+      "magnesium"
+    ],
+    "noble_metals_no_reaction": [
+      "gold",
+      "platinum"
+    ],
+    "applications": [
+      "metal pickling",
+      "battery chemistry",
+      "corrosion"
+    ],
+    "reference": "Atkins, Physical Chemistry (11th ed.), electrochemical series"
+  },
   "fire_convective_plume": {
     "principle": "Fire heats surrounding cells via two mechanisms: isotropic thermal radiation (Stefan-Boltzmann) and anisotropic convection. Hot combustion gases rise, creating a thermal plume above the flame with higher heat transfer rates than lateral or downward radiation.",
     "grashof_number": "Gr = g\u03b2\u0394TL\u00b3/\u03bd\u00b2 >> 1 for fire (convection dominates)",
