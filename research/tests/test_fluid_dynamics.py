@@ -182,3 +182,57 @@ class TestCapillaryWicking:
             assert r == pytest.approx(avg, rel=0.05), (
                 f"L^2/t ratio {r:.2f} deviates from avg {avg:.2f}"
             )
+
+
+class TestConnectedVessels:
+    """Water seeks the same level in connected vessels (Pascal's law)."""
+
+    @pytest.mark.physics
+    def test_connected_vessels_principle(self, ground_truth):
+        gt = ground_truth.get("connected_vessels")
+        if gt is None:
+            pytest.skip("No connected_vessels oracle data")
+        assert gt["expected_level_difference"] == 0
+
+    @pytest.mark.physics
+    def test_connected_vessels_tolerance(self, ground_truth):
+        gt = ground_truth.get("connected_vessels")
+        if gt is None:
+            pytest.skip("No connected_vessels oracle data")
+        assert gt["tolerance_cells"] <= 5
+
+    @pytest.mark.physics
+    def test_connected_vessels_pascal(self, ground_truth):
+        gt = ground_truth.get("connected_vessels")
+        if gt is None:
+            pytest.skip("No connected_vessels oracle data")
+        assert "pascal" in gt["equation"].lower()
+
+
+class TestViscosityDetailed:
+    """Detailed viscosity oracle with real-world Pa·s values."""
+
+    @pytest.mark.physics
+    def test_real_viscosity_ordering(self, ground_truth):
+        gt = ground_truth.get("viscosity")
+        if gt is None:
+            pytest.skip("No viscosity oracle data")
+        real = gt["real_viscosity_pa_s"]
+        assert real["water"] < real["oil"] < real["lava"]
+
+    @pytest.mark.physics
+    def test_engine_viscosity_ordering(self, ground_truth):
+        gt = ground_truth.get("viscosity")
+        if gt is None:
+            pytest.skip("No viscosity oracle data")
+        eng = gt["our_viscosity_1_10"]
+        assert eng["water"] <= eng["oil"] <= eng["lava"]
+
+    @pytest.mark.physics
+    def test_spread_ordering(self, ground_truth):
+        gt = ground_truth.get("viscosity")
+        if gt is None:
+            pytest.skip("No viscosity oracle data")
+        ordering = gt["expected_spread_ordering"]
+        assert ordering[0] == "water"
+        assert ordering[-1] == "lava"

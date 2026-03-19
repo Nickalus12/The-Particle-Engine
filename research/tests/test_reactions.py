@@ -255,3 +255,165 @@ class TestLiveReactions:
         # At least one should be zero or both could be present
         # The test validates the elements exist in the registry
         assert fire_id > 0 and smoke_id > 0
+
+
+class TestAcidDissolution:
+    """Dissolution time proportional to thickness."""
+
+    @pytest.mark.physics
+    def test_dissolution_ratio(self, ground_truth):
+        gt = ground_truth.get("acid_dissolution")
+        if gt is None:
+            pytest.skip("No acid_dissolution oracle data")
+        assert gt["expected_ratio_3x_to_1x"] == pytest.approx(3.0, abs=gt["tolerance"])
+
+    @pytest.mark.physics
+    def test_acid_reactions_defined(self, ground_truth):
+        gt = ground_truth.get("acid_dissolution")
+        if gt is None:
+            pytest.skip("No acid_dissolution oracle data")
+        reactions = gt["acid_reactions"]
+        assert "stone" in reactions
+        assert "wood" in reactions
+        for name, data in reactions.items():
+            assert 0 < data["probability"] <= 1.0
+
+    @pytest.mark.physics
+    def test_plant_dissolves_fastest(self, ground_truth):
+        gt = ground_truth.get("acid_dissolution")
+        if gt is None:
+            pytest.skip("No acid_dissolution oracle data")
+        reactions = gt["acid_reactions"]
+        probs = {k: v["probability"] for k, v in reactions.items()
+                 if k not in ("ant",)}
+        fastest = max(probs, key=probs.get)
+        assert fastest in ("plant", "seed")
+
+
+class TestCorrosionResistanceOrdering:
+    """Corrosion resistance ordering from highest to lowest."""
+
+    @pytest.mark.physics
+    def test_ordering_exists(self, ground_truth):
+        gt = ground_truth.get("corrosion_resistance_ordering")
+        if gt is None:
+            pytest.skip("No corrosion_resistance_ordering oracle data")
+        ordering = gt["fastest_to_slowest"]
+        assert len(ordering) >= 5
+
+    @pytest.mark.physics
+    def test_stone_most_resistant(self, ground_truth):
+        gt = ground_truth.get("corrosion_resistance_ordering")
+        if gt is None:
+            pytest.skip("No corrosion_resistance_ordering oracle data")
+        ordering = gt["fastest_to_slowest"]
+        assert ordering[-1] == "stone"
+
+    @pytest.mark.physics
+    def test_ant_least_resistant(self, ground_truth):
+        gt = ground_truth.get("corrosion_resistance_ordering")
+        if gt is None:
+            pytest.skip("No corrosion_resistance_ordering oracle data")
+        ordering = gt["fastest_to_slowest"]
+        assert ordering[0] == "ant"
+
+
+class TestReactionChains:
+    """Chain reactions propagate through connected materials."""
+
+    @pytest.mark.physics
+    def test_fire_oil_chain(self, ground_truth):
+        gt = ground_truth.get("reaction_chains")
+        if gt is None:
+            pytest.skip("No reaction_chains oracle data")
+        chain = gt["fire_oil_chain"]
+        assert chain["fuel_element"] == "oil"
+        assert chain["igniter"] == "fire"
+        assert chain["expected_max_frames"] > 0
+
+    @pytest.mark.physics
+    def test_lava_water_chain(self, ground_truth):
+        gt = ground_truth.get("reaction_chains")
+        if gt is None:
+            pytest.skip("No reaction_chains oracle data")
+        chain = gt["lava_water_chain"]
+        assert chain["source"] == "lava"
+        assert chain["target"] == "water"
+
+
+class TestReactionMass:
+    """Mass-conserving reactions should be identified."""
+
+    @pytest.mark.physics
+    def test_mass_conserving_list(self, ground_truth):
+        gt = ground_truth.get("reaction_mass")
+        if gt is None:
+            pytest.skip("No reaction_mass oracle data")
+        reactions = gt["mass_conserving_reactions"]
+        assert len(reactions) >= 10
+        assert "fire_oil" in reactions
+        assert "water_lava" in reactions
+
+
+class TestReactionProducts:
+    """Detailed reaction product oracle data."""
+
+    @pytest.mark.physics
+    @pytest.mark.parametrize(
+        "reaction_key,expected_target",
+        [
+            ("fire_oil", "fire"),
+            ("fire_wood", "fire"),
+            ("acid_stone", "empty"),
+        ],
+    )
+    def test_product_match(self, ground_truth, reaction_key, expected_target):
+        gt = ground_truth.get("reaction_products", {})
+        entry = gt.get(reaction_key)
+        if entry is None:
+            pytest.skip(f"No reaction_products data for {reaction_key}")
+        assert entry["target_becomes"] == expected_target
+
+    @pytest.mark.physics
+    def test_reaction_descriptions(self, ground_truth):
+        gt = ground_truth.get("reaction_products", {})
+        if not gt:
+            pytest.skip("No reaction_products oracle data")
+        for key, entry in gt.items():
+            assert "description" in entry
+
+
+class TestReactionRates:
+    """Reaction probability groups with expected mean frames."""
+
+    @pytest.mark.physics
+    def test_rate_groups_exist(self, ground_truth):
+        gt = ground_truth.get("reaction_rates")
+        if gt is None:
+            pytest.skip("No reaction_rates oracle data")
+        assert len(gt) >= 3
+
+    @pytest.mark.physics
+    def test_mean_frames_inversely_proportional(self, ground_truth):
+        gt = ground_truth.get("reaction_rates")
+        if gt is None:
+            pytest.skip("No reaction_rates oracle data")
+        for key, group in gt.items():
+            prob = group["probability"]
+            expected_mean = group["expected_mean_frames"]
+            computed_mean = 1.0 / prob
+            assert expected_mean == pytest.approx(computed_mean, abs=1.0)
+
+
+class TestReactionTemperature:
+    """Reaction probabilities from oracle."""
+
+    @pytest.mark.physics
+    def test_reaction_temperature_data(self, ground_truth):
+        gt = ground_truth.get("reaction_temperature")
+        if gt is None:
+            pytest.skip("No reaction_temperature oracle data")
+        reactions = gt["reactions"]
+        assert len(reactions) >= 5
+        for r in reactions:
+            assert 0 < r["probability"] <= 1.0

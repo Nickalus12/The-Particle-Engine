@@ -279,3 +279,61 @@ class TestUTubeFluids:
         if gt is None:
             pytest.skip("No u_tube_fluids oracle data")
         assert gt["water_density"] > gt["oil_density"]
+
+
+class TestBuoyancyDetailed:
+    """Detailed buoyancy oracle: real densities and sink/float predictions."""
+
+    @pytest.mark.physics
+    @pytest.mark.parametrize(
+        "element,should_sink",
+        [
+            ("metal", True),
+            ("stone", True),
+            ("glass", True),
+            ("wood", False),
+            ("oil", False),
+            ("ice", False),
+        ],
+    )
+    def test_buoyancy_oracle(self, ground_truth, element, should_sink):
+        gt = ground_truth.get("buoyancy", {})
+        entry = gt.get(element)
+        if entry is None:
+            pytest.skip(f"No buoyancy data for {element}")
+        assert entry["should_sink"] == should_sink
+
+    @pytest.mark.physics
+    def test_metal_densest_real(self, ground_truth):
+        gt = ground_truth.get("buoyancy", {})
+        if not gt:
+            pytest.skip("No buoyancy data")
+        densities = {k: v["real_density_kg_m3"] for k, v in gt.items()}
+        assert max(densities, key=densities.get) == "metal"
+
+    @pytest.mark.physics
+    def test_all_reference_water_density(self, ground_truth):
+        gt = ground_truth.get("buoyancy", {})
+        if not gt:
+            pytest.skip("No buoyancy data")
+        for element, entry in gt.items():
+            assert entry["water_density_kg_m3"] == 1000
+
+
+class TestStackPressure:
+    """A settled stack of elements should remain stable."""
+
+    @pytest.mark.physics
+    def test_stack_pressure_principle(self, ground_truth):
+        gt = ground_truth.get("stack_pressure")
+        if gt is None:
+            pytest.skip("No stack_pressure oracle data")
+        assert gt["test_element"] == "sand"
+        assert gt["stack_height"] == 10
+
+    @pytest.mark.physics
+    def test_stack_stability(self, ground_truth):
+        gt = ground_truth.get("stack_pressure")
+        if gt is None:
+            pytest.skip("No stack_pressure oracle data")
+        assert "stable" in gt["principle"].lower() or "remain" in gt["principle"].lower()

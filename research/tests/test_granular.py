@@ -129,3 +129,41 @@ class TestGradedBedding:
                 f"{curr[0]} (d={curr[1]['real_density_kg_m3']}) should settle >= "
                 f"{prev[0]} (d={prev[1]['real_density_kg_m3']})"
             )
+
+
+class TestJammingTransition:
+    """Granular materials can form arches over narrow openings."""
+
+    @pytest.mark.physics
+    def test_jamming_principle(self, ground_truth):
+        gt = ground_truth.get("jamming_transition")
+        if gt is None:
+            pytest.skip("No jamming_transition oracle data")
+        assert "arch" in gt["principle"].lower()
+
+    @pytest.mark.physics
+    def test_jamming_probability(self, ground_truth):
+        gt = ground_truth.get("jamming_transition")
+        if gt is None:
+            pytest.skip("No jamming_transition oracle data")
+        prob = gt["expected_jam_probability_1cell"]
+        assert 0 < prob <= 1.0
+
+
+class TestPileStability:
+    """Large granular pile should reach equilibrium."""
+
+    @pytest.mark.physics
+    def test_pile_stability_principle(self, ground_truth):
+        gt = ground_truth.get("pile_stability")
+        if gt is None:
+            pytest.skip("No pile_stability oracle data")
+        assert "equilibrium" in gt["principle"].lower() or "settled" in gt["principle"].lower()
+
+    @pytest.mark.physics
+    def test_pile_settles_within_max_frames(self, ground_truth):
+        gt = ground_truth.get("pile_stability")
+        if gt is None:
+            pytest.skip("No pile_stability oracle data")
+        assert gt["max_frames_to_settle"] > 0
+        assert gt["pile_count"] == 100

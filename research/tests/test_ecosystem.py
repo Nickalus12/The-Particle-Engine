@@ -86,3 +86,30 @@ class TestDecomposition:
             f"{element} should decay to {expected_decay}, "
             f"got chain: {chain}"
         )
+
+
+class TestWaterCycleReaction:
+    """Water becomes steam when heated, steam rises and may condense."""
+
+    @pytest.mark.physics
+    def test_water_cycle_stages(self, ground_truth):
+        gt = ground_truth.get("water_cycle_reaction")
+        if gt is None:
+            pytest.skip("No water_cycle_reaction oracle data")
+        stages = gt["stages"]
+        assert "water" in stages
+        assert "steam" in stages
+
+    @pytest.mark.physics
+    def test_water_cycle_trigger(self, ground_truth):
+        gt = ground_truth.get("water_cycle_reaction")
+        if gt is None:
+            pytest.skip("No water_cycle_reaction oracle data")
+        assert "lava" in gt["trigger"].lower() or "fire" in gt["trigger"].lower()
+
+    @pytest.mark.physics
+    def test_water_cycle_max_frames(self, ground_truth):
+        gt = ground_truth.get("water_cycle_reaction")
+        if gt is None:
+            pytest.skip("No water_cycle_reaction oracle data")
+        assert gt["max_frames"] > 0

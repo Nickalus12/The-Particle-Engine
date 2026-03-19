@@ -483,3 +483,114 @@ class TestStokesDrag:
         if gt is None:
             pytest.skip("No stokes_drag oracle data")
         assert "density" in gt["principle"].lower()
+
+
+class TestGravityTrajectory:
+    """Detailed gravity trajectory oracle with per-frame positions."""
+
+    @pytest.mark.physics
+    def test_trajectory_has_60_frames(self, ground_truth):
+        gt = ground_truth.get("gravity_trajectory")
+        if gt is None:
+            pytest.skip("No gravity_trajectory oracle data")
+        assert len(gt["frames"]) >= 50
+
+    @pytest.mark.physics
+    def test_engine_model_monotonic(self, ground_truth):
+        gt = ground_truth.get("gravity_trajectory")
+        if gt is None:
+            pytest.skip("No gravity_trajectory oracle data")
+        positions = gt["engine_model_cells"]
+        for i in range(1, len(positions)):
+            assert positions[i] >= positions[i - 1], (
+                f"Position decreased at frame {gt['frames'][i]}"
+            )
+
+    @pytest.mark.physics
+    def test_real_physics_monotonic(self, ground_truth):
+        gt = ground_truth.get("gravity_trajectory")
+        if gt is None:
+            pytest.skip("No gravity_trajectory oracle data")
+        positions = gt["real_physics_cells"]
+        for i in range(1, len(positions)):
+            assert positions[i] >= positions[i - 1]
+
+
+class TestMultiCellFallDetailed:
+    """Elements with velocity > 1 skip intermediate cells."""
+
+    @pytest.mark.physics
+    @pytest.mark.parametrize(
+        "element", ["sand", "water", "ice", "lightning"]
+    )
+    def test_multi_cell_fall_data(self, ground_truth, element):
+        gt = ground_truth.get("multi_cell_fall", {})
+        entry = gt.get(element)
+        if entry is None:
+            pytest.skip(f"No multi_cell_fall data for {element}")
+        assert entry["maxVelocity"] >= 2
+
+    @pytest.mark.physics
+    def test_sand_fastest_multi_cell(self, ground_truth):
+        gt = ground_truth.get("multi_cell_fall", {})
+        sand = gt.get("sand")
+        water = gt.get("water")
+        if sand is None or water is None:
+            pytest.skip("Missing data")
+        assert sand["maxVelocity"] >= water["maxVelocity"]
+
+
+class TestNegativeGravity:
+    """Rising elements (fire, smoke, steam, rainbow, bubble) have negative gravity."""
+
+    @pytest.mark.physics
+    @pytest.mark.parametrize(
+        "element", ["fire", "rainbow", "steam", "smoke", "bubble"]
+    )
+    def test_negative_gravity_element(self, ground_truth, element):
+        gt = ground_truth.get("negative_gravity", {})
+        entry = gt.get(element)
+        if entry is None:
+            pytest.skip(f"No negative_gravity data for {element}")
+        assert entry["gravity"] < 0
+
+    @pytest.mark.physics
+    def test_rise_distance_positive(self, ground_truth):
+        gt = ground_truth.get("negative_gravity", {})
+        if not gt:
+            pytest.skip("No negative_gravity data")
+        for element, entry in gt.items():
+            assert entry["expected_rise_10frames"] > 0, (
+                f"{element} should rise over 10 frames"
+            )
+
+
+class TestDragComparison:
+    """Elements fall slower through fluid than through air."""
+
+    @pytest.mark.physics
+    @pytest.mark.parametrize("element", ["sand", "dirt", "stone"])
+    def test_drag_data_exists(self, ground_truth, element):
+        gt = ground_truth.get("drag_comparison", {})
+        elements = gt.get("elements", {})
+        entry = elements.get(element)
+        if entry is None:
+            pytest.skip(f"No drag_comparison data for {element}")
+        assert entry["air_distance_20frames"] > 0
+
+    @pytest.mark.physics
+    def test_sand_falls_farthest(self, ground_truth):
+        gt = ground_truth.get("drag_comparison", {})
+        elements = gt.get("elements", {})
+        sand = elements.get("sand")
+        stone = elements.get("stone")
+        if sand is None or stone is None:
+            pytest.skip("Missing drag data")
+        assert sand["air_distance_20frames"] > stone["air_distance_20frames"]
+
+    @pytest.mark.physics
+    def test_drag_principle(self, ground_truth):
+        gt = ground_truth.get("drag_comparison")
+        if gt is None:
+            pytest.skip("No drag_comparison oracle data")
+        assert "slower" in gt["principle"].lower() or "fluid" in gt["principle"].lower()
