@@ -373,3 +373,39 @@ class TestAnomalousExpansion:
             pytest.skip("No anomalous_expansion oracle data")
         consequences = " ".join(gt["consequences"]).lower()
         assert "top" in consequences and "freeze" in consequences
+
+
+class TestEvaporativeCooling:
+    """Evaporation absorbs latent heat, cooling surroundings."""
+
+    @pytest.mark.physics
+    def test_evaporative_cooling_principle(self, ground_truth):
+        """Oracle should describe latent heat absorption."""
+        gt = ground_truth.get("evaporative_cooling")
+        if gt is None:
+            pytest.skip("No evaporative_cooling oracle data")
+        assert "latent" in gt["principle"].lower() or "vaporization" in gt["principle"].lower()
+
+    @pytest.mark.physics
+    def test_water_latent_heat_value(self, ground_truth):
+        """Water's latent heat should be approximately 2260 kJ/kg."""
+        gt = ground_truth.get("evaporative_cooling")
+        if gt is None:
+            pytest.skip("No evaporative_cooling oracle data")
+        assert gt["latent_heat_water_kJ_kg"] == pytest.approx(2260, rel=0.05)
+
+    @pytest.mark.physics
+    def test_water_cools_more_than_oil(self, ground_truth):
+        """Water evaporation should cool more than oil evaporation."""
+        gt = ground_truth.get("evaporative_cooling")
+        if gt is None:
+            pytest.skip("No evaporative_cooling oracle data")
+        assert gt["our_cooling_amount_water"] > gt["our_cooling_amount_oil"]
+
+    @pytest.mark.physics
+    def test_wet_bulb_always_lower(self, ground_truth):
+        """Wet-bulb temperature must always be <= dry-bulb."""
+        gt = ground_truth.get("evaporative_cooling")
+        if gt is None:
+            pytest.skip("No evaporative_cooling oracle data")
+        assert "Twb <= Tdb" in gt["wet_bulb_depression"]

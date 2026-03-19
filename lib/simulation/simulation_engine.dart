@@ -1480,6 +1480,24 @@ class SimulationEngine {
         if (target != 0) {
           grid[idx] = target;
           life[idx] = 0;
+          // Evaporative cooling: vaporization absorbs latent heat
+          // (2260 kJ/kg for water, ~250 kJ/kg for oil) from adjacent
+          // cells. This is the thermodynamic basis for evaporative
+          // cooling in sweat, wet-bulb thermometers, and cooling towers.
+          final coolAmount = el == El.water ? 8 : 4;
+          for (int edy = -1; edy <= 1; edy++) {
+            for (int edx = -1; edx <= 1; edx++) {
+              if (edx == 0 && edy == 0) continue;
+              final enx = wrapX(x + edx);
+              final eny = y + edy;
+              if (!inBoundsY(eny)) continue;
+              final eni = eny * gridW + enx;
+              final et = temperature[eni];
+              if (et > coolAmount) {
+                temperature[eni] = et - coolAmount;
+              }
+            }
+          }
           markProcessed(idx);
           unsettleNeighbors(x, y);
           return true;

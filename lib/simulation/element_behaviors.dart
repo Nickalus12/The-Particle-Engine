@@ -137,6 +137,24 @@ extension ElementBehaviors on SimulationEngine {
         if (rng.nextInt(evapRate) == 0) {
           grid[idx] = El.steam;
           life[idx] = 0;
+          // Evaporative cooling: the latent heat of vaporization
+          // (2260 kJ/kg for water) is absorbed from surrounding cells,
+          // cooling them. This is why sweating cools the body and why
+          // wet-bulb temperature is always ≤ dry-bulb temperature.
+          // Each evaporation event cools adjacent cells by ~5 units.
+          for (int edy = -1; edy <= 1; edy++) {
+            for (int edx = -1; edx <= 1; edx++) {
+              if (edx == 0 && edy == 0) continue;
+              final enx = wrapX(x + edx);
+              final eny = y + edy;
+              if (!inBoundsY(eny)) continue;
+              final eni = eny * gridW + enx;
+              final et = temperature[eni];
+              if (et > 5) {
+                temperature[eni] = et - 5;
+              }
+            }
+          }
           markProcessed(idx);
           return;
         }

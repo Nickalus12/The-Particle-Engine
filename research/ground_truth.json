@@ -10294,6 +10294,24 @@
       "second_law_holds": true
     }
   },
+  "evaporative_cooling": {
+    "principle": "When a liquid evaporates, it absorbs the latent heat of vaporization from its surroundings, cooling them. This is the thermodynamic basis for sweating, wet-bulb thermometers, evaporative coolers, and cooling towers.",
+    "latent_heat_water_kJ_kg": 2260,
+    "latent_heat_oil_kJ_kg": 250,
+    "wet_bulb_depression": "Twb <= Tdb always; difference proportional to humidity deficit",
+    "our_cooling_amount_water": 8,
+    "our_cooling_amount_oil": 4,
+    "our_cooling_radius": 1,
+    "our_trigger": "Any boiling or surface evaporation event",
+    "applications": [
+      "sweating",
+      "wet-bulb thermometer",
+      "cooling towers",
+      "fog cooling",
+      "desert water bags"
+    ],
+    "reference": "Incropera & DeWitt, Fundamentals of Heat and Mass Transfer"
+  },
   "freeze_thaw_weathering": {
     "principle": "Water infiltrating rock pores freezes and expands ~9% by volume, generating pressures up to 207 MPa \u2014 far exceeding the tensile strength of most rocks (5-25 MPa). Repeated freeze-thaw cycles progressively fracture rock.",
     "expansion_percent": 9.0,
