@@ -186,8 +186,48 @@ def write_trial_config(params: dict[str, Any]) -> Path:
     return config_path
 
 
-def run_benchmark(config_path: Path) -> tuple[float, float, float]:
-    """Run benchmark and return (physics_score, visual_score, overall)."""
+def run_benchmark(config_path: Path, fast: bool = True) -> tuple[float, float, float]:
+    """Run benchmark and return (physics_score, visual_score, overall).
+
+    In fast mode, uses the Dart-only headless benchmark (~2s per trial).
+    In full mode, uses the Python pytest benchmark (~30s per trial).
+    """
+    if fast:
+        return _run_fast_benchmark(config_path)
+    return _run_full_benchmark(config_path)
+
+
+def _run_fast_benchmark(config_path: Path) -> tuple[float, float, float]:
+    """Fast Dart-only benchmark: ~2s per trial, physics + interactions."""
+    try:
+        dart_exe = "dart"
+        result = subprocess.run(
+            [dart_exe, "run", str(SCRIPT_DIR / "fast_benchmark.dart"), str(config_path)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(PROJECT_DIR),
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        return 0.0, 0.0, 0.0
+
+    stdout = result.stdout.strip()
+    if not stdout:
+        return 0.0, 0.0, 0.0
+
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        return 0.0, 0.0, 0.0
+
+    physics = data.get("physics", 0.0)
+    interactions = data.get("interactions", 0.0)
+    overall = data.get("overall", 0.0)
+    return physics, interactions, overall
+
+
+def _run_full_benchmark(config_path: Path) -> tuple[float, float, float]:
+    """Full Python pytest benchmark: ~30s per trial, all domains."""
     try:
         result = subprocess.run(
             [
@@ -202,9 +242,7 @@ def run_benchmark(config_path: Path) -> tuple[float, float, float]:
             cwd=str(PROJECT_DIR),
             env={**os.environ, "TRIAL_CONFIG": str(config_path)},
         )
-    except subprocess.TimeoutExpired:
-        return 0.0, 0.0, 0.0
-    except Exception:
+    except (subprocess.TimeoutExpired, Exception):
         return 0.0, 0.0, 0.0
 
     stdout = result.stdout.strip()
@@ -214,7 +252,6 @@ def run_benchmark(config_path: Path) -> tuple[float, float, float]:
     try:
         data = json.loads(stdout)
     except json.JSONDecodeError:
-        # Try to find JSON in output
         for line in stdout.splitlines():
             if line.strip().startswith("{"):
                 try:
@@ -231,13 +268,13 @@ def run_benchmark(config_path: Path) -> tuple[float, float, float]:
     return physics, visuals, overall
 
 
-def objective(trial, extended: bool = False) -> tuple[float, float]:
-    """Optuna objective: maximize physics and visual scores."""
+def objective(trial, extended: bool = False, fast: bool = True) -> tuple[float, float]:
+    """Optuna objective: maximize physics and interaction scores."""
     params = suggest_params(trial, extended=extended)
     config_path = write_trial_config(params)
 
     try:
-        physics, visuals, overall = run_benchmark(config_path)
+        physics, visuals, overall = run_benchmark(config_path, fast=fast)
     finally:
         # Cleanup worker-specific config
         config_path.unlink(missing_ok=True)
@@ -476,8 +513,8 @@ def main() -> int:
     run_p.add_argument(
         "--workers",
         type=int,
-        default=6,
-        help="Number of parallel workers (default: 6)",
+        default=14,
+        help="Number of parallel workers (default: 14 for H100 production)",
     )
     run_p.add_argument(
         "--trials",
