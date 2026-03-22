@@ -1,0 +1,7 @@
+{
+  "instance_id": null,
+  "gpu_type": "a6000",
+  "vcpus": 8,
+  "created": "2026-03-22T01:13:56Z",
+  "private_key": ""
+}

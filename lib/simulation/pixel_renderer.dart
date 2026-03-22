@@ -195,20 +195,28 @@ class PixelRenderer {
   }
 
   /// Update the cached ground level for each column. Scans from top down
-  /// to find the first solid terrain cell per column.
+  /// to find the first THICK solid terrain per column. Requires 3+ consecutive
+  /// solid cells to count as ground — prevents a single placed element from
+  /// turning everything below it into dark "underground."
   void _updateGroundLevel() {
     final w = engine.gridW;
     final h = engine.gridH;
     final g = engine.grid;
     for (int x = 0; x < w; x++) {
       int level = h; // default: no ground found
+      int consecutive = 0;
       for (int y = 0; y < h; y++) {
         final el = g[y * w + x];
         if (el == El.stone || el == El.dirt || el == El.metal ||
             el == El.sand || el == El.mud || el == El.wood ||
             el == El.glass || el == El.ice) {
-          level = y;
-          break;
+          consecutive++;
+          if (consecutive >= 3) {
+            level = y - 2; // top of the 3-cell solid run
+            break;
+          }
+        } else {
+          consecutive = 0;
         }
       }
       _groundLevel[x] = level;
