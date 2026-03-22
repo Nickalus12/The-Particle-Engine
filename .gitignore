@@ -52,3 +52,5 @@ research/mlruns/
 research/optuna_study.db
 research/trial_config.json
 research/plots/*.html
+research/cloud/instance_key.pem
+research/cloud/.instance_state.json
