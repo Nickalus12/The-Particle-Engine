@@ -39,13 +39,27 @@ class PixelRenderer {
 
   late List<int> _starPositions;
   late Set<int> _starSet;
+  late Uint8List _starBrightness;
+  late Uint8List _starTwinklePhase;
+  late Map<int, int> _starIndexMap;
   bool _starsGenerated = false;
 
   /// Cached ground surface height per column. _groundLevel[x] = first y from
   /// top that has a solid element (stone/dirt/metal/sand/etc). Updated every
   /// few frames to avoid per-cell upward scans.
   late Int16List _groundLevel;
-  int _groundLevelAge = 0;
+  int _groundLevelAge = 7; // Start at 7 so first renderPixels() triggers update
+
+  /// Per-cell cave light level [0=dark, 255=fully lit]. Updated every 8 frames.
+  late Uint8List _caveLightLevel;
+
+  /// Per-column distance to nearest cave opening (column with no ground).
+  late Int16List _surfaceProximity;
+
+  /// Rock tint lookup tables indexed by element type for neighbor blending.
+  late Uint8List _rockTintR;
+  late Uint8List _rockTintG;
+  late Uint8List _rockTintB;
 
   int _prevNightT256 = 0;
 
@@ -58,20 +72,46 @@ class PixelRenderer {
     final total = engine.gridW * engine.gridH;
     _pixels = Uint8List(total * 4);
     _groundLevel = Int16List(engine.gridW);
+    // Default ground level to grid height (no ground) so empty sky cells
+    // are not misclassified as underground before the first cache update.
+    _groundLevel.fillRange(0, engine.gridW, engine.gridH);
     _glowR = Uint8List(total);
     _glowG = Uint8List(total);
     _glowB = Uint8List(total);
+
+    // Cave lighting buffers
+    _caveLightLevel = Uint8List(total);
+    _surfaceProximity = Int16List(engine.gridW);
+
+    // Rock tint lookup tables for neighbor color blending
+    _rockTintR = Uint8List(maxElements);
+    _rockTintG = Uint8List(maxElements);
+    _rockTintB = Uint8List(maxElements);
+    // Populate rock tint for solid terrain elements
+    _rockTintR[El.stone] = 80;  _rockTintG[El.stone] = 80;  _rockTintB[El.stone] = 90;
+    _rockTintR[El.dirt]  = 90;  _rockTintG[El.dirt]  = 60;  _rockTintB[El.dirt]  = 30;
+    _rockTintR[El.sand]  = 110; _rockTintG[El.sand]  = 100; _rockTintB[El.sand]  = 70;
+    _rockTintR[El.mud]   = 60;  _rockTintG[El.mud]   = 40;  _rockTintB[El.mud]   = 25;
   }
 
   void generateStars() {
     if (_starsGenerated) return;
     _starsGenerated = true;
-    final topRows = (engine.gridH * 0.10).floor().clamp(3, 30);
+    final rng = engine.rng;
+    final topRows = (engine.gridH * 0.85).floor().clamp(3, engine.gridH);
     _starPositions = [];
-    for (int i = 0; i < 30; i++) {
-      final sx = engine.rng.nextInt(engine.gridW);
-      final sy = engine.rng.nextInt(topRows);
-      _starPositions.add(sy * engine.gridW + sx);
+    _starBrightness = Uint8List(80);
+    _starTwinklePhase = Uint8List(80);
+    _starIndexMap = <int, int>{};
+    for (int i = 0; i < 80; i++) {
+      final sx = rng.nextInt(engine.gridW);
+      // Weight toward upper sky: quadratic distribution
+      final sy = rng.nextInt(topRows) * rng.nextInt(topRows) ~/ topRows;
+      final pos = sy * engine.gridW + sx;
+      _starPositions.add(pos);
+      _starBrightness[i] = 80 + rng.nextInt(175); // [80, 254]
+      _starTwinklePhase[i] = rng.nextInt(256); // [0, 255]
+      _starIndexMap[pos] = i;
     }
     _starSet = Set<int>.from(_starPositions);
   }
@@ -182,6 +222,59 @@ class PixelRenderer {
     return y > _groundLevel[x];
   }
 
+  /// Update per-cell cave light levels. Called every 8 frames alongside
+  /// _updateGroundLevel. Computes proximity to cave openings and vertical
+  /// distance below surface for each underground empty cell.
+  void _updateCaveLightLevel() {
+    final w = engine.gridW;
+    final h = engine.gridH;
+
+    // Step 1: Build _surfaceProximity[x] = distance to nearest column
+    // where _groundLevel[x] >= h (no ground = cave opening).
+    // Left-to-right sweep then right-to-left sweep. O(W).
+    const maxDist = 32767; // Int16 safe large value
+    _surfaceProximity[0] = _groundLevel[0] >= h ? 0 : maxDist;
+    for (int x = 1; x < w; x++) {
+      if (_groundLevel[x] >= h) {
+        _surfaceProximity[x] = 0;
+      } else {
+        final prev = _surfaceProximity[x - 1];
+        _surfaceProximity[x] = prev < maxDist ? prev + 1 : maxDist;
+      }
+    }
+    for (int x = w - 2; x >= 0; x--) {
+      final right = _surfaceProximity[x + 1];
+      if (right + 1 < _surfaceProximity[x]) {
+        _surfaceProximity[x] = right + 1;
+      }
+    }
+
+    // Step 2: Per-cell cave light based on vertical + horizontal distance.
+    final gl = _groundLevel;
+    for (int x = 0; x < w; x++) {
+      final groundY = gl[x];
+      if (groundY >= h) {
+        // No ground in this column — all cells are sky, zero out
+        for (int y = 0; y < h; y++) {
+          _caveLightLevel[y * w + x] = 0;
+        }
+        continue;
+      }
+      final horizDist = _surfaceProximity[x];
+      for (int y = 0; y < h; y++) {
+        if (y <= groundY) {
+          // Above ground — not underground, no cave light needed
+          _caveLightLevel[y * w + x] = 0;
+        } else {
+          final vertDist = y - groundY;
+          final totalDist = vertDist + horizDist;
+          final light = 255 - totalDist * 16;
+          _caveLightLevel[y * w + x] = light > 0 ? (light < 256 ? light : 255) : 0;
+        }
+      }
+    }
+  }
+
   double dayNightT = 0.0;
 
   void renderPixels() {
@@ -192,10 +285,11 @@ class PixelRenderer {
     final t = engine.isNight ? dayNightT : 0.0;
     final fc = engine.frameCount;
 
-    // Update ground level cache every 8 frames for underground detection
+    // Update ground level cache every 8 frames
     _groundLevelAge++;
     if (_groundLevelAge >= 8) {
       _updateGroundLevel();
+      _updateCaveLightLevel();
       _groundLevelAge = 0;
     }
     final temp = engine.temperature;
@@ -206,6 +300,23 @@ class PixelRenderer {
     final glowMul256 = 256 + (t256 << 1); // [256, 768]
 
     final starSet = t256 > 13 ? _starSet : const <int>{}; // t > ~0.05
+
+    // Pre-compute sky gradient stops interpolated between day and night
+    // Day: Top(107,184,232) Mid(90,160,216) Bottom(72,136,200) Horizon(232,216,192)
+    // Night: Top(6,8,24) Mid(12,16,40) Bottom(20,24,56) Horizon(26,24,48)
+    final skyTopR = 107 + (((6 - 107) * t256) >> 8);
+    final skyTopG = 184 + (((8 - 184) * t256) >> 8);
+    final skyTopB = 232 + (((24 - 232) * t256) >> 8);
+    final skyMidR = 90 + (((12 - 90) * t256) >> 8);
+    final skyMidG = 160 + (((16 - 160) * t256) >> 8);
+    final skyMidB = 216 + (((40 - 216) * t256) >> 8);
+    final skyBotR = 72 + (((20 - 72) * t256) >> 8);
+    final skyBotG = 136 + (((24 - 136) * t256) >> 8);
+    final skyBotB = 200 + (((56 - 200) * t256) >> 8);
+    final skyHorR = 232 + (((26 - 232) * t256) >> 8);
+    final skyHorG = 216 + (((24 - 216) * t256) >> 8);
+    final skyHorB = 192 + (((48 - 192) * t256) >> 8);
+    final horizonStartY = h * 88 ~/ 100;
 
     final doGlow = fc % 6 == 0;
 
@@ -241,14 +352,14 @@ class PixelRenderer {
         int emB = elementLightB[el];
         int glowRadius = 3;
 
-        // Special case: heated stone emits light dynamically
-        final isHeatedStone = el == El.stone && engine.velX[i] > 2;
-        if (isHeatedStone) {
-          final stoneHeatLevel = engine.velX[i].clamp(0, 5);
-          emission = (stoneHeatLevel * 40).clamp(0, 200);
+        // Special case: heated stone/metal emits light dynamically
+        final isHeatedSolid = (el == El.stone || el == El.metal) && engine.velX[i] > 2;
+        if (isHeatedSolid) {
+          final heatLevel = engine.velX[i].clamp(0, 5);
+          emission = (heatLevel * 40).clamp(0, 200);
           emR = 255;
-          emG = 80;
-          emB = 0;
+          emG = el == El.metal ? 100 : 80; // Metal glows slightly more orange
+          emB = el == El.metal ? 20 : 0;
           glowRadius = 3;
         }
 
@@ -267,9 +378,9 @@ class PixelRenderer {
 
         // Lava gets larger glow for atmospheric molten look
         if (el == El.lava) {
-          glowRadius = 3;
+          glowRadius = 5;
         } else if (el == El.fire) {
-          glowRadius = 3;
+          glowRadius = 4;
         } else if (emission > 200) {
           glowRadius = 4;
         }
@@ -357,37 +468,123 @@ class PixelRenderer {
 
               int emptyR, emptyG, emptyB;
               if (underground) {
-                // Dark stone-tinted cave background
+                // --- Enhanced cave atmosphere rendering ---
+                // 1. Base dark cave color with spatial variation
                 final depthTint = _spatialBlend(x, y, 8);
                 final stoneVar = (depthTint * 8) ~/ 256;
-                emptyR = (18 + stoneVar).clamp(12, 30);
-                emptyG = (16 + stoneVar).clamp(10, 28);
-                emptyB = (20 + stoneVar).clamp(14, 32);
-                // Floating dust motes in cave air — sparse twinkling specks
+                emptyR = 18 + stoneVar;
+                emptyG = 16 + stoneVar;
+                emptyB = 20 + stoneVar;
+
+                // 2. Proximity lighting from cave openings
+                final caveLight = _caveLightLevel[i];
+                if (caveLight > 0) {
+                  // Max +40 brightness near openings
+                  final lightBoost = (caveLight * 40) ~/ 255;
+                  emptyR = emptyR + lightBoost;
+                  emptyG = emptyG + lightBoost;
+                  emptyB = emptyB + lightBoost;
+                }
+
+                // 3. Depth color shift — subtle warm/cool gradient
+                // Use depth below ground surface, normalize to max 50 cells
+                final depthBelow = y - _groundLevel[x];
+                final depthFrac256 = (depthBelow * 256 ~/ 50).clamp(0, 255);
+                // Shallow (depth=0): +4R, -3B. Deep (depth>=50): -3R, +4B.
+                final warmR = 4 - (depthFrac256 * 7 ~/ 256); // +4 to -3
+                final coolB = -3 + (depthFrac256 * 7 ~/ 256); // -3 to +4
+                emptyR = emptyR + warmR;
+                emptyB = emptyB + coolB;
+
+                // 4. Rock tint bleed — blend ~10% of neighboring rock color
+                int tintR = 0, tintG = 0, tintB = 0, tintCount = 0;
+                if (y > 0) {
+                  final nEl = g[i - w];
+                  final nr = _rockTintR[nEl];
+                  if (nr > 0) { tintR = tintR + nr; tintG = tintG + _rockTintG[nEl]; tintB = tintB + _rockTintB[nEl]; tintCount++; }
+                }
+                if (y < h - 1) {
+                  final nEl = g[i + w];
+                  final nr = _rockTintR[nEl];
+                  if (nr > 0) { tintR = tintR + nr; tintG = tintG + _rockTintG[nEl]; tintB = tintB + _rockTintB[nEl]; tintCount++; }
+                }
+                if (x > 0) {
+                  final nEl = g[i - 1];
+                  final nr = _rockTintR[nEl];
+                  if (nr > 0) { tintR = tintR + nr; tintG = tintG + _rockTintG[nEl]; tintB = tintB + _rockTintB[nEl]; tintCount++; }
+                }
+                if (x < w - 1) {
+                  final nEl = g[i + 1];
+                  final nr = _rockTintR[nEl];
+                  if (nr > 0) { tintR = tintR + nr; tintG = tintG + _rockTintG[nEl]; tintB = tintB + _rockTintB[nEl]; tintCount++; }
+                }
+                if (tintCount > 0) {
+                  // Blend ~10% of average neighbor rock tint: (avg * 26) >> 8
+                  emptyR = emptyR + (tintR * 26) ~/ (tintCount * 256);
+                  emptyG = emptyG + (tintG * 26) ~/ (tintCount * 256);
+                  emptyB = emptyB + (tintB * 26) ~/ (tintCount * 256);
+                }
+
+                // 5. Moisture hints — inline 3x3 water scan, +5G/+8B near water
+                int waterCount = 0;
+                for (int dy = -1; dy <= 1; dy++) {
+                  final ny = y + dy;
+                  if (ny < 0 || ny >= h) continue;
+                  final nRow = ny * w;
+                  for (int dx = -1; dx <= 1; dx++) {
+                    if (dy == 0 && dx == 0) continue;
+                    final nx = x + dx;
+                    if (nx >= 0 && nx < w && g[nRow + nx] == El.water) {
+                      waterCount++;
+                    }
+                  }
+                }
+                if (waterCount > 0) {
+                  emptyG = emptyG + 5;
+                  emptyB = emptyB + 8;
+                }
+
+                // 6. Floating dust motes — visibility scaled by cave light
                 final dustHash = _smoothHash(x * 53 + fc ~/ 8, y * 37 + fc ~/ 12);
                 if (dustHash % 180 == 0) {
-                  final dustBright = 25 + (dustHash >> 8) % 20;
-                  emptyR = (emptyR + dustBright).clamp(0, 60);
-                  emptyG = (emptyG + dustBright - 3).clamp(0, 55);
-                  emptyB = (emptyB + dustBright - 5).clamp(0, 50);
+                  final baseDustBright = 25 + (dustHash >> 8) % 20;
+                  // Scale dust by cave light: full brightness near openings, dim deep inside
+                  // dustScale: caveLight=0 → 64 (dim but visible), caveLight=255 → 256 (full)
+                  final dustScale = 64 + (caveLight * 192 ~/ 255);
+                  final dustBright = (baseDustBright * dustScale) ~/ 256;
+                  emptyR = emptyR + dustBright;
+                  emptyG = emptyG + dustBright - 3;
+                  emptyB = emptyB + dustBright - 5;
                 }
-              } else {
-                // Day sky: blue gradient (integer math, no float division)
-                // skyFrac256 = y * 256 / h; avoids float division
-                final skyFrac256 = y * 256 ~/ h; // [0, 255]
-                emptyR = (135 - (skyFrac256 * 100 >> 8)).clamp(25, 140);
-                emptyG = (195 - (skyFrac256 * 100 >> 8)).clamp(80, 200);
-                emptyB = (255 - (skyFrac256 * 40 >> 8)).clamp(200, 255);
 
-                // Night dimming — sky dims heavily (0.9 for R/G, 0.85 for B)
-                if (t256 > 0) {
-                  // nightBoost = (t * 30).round(), so t ≈ nightBoost / 30
-                  // skyDimRG = 256 * (1 - t * 0.9) ≈ 256 - nightBoost * 256*0.9/30
-                  final skyDimRG = (256 - nightBoost * 77 ~/ 10).clamp(0, 256);
-                  final skyDimB = (256 - nightBoost * 218 ~/ 30).clamp(0, 256);
-                  emptyR = (emptyR * skyDimRG) >> 8;
-                  emptyG = (emptyG * skyDimRG) >> 8;
-                  emptyB = (emptyB * skyDimB) >> 8;
+                // Clamp final cave colors
+                emptyR = emptyR.clamp(0, 80);
+                emptyG = emptyG.clamp(0, 75);
+                emptyB = emptyB.clamp(0, 80);
+              } else {
+                // 3-stop sky gradient with day/night baked in
+                final skyFrac256 = y * 256 ~/ h; // [0, 255]
+                int segFrac;
+                if (skyFrac256 <= 141) {
+                  // Top -> Mid segment
+                  segFrac = skyFrac256 * 256 ~/ 141;
+                  emptyR = skyTopR + (((skyMidR - skyTopR) * segFrac) >> 8);
+                  emptyG = skyTopG + (((skyMidG - skyTopG) * segFrac) >> 8);
+                  emptyB = skyTopB + (((skyMidB - skyTopB) * segFrac) >> 8);
+                } else {
+                  // Mid -> Bottom segment
+                  segFrac = ((skyFrac256 - 141) * 256) ~/ (256 - 141);
+                  emptyR = skyMidR + (((skyBotR - skyMidR) * segFrac) >> 8);
+                  emptyG = skyMidG + (((skyBotG - skyMidG) * segFrac) >> 8);
+                  emptyB = skyMidB + (((skyBotB - skyMidB) * segFrac) >> 8);
+                }
+                // Horizon glow: blend toward horizon color at 15% strength
+                if (y > horizonStartY) {
+                  final horFrac = ((y - horizonStartY) * 256) ~/ (h - horizonStartY);
+                  final horBlend = (horFrac * 38) >> 8; // 38/256 ~ 15%
+                  emptyR = emptyR + (((skyHorR - emptyR) * horBlend) >> 8);
+                  emptyG = emptyG + (((skyHorG - emptyG) * horBlend) >> 8);
+                  emptyB = emptyB + (((skyHorB - emptyB) * horBlend) >> 8);
                 }
               }
 
@@ -443,13 +640,16 @@ class PixelRenderer {
               }
 
               if (starSet.contains(i)) {
-                final twinkle = ((fc + i * 17) % 40);
-                if (twinkle < 6) {
-                  final brightness = twinkle < 3 ? 200 : 140;
-                  final starBright = (brightness * t256) >> 8;
-                  emptyR = (emptyR + starBright).clamp(0, 255);
-                  emptyG = (emptyG + starBright).clamp(0, 255);
-                  emptyB = (emptyB + starBright).clamp(0, 255);
+                final starIdx = _starIndexMap[i];
+                if (starIdx != null) {
+                  final baseBright = _starBrightness[starIdx];
+                  final phase = _starTwinklePhase[starIdx];
+                  final twinkle = _fastSinI((fc * 3 + phase) & 0xFF); // [0, 256]
+                  final starIntensity = (baseBright * twinkle * t256) >> 16;
+                  final starB = (starIntensity * 240) >> 8; // warm tint: B at 94%
+                  emptyR = (emptyR + starIntensity).clamp(0, 255);
+                  emptyG = (emptyG + starIntensity).clamp(0, 255);
+                  emptyB = (emptyB + starB).clamp(0, 255);
                 }
               }
 
@@ -501,14 +701,20 @@ class PixelRenderer {
                         200 + rng.nextInt(55),
                         3 + rng.nextInt(3));
                   }
-                } else if (rng.nextInt(150) < 2 && y > 1) {
-                  spawnParticle(
-                      x + rng.nextInt(3) - 1,
-                      y - 1,
-                      255,
-                      140 + rng.nextInt(60),
-                      20 + rng.nextInt(30),
-                      5 + rng.nextInt(3));
+                } else if (y > 1) {
+                  // Falling lava leaves ember trails more frequently
+                  final belowEmpty = y < h - 1 &&
+                      g[(y + 1) * w + x] == El.empty;
+                  final trailChance = belowEmpty ? 100 : 150;
+                  if (rng.nextInt(trailChance) < 2) {
+                    spawnParticle(
+                        x + rng.nextInt(3) - 1,
+                        y - 1,
+                        255,
+                        120 + rng.nextInt(80),
+                        10 + rng.nextInt(40),
+                        4 + rng.nextInt(4));
+                  }
                 }
               } else if (el == El.lightning) {
                 if (rng.nextInt(60) < 3 && y > 1) {
@@ -520,12 +726,36 @@ class PixelRenderer {
                       100 + rng.nextInt(155),
                       3 + rng.nextInt(2));
                 }
-              } else if (el == El.sand) {
-                if (rng.nextInt(400) < 1 &&
+              } else if (el == El.water) {
+                // Splash particles when water lands on solid ground
+                if (rng.nextInt(200) < 2 &&
                     y > 1 &&
-                    y < h - 1 &&
-                    g[(y + 1) * w + x] == El.empty) {
-                  spawnParticle(x, y - 1, 194, 178, 128, 3);
+                    y < h - 1) {
+                  final below = g[(y + 1) * w + x];
+                  final above = g[(y - 1) * w + x];
+                  if (below != El.empty &&
+                      below != El.water &&
+                      above == El.empty) {
+                    spawnParticle(
+                        x + rng.nextInt(3) - 1, y - 1,
+                        60 + rng.nextInt(30), 140 + rng.nextInt(60),
+                        200 + rng.nextInt(55), 3 + rng.nextInt(3));
+                  }
+                }
+              } else if (el == El.sand) {
+                // Dust when sand lands on solid surface
+                if (y > 1 && y < h - 1) {
+                  final below = g[(y + 1) * w + x];
+                  if (below != El.empty &&
+                      below != El.sand &&
+                      rng.nextInt(300) < 2) {
+                    spawnParticle(
+                        x + rng.nextInt(3) - 1, y - 1,
+                        194, 178, 128, 3 + rng.nextInt(2));
+                  } else if (below == El.empty &&
+                      rng.nextInt(400) < 1) {
+                    spawnParticle(x, y - 1, 194, 178, 128, 3);
+                  }
                 }
               } else if (el == El.acid) {
                 if (rng.nextInt(80) < 2 && y > 1) {
@@ -562,12 +792,14 @@ class PixelRenderer {
             }
 
             // Atmospheric depth darkening for underground elements
+            // Uses cave light level: darker where cave light is low
             if (y > 10) {
               final undergroundCheck = _isUnderground(x, y, w, g);
               if (undergroundCheck) {
-                // Subtle darkening based on depth
-                final depthFactor = (y * 256 ~/ h).clamp(0, 255);
-                final darken = (depthFactor * 15) ~/ 256; // max ~15 units darker
+                final caveLight = _caveLightLevel[i];
+                // Darken based on inverse cave light: no light → max darken (25),
+                // full light → no darken. darken = (255-caveLight)*25/255
+                final darken = ((255 - caveLight) * 25) ~/ 255;
                 r = (r - darken).clamp(0, 255);
                 g2 = (g2 - darken).clamp(0, 255);
                 b = (b - darken).clamp(0, 255);
@@ -707,10 +939,23 @@ class PixelRenderer {
         }
 
       case El.lightning:
-        final pulse = (frameCount + idx * 3) % 6;
-        _inlineR = 255;
-        _inlineG = 255;
-        _inlineB = pulse < 3 ? 180 : 255;
+        final boltLife = life[idx];
+        if (boltLife < 5) {
+          // White-hot core for very young bolts
+          _inlineR = 255;
+          _inlineG = 255;
+          _inlineB = 255;
+        } else {
+          // Brightness fades with age: younger = brighter
+          final ageDim = (boltLife * 2).clamp(0, 80);
+          final pulse = _fastSinI((frameCount * 12 + idx * 5) & 0xFF);
+          final pulseBoost = (pulse - 128).clamp(0, 128) ~/ 4; // 0-32
+          _inlineR = (255 - ageDim ~/ 2 + pulseBoost).clamp(180, 255);
+          _inlineG = (255 - ageDim + pulseBoost).clamp(150, 255);
+          // Purple fringe on odd frames
+          final purpleFringe = (frameCount & 1) == 1 ? 30 : 0;
+          _inlineB = (255 - ageDim ~/ 3 + purpleFringe + pulseBoost).clamp(180, 255);
+        }
         _inlineA = 255;
 
       case El.rainbow:
@@ -925,15 +1170,32 @@ class PixelRenderer {
 
       case El.tnt:
         _inlineA = 255;
-        if ((x + y) % 4 == 0) {
-          _inlineR = 68;
-          _inlineG = 0;
-          _inlineB = 0;
+        final tntLife = life[idx];
+        if (tntLife > 200) {
+          // Pre-detonation pulsing glow
+          final urgency = ((tntLife - 200) * 255 ~/ 55).clamp(0, 255);
+          final pulse = _fastSinI((frameCount * 8 + idx) & 0xFF);
+          // Pulse intensity scales with urgency (0-255)
+          final pulseVal = ((pulse - 128).clamp(0, 128) * urgency) ~/ 255;
+          // Checker fades to bright orange-white as life -> 255
+          final isChecker = (x + y) % 4 == 0;
+          final checkerDim = isChecker ? ((255 - urgency) * 68) ~/ 255 : 0;
+          // Base brightens toward orange-white
+          _inlineR = (204 + urgency ~/ 5 + pulseVal ~/ 2 - checkerDim).clamp(60, 255);
+          _inlineG = (34 + urgency ~/ 3 + pulseVal ~/ 3 - checkerDim ~/ 2).clamp(0, 255);
+          _inlineB = (34 + urgency ~/ 6 + pulseVal ~/ 4 - checkerDim ~/ 3).clamp(0, 200);
         } else {
-          final tntVar = ((idx * 7 + y * 3) % 11) - 5;
-          _inlineR = (204 + tntVar).clamp(180, 230);
-          _inlineG = (34 + tntVar).clamp(10, 60);
-          _inlineB = (34 + tntVar).clamp(10, 60);
+          // Sharp checkerboard pattern for stable TNT
+          if ((x + y) % 2 == 0) {
+            _inlineR = 68;
+            _inlineG = 0;
+            _inlineB = 0;
+          } else {
+            final tntVar = ((idx * 7 + y * 3) % 11) - 5;
+            _inlineR = (204 + tntVar).clamp(180, 230);
+            _inlineG = (34 + tntVar).clamp(10, 60);
+            _inlineB = (34 + tntVar).clamp(10, 60);
+          }
         }
 
       case El.ant:
@@ -975,11 +1237,25 @@ class PixelRenderer {
         }
 
       case El.seed:
-        final variation = ((idx * 7 + y * 3) % 11) - 5;
-        final v = ((idx % 5) * 4 + variation).clamp(0, 25);
-        _inlineR = (139 - v).clamp(100, 150);
-        _inlineG = (115 - v).clamp(80, 130);
-        _inlineB = (85 - v).clamp(50, 100);
+        final seedLife = life[idx];
+        final organic = _spatialBlend(x, y, 4);
+        final organicVar = (organic * 16) ~/ 256 - 8;
+        final v = ((idx % 5) * 4 + organicVar).clamp(0, 25);
+        // Glossy specular highlight: one bright pixel per ~10
+        final specHash = _smoothHash(x * 13, y * 11);
+        final isGlossy = specHash % 10 == 0;
+        final gloss = isGlossy ? 30 : 0;
+        if (seedLife > 150) {
+          // Germination: green tint creeps in
+          final sproutFrac = ((seedLife - 150) * 255 ~/ 105).clamp(0, 255);
+          _inlineR = (139 - v - sproutFrac ~/ 5 + gloss).clamp(80, 170);
+          _inlineG = (115 - v + sproutFrac ~/ 3 + gloss).clamp(80, 170);
+          _inlineB = (85 - v - sproutFrac ~/ 6 + gloss ~/ 2).clamp(40, 120);
+        } else {
+          _inlineR = (139 - v + gloss).clamp(100, 170);
+          _inlineG = (115 - v + gloss).clamp(80, 145);
+          _inlineB = (85 - v + gloss ~/ 2).clamp(50, 115);
+        }
         _inlineA = 255;
 
       case El.dirt:
@@ -1170,29 +1446,21 @@ class PixelRenderer {
         // Smooth layered look with spatial gradients
         final spatial = _spatialBlend(x, y, 6);
         final layer = (spatial * 16) ~/ 256 - 8;
-        // Visible geological strata — horizontal bands every 4-6 rows
-        // Uses y-coordinate directly for clear sedimentary layering
-        final strataHash = _smoothHash(0, y ~/ 4);
-        final strataType = strataHash % 5; // different rock "types" per band
+        // Subtle geological strata — wide bands (20 rows), tight gray range
+        final strataHash = _smoothHash(0, y ~/ 20);
+        final strataType = strataHash % 4;
         int strataR, strataG, strataB;
         if (strataType == 0) {
-          // Blue-gray (standard)
-          strataR = 128; strataG = 126; strataB = 138;
+          strataR = 125; strataG = 125; strataB = 130;
         } else if (strataType == 1) {
-          // Warm brown-gray (sandstone-like)
-          strataR = 140; strataG = 125; strataB = 115;
+          strataR = 128; strataG = 126; strataB = 127;
         } else if (strataType == 2) {
-          // Cool dark gray (basalt-like)
-          strataR = 110; strataG = 110; strataB = 120;
-        } else if (strataType == 3) {
-          // Light cream-gray (limestone-like)
-          strataR = 148; strataG = 142; strataB = 135;
+          strataR = 122; strataG = 123; strataB = 128;
         } else {
-          // Slight greenish-gray (slate-like)
-          strataR = 120; strataG = 128; strataB = 125;
+          strataR = 126; strataG = 125; strataB = 126;
         }
-        // Transition zone between strata — slight darkening at boundaries
-        final strataEdge = (y % 4 == 0) ? -6 : 0;
+        // Gentle transition at boundaries
+        final strataEdge = (y % 20 == 0) ? -2 : 0;
         // Subtle horizontal sediment banding within each layer
         final sediment = _spatialBlend(x + 50, y * 2, 10);
         final sedimentShift = (sediment * 10) ~/ 256 - 5;
@@ -1274,13 +1542,28 @@ class PixelRenderer {
         _inlineA = 255;
 
       case El.glass:
+        // More frequent sparkle (1/10 frames instead of 2/20)
         final sparkle =
-            (frameCount + idx * 3) % 20 < 2 ? 30 : 0;
+            (frameCount + idx * 3) % 10 < 1 ? 35 : 0;
         final variation = ((idx * 7 + y * 3) % 11) - 5;
-        _inlineR = (210 + variation + sparkle).clamp(180, 255);
-        _inlineG = (225 + variation + sparkle).clamp(200, 255);
-        _inlineB = 255;
-        _inlineA = 200;
+        // Count glass depth (cells above that are also glass, max 6)
+        int glassDepth = 0;
+        for (int dy = 1; dy <= 6 && y - dy >= 0; dy++) {
+          if (grid[(y - dy) * w + x] == El.glass) {
+            glassDepth++;
+          } else {
+            break;
+          }
+        }
+        // Deeper glass gets more blue-tinted
+        final depthBlue = (glassDepth * 8).clamp(0, 48);
+        // Refraction shimmer: slight RGB shift based on depth + frame
+        final shimmerPhase = _fastSinI((frameCount * 3 + idx * 7 + glassDepth * 40) & 0xFF);
+        final shimmerVal = (shimmerPhase - 128) ~/ 16; // -8 to +8
+        _inlineR = (210 + variation + sparkle - depthBlue + shimmerVal).clamp(160, 255);
+        _inlineG = (225 + variation + sparkle - depthBlue ~/ 2 + shimmerVal ~/ 2).clamp(185, 255);
+        _inlineB = (255 + sparkle).clamp(240, 255);
+        _inlineA = (200 + depthBlue ~/ 3).clamp(200, 220);
 
       case El.lava:
         final lavaLife = life[idx];
@@ -1424,6 +1707,17 @@ class PixelRenderer {
             _inlineR = (168 + sheen + variation).clamp(145, 200);
             _inlineG = (168 + sheen + variation).clamp(145, 200);
             _inlineB = (176 + sheen + variation).clamp(155, 210);
+          }
+          // Heat glow: hot metal shifts from silver to orange-red
+          final metalHeat = velX[idx].clamp(0, 5);
+          if (metalHeat > 0) {
+            final hf = metalHeat * 256 ~/ 5;
+            final pp = (frameCount * 77 + idx * 26) >> 8;
+            final pi = _fastSinI(pp);
+            final p256 = 102 + (pi * 154) >> 8;
+            _inlineR = (_inlineR + ((hf * 140 * p256) >> 16)).clamp(0, 255);
+            _inlineG = (_inlineG + ((hf * 50 * p256) >> 16)).clamp(0, 255);
+            _inlineB = (_inlineB - (hf * 80 >> 8)).clamp(0, 255);
           }
         }
 

@@ -2036,6 +2036,25 @@ def generate_ground_truth() -> dict:
         "reference": "Best, Igneous and Metamorphic Petrology (2nd ed.)",
     }
 
+    results["lava_viscosity_temperature"] = {
+        "principle": "Lava viscosity increases exponentially as temperature "
+                     "decreases, following the Arrhenius viscosity model: "
+                     "η = A·exp(B/T). Basaltic lava at 1200°C has viscosity "
+                     "~100 Pa·s, but at 1100°C it's ~1000 Pa·s. Near "
+                     "solidification temperature, lava becomes extremely sluggish.",
+        "arrhenius_model": "η = A·exp(B/T)",
+        "basalt_viscosity_1200C_Pa_s": 100,
+        "basalt_viscosity_1100C_Pa_s": 1000,
+        "our_base_viscosity": 4,
+        "our_hot_threshold": 200,
+        "our_cool_threshold": 100,
+        "our_hot_viscosity": 4,
+        "our_cool_viscosity": 8,
+        "our_cold_viscosity": 16,
+        "consequence": "Cooling lava fronts slow and pile up, hot lava flows freely",
+        "reference": "Shaw, American Journal of Science 272 (1972) 870-893",
+    }
+
     results["fire_convective_plume"] = {
         "principle": "Fire heats surrounding cells via two mechanisms: "
                      "isotropic thermal radiation (Stefan-Boltzmann) and "

@@ -428,3 +428,11 @@ class TestVisualOracleSnapshots:
     def test_base_rgb_stable(self, snapshot, visual_truth):
         """Base RGB values for all elements."""
         assert visual_truth.get("base_rgb") == snapshot
+
+    def test_texture_detail_stable(self, snapshot, visual_truth):
+        """Texture detail thresholds."""
+        assert visual_truth.get("texture_detail") == snapshot
+
+    def test_micro_particles_stable(self, snapshot, visual_truth):
+        """Micro particle brightness thresholds."""
+        assert visual_truth.get("micro_particles") == snapshot

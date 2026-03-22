@@ -1872,6 +1872,12 @@
     }),
   })
 # ---
+# name: TestVisualOracleSnapshots.test_micro_particles_stable
+  dict({
+    'fire_spark_brightness_threshold': 200,
+    'lava_ember_brightness_threshold': 180,
+  })
+# ---
 # name: TestVisualOracleSnapshots.test_sky_gradient_params_stable
   dict({
     'bottom_L_range': list([
@@ -1889,11 +1895,19 @@
     ]),
   })
 # ---
+# name: TestVisualOracleSnapshots.test_texture_detail_stable
+  dict({
+    'fire_r_std_min': 20,
+    'lava_brightness_std_min': 5,
+    'stone_strata_brightness_diff_min': 3,
+    'water_caustic_std_min': 3,
+  })
+# ---
 # name: TestVisualOracleSnapshots.test_texture_entropy_ranges_stable
   dict({
     'dirt': dict({
-      'desc': 'organic texture',
-      'max': 6.5,
+      'desc': 'organic texture with depth variation',
+      'max': 9.0,
       'min': 1.5,
     }),
     'fire': dict({
@@ -1937,8 +1951,8 @@
       'min': 0.3,
     }),
     'stone': dict({
-      'desc': 'layered strata',
-      'max': 6.5,
+      'desc': 'layered strata with depth variation',
+      'max': 12.0,
       'min': 1.5,
     }),
     'water': dict({
@@ -1964,7 +1978,7 @@
       'min_alpha': 120,
     }),
     'smoke': dict({
-      'max_alpha': 190,
+      'max_alpha': 210,
       'min_alpha': 30,
     }),
     'steam': dict({

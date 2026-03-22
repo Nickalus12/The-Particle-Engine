@@ -273,3 +273,31 @@ class TestDarcySeepage:
         if gt is None:
             pytest.skip("No darcy_seepage oracle data")
         assert "compaction" in gt["our_permeability_factor"].lower()
+
+
+class TestLavaViscosityTemperature:
+    """Lava viscosity should increase as temperature decreases."""
+
+    @pytest.mark.physics
+    def test_viscosity_principle(self, ground_truth):
+        """Oracle should describe Arrhenius viscosity model."""
+        gt = ground_truth.get("lava_viscosity_temperature")
+        if gt is None:
+            pytest.skip("No lava_viscosity_temperature oracle data")
+        assert "arrhenius" in gt["principle"].lower() or "exponential" in gt["principle"].lower()
+
+    @pytest.mark.physics
+    def test_cool_lava_more_viscous(self, ground_truth):
+        """Cooling lava should have higher viscosity than hot lava."""
+        gt = ground_truth.get("lava_viscosity_temperature")
+        if gt is None:
+            pytest.skip("No lava_viscosity_temperature oracle data")
+        assert gt["our_cool_viscosity"] > gt["our_hot_viscosity"]
+
+    @pytest.mark.physics
+    def test_cold_lava_very_viscous(self, ground_truth):
+        """Near-solidification lava should have very high viscosity."""
+        gt = ground_truth.get("lava_viscosity_temperature")
+        if gt is None:
+            pytest.skip("No lava_viscosity_temperature oracle data")
+        assert gt["our_cold_viscosity"] >= gt["our_cool_viscosity"] * 1.5

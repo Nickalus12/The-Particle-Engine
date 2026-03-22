@@ -1079,6 +1079,27 @@ extension ElementBehaviors on SimulationEngine {
           markProcessed(ni);
           queueReactionFlash(nx, ny, 180, 200, 255, 3);
         }
+        // Arc ignition: lightning's plasma (~30,000 K) instantly ignites
+        // oil vapor. Real oil flash points (200-300°C) are far below
+        // lightning channel temperature. The arc also ignites nearby oil
+        // via radiative heating within a 2-cell radius.
+        if (neighbor == El.oil) {
+          grid[ni] = El.fire; life[ni] = 0; markProcessed(ni);
+          queueReactionFlash(nx, ny, 255, 200, 50, 5);
+          // Chain ignition: lightning's heat radiates to nearby oil
+          for (int ody = -2; ody <= 2; ody++) {
+            for (int odx = -2; odx <= 2; odx++) {
+              if (odx == 0 && ody == 0) continue;
+              final ox = wrapX(nx + odx);
+              final oy = ny + ody;
+              if (!inBoundsY(oy)) continue;
+              final oi = oy * gridW + ox;
+              if (grid[oi] == El.oil && rng.nextInt(3) == 0) {
+                grid[oi] = El.fire; life[oi] = 0; markProcessed(oi);
+              }
+            }
+          }
+        }
       }
     }
 
@@ -2023,8 +2044,15 @@ extension ElementBehaviors on SimulationEngine {
     if (inBoundsY(by) && grid[by * gridW + lx1] == El.empty) { swap(idx, by * gridW + lx1); return; }
     if (inBoundsY(by) && grid[by * gridW + lx2] == El.empty) { swap(idx, by * gridW + lx2); return; }
 
-    // Lateral flow — viscosity gates how often lava spreads sideways
-    final visc = elementViscosity[El.lava];
+    // Temperature-dependent viscosity: real lava viscosity follows
+    // η = A·exp(B/T) — exponentially increasing as temperature drops.
+    // Basaltic lava at 1200°C: ~100 Pa·s; at 1100°C: ~1000 Pa·s.
+    // Hot lava (temp>200) flows at base viscosity; cooling lava (100-200)
+    // flows 2x slower; near-solid lava (<100) flows 4x slower.
+    final lavaTemp = temperature[idx];
+    final baseVisc = elementViscosity[El.lava]; // 4
+    final visc = lavaTemp > 200 ? baseVisc
+        : (lavaTemp > 100 ? baseVisc * 2 : baseVisc * 4);
     if (frameCount % visc != 0) return;
 
     // Surface tension: isolated lava resists lateral flow
@@ -2385,6 +2413,91 @@ extension ElementBehaviors on SimulationEngine {
 
     if (life[idx] >= 200) return;
 
+    // Heat conduction: metal (heatConductivity=0.9) absorbs and transfers
+    // heat from fire/lava. Real metals conduct heat ~100-400 W/(m·K),
+    // orders of magnitude faster than stone or wood. velX encodes heat
+    // level 0-5, matching the stone heat glow system.
+    {
+      final heat = velX[idx].clamp(0, 5);
+
+      // Absorb heat from adjacent fire/lava
+      if (frameCount % 3 == 0) {
+        for (int dy = -1; dy <= 1; dy++) {
+          for (int dx = -1; dx <= 1; dx++) {
+            if (dx == 0 && dy == 0) continue;
+            final nx = wrapX(x + dx);
+            final ny = y + dy;
+            if (!inBoundsY(ny)) continue;
+            final ni = ny * gridW + nx;
+            final neighbor = grid[ni];
+            if (neighbor == El.lava && heat < 5) {
+              velX[idx] = (heat + 1).clamp(0, 5);
+              markDirty(x, y);
+            } else if (neighbor == El.fire && heat < 4) {
+              velX[idx] = (heat + 1).clamp(0, 4);
+              markDirty(x, y);
+            }
+          }
+        }
+      }
+
+      // Conduct heat to neighboring metal (chain conduction)
+      if (heat > 0 && frameCount % 4 == 0) {
+        for (int dy = -1; dy <= 1; dy++) {
+          for (int dx = -1; dx <= 1; dx++) {
+            if (dx == 0 && dy == 0) continue;
+            final nx = wrapX(x + dx);
+            final ny = y + dy;
+            if (!inBoundsY(ny)) continue;
+            final ni = ny * gridW + nx;
+            if (grid[ni] == El.metal) {
+              final neighborHeat = velX[ni].clamp(0, 5);
+              if (neighborHeat < heat - 1) {
+                velX[ni] = neighborHeat + 1;
+                markDirty(nx, ny);
+              }
+            }
+          }
+        }
+      }
+
+      // Hot metal radiates heat to surroundings
+      if (heat >= 3 && frameCount % 8 == 0) {
+        emitRadiantHeat(x, y, idx, 2, heat * 6);
+      }
+
+      // Slow cooling when not adjacent to heat sources
+      if (heat > 0 && frameCount % 10 == 0) {
+        final nearHeat = checkAdjacent(x, y, El.lava) ||
+            checkAdjacent(x, y, El.fire);
+        if (!nearHeat) {
+          velX[idx] = (heat - 1).clamp(0, 5);
+          markDirty(x, y);
+        }
+      }
+
+      // Hot metal ignites adjacent flammable materials
+      if (heat >= 4) {
+        for (int dy = -1; dy <= 1; dy++) {
+          for (int dx = -1; dx <= 1; dx++) {
+            if (dx == 0 && dy == 0) continue;
+            final nx = wrapX(x + dx);
+            final ny = y + dy;
+            if (!inBoundsY(ny)) continue;
+            final ni = ny * gridW + nx;
+            final neighbor = grid[ni];
+            if ((neighbor == El.oil || neighbor == El.plant ||
+                neighbor == El.seed) && rng.nextInt(6) == 0) {
+              grid[ni] = El.fire; life[ni] = 0; markProcessed(ni);
+              queueReactionFlash(nx, ny, 255, 160, 40, 3);
+            } else if (neighbor == El.wood && life[ni] == 0 && rng.nextInt(10) == 0) {
+              life[ni] = 1; // Start wood charring
+            }
+          }
+        }
+      }
+    }
+
     if (checkAdjacent(x, y, El.water)) {
       life[idx]++;
       if (life[idx] > 120) {
@@ -2515,9 +2628,18 @@ extension ElementBehaviors on SimulationEngine {
         }
       }
     } else {
-      if (life[idx] > 20) {
+      // Out of water — rise briefly then pop (bubbles can't exist in air)
+      if (life[idx] > 1) {
         grid[idx] = El.empty; life[idx] = 0;
         queueReactionFlash(x, y, 130, 200, 240, 2);
+        return;
+      }
+      // Float upward for 1 tick before popping
+      if (inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
+        final ni = uy * gridW + x;
+        grid[ni] = El.bubble; life[ni] = life[idx];
+        grid[idx] = El.empty; life[idx] = 0;
+        markProcessed(ni);
       }
     }
   }
@@ -3127,6 +3249,14 @@ extension ElementBehaviors on SimulationEngine {
         if (neighbor == El.ice && rng.nextInt(8) == 0) {
           grid[ni] = El.water; life[ni] = 80; markProcessed(ni);
           queueReactionFlash(nx, ny, 80, 255, 120, 3);
+        }
+        // Acid melts snow to water. Snow is crystalline ice with high
+        // surface area — acid's exothermic dissolution provides latent
+        // heat for melting while the acid is partially consumed.
+        if (neighbor == El.snow && rng.nextInt(5) == 0) {
+          grid[ni] = El.water; life[ni] = 60; markProcessed(ni);
+          queueReactionFlash(nx, ny, 80, 240, 100, 3);
+          life[idx] = (life[idx] + 15).clamp(0, 255); // acid ages faster
         }
         if (neighbor == El.lava && rng.nextInt(5) == 0) {
           // Acid + lava: violent reaction producing steam and smoke

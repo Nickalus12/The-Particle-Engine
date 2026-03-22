@@ -1,8 +1,8 @@
 {
   "width": 320,
   "height": 180,
-  "frames": 1000,
-  "placements_count": 520,
+  "frames": 300,
+  "placements_count": 4720,
   "elements": {
     "Empty": 0,
     "Sand": 1,

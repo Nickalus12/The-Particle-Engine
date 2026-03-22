@@ -460,4 +460,23 @@ const List<ReactionRule> _builtInRules = [
     description: 'Mud dries near lava',
     flashR: 180, flashG: 180, flashB: 200, flashCount: 2,
   ),
+
+  // Lightning + Oil: arc ignition
+  ReactionRule(
+    source: El.lightning,
+    target: El.oil,
+    targetBecomesElement: El.fire,
+    description: 'Lightning ignites oil',
+    flashR: 255, flashG: 200, flashB: 50, flashCount: 5,
+  ),
+
+  // Acid + Snow: exothermic dissolution melts snow
+  ReactionRule(
+    source: El.acid,
+    target: El.snow,
+    targetBecomesElement: El.water,
+    probability: 0.2,
+    description: 'Acid melts snow into water',
+    flashR: 80, flashG: 240, flashB: 100, flashCount: 3,
+  ),
 ];

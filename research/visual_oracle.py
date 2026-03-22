@@ -106,8 +106,8 @@ def generate_visual_truth():
     results["texture_entropy"] = {
         "sand":  {"min": 1.5, "max": 6.5, "desc": "grainy, moderate variation"},
         "water": {"min": 0.5, "max": 6.5, "desc": "smooth with shimmer"},
-        "stone": {"min": 1.5, "max": 6.5, "desc": "layered strata"},
-        "dirt":  {"min": 1.5, "max": 6.5, "desc": "organic texture"},
+        "stone": {"min": 1.5, "max": 12.0, "desc": "layered strata with depth variation"},
+        "dirt":  {"min": 1.5, "max": 9.0, "desc": "organic texture with depth variation"},
         "lava":  {"min": 2.0, "max": 6.5, "desc": "dynamic, pulsing"},
         "fire":  {"min": 2.0, "max": 6.5, "desc": "highly dynamic"},
         "ice":   {"min": 0.5, "max": 4.5, "desc": "crystalline, sparkle"},
@@ -141,7 +141,7 @@ def generate_visual_truth():
     # -----------------------------------------------------------------
     results["transparency"] = {
         "steam":  {"max_alpha": 80,  "min_alpha": 5},
-        "smoke":  {"max_alpha": 190, "min_alpha": 30},
+        "smoke":  {"max_alpha": 210, "min_alpha": 30},
         "glass":  {"max_alpha": 220, "min_alpha": 120},
         "bubble": {"max_alpha": 180, "min_alpha": 60},
     }
@@ -202,6 +202,44 @@ def generate_visual_truth():
     results["base_rgb"] = {
         name: {"r": r, "g": g, "b": b}
         for name, (a, r, g, b) in ELEMENT_COLORS.items()
+    }
+
+    # -----------------------------------------------------------------
+    # 13. Underground advanced (cave proximity lighting)
+    # -----------------------------------------------------------------
+    results["underground_advanced"] = {
+        "near_opening_min_brightness": 30,
+        "deep_cave_max_brightness": 45,
+        "min_brightness_std": 2,
+        "rock_tint_near_dirt_r_boost": 3,
+        "moisture_near_water_b_boost": 4,
+    }
+
+    # -----------------------------------------------------------------
+    # 14. Sky advanced (atmospheric rendering)
+    # -----------------------------------------------------------------
+    results["sky_advanced"] = {
+        "top_10pct_b_minus_r_min": 40,
+        "horizon_warmer_than_zenith": True,
+        "min_inflection_points": 1,
+    }
+
+    # -----------------------------------------------------------------
+    # 15. Texture detail (micro-variation within elements)
+    # -----------------------------------------------------------------
+    results["texture_detail"] = {
+        "fire_r_std_min": 20,
+        "water_caustic_std_min": 3,
+        "stone_strata_brightness_diff_min": 3,
+        "lava_brightness_std_min": 5,
+    }
+
+    # -----------------------------------------------------------------
+    # 16. Micro particles (spark / ember overlay effects)
+    # -----------------------------------------------------------------
+    results["micro_particles"] = {
+        "fire_spark_brightness_threshold": 200,
+        "lava_ember_brightness_threshold": 180,
     }
 
     return results

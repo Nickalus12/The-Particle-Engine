@@ -71,6 +71,16 @@ class TerrainGenerator {
         height = combined * (1.0 - blend) + quantized * blend;
       }
 
+      // --- Ridge effect: sharp peaks at noise extremes ---
+      // Uses abs(noise) to fold the waveform, creating sharp V-ridges
+      // where the noise crosses zero.
+      final ridgeNoise = noise2.noise2D(nx * 5.0, 2.0);
+      if (ridgeNoise.abs() < 0.15) {
+        // Near zero-crossing: push height up for a sharp ridge.
+        final ridgeStrength = 1.0 - (ridgeNoise.abs() / 0.15);
+        height += ridgeStrength * 0.25 * config.terrainScale;
+      }
+
       heightmap[x] = (baseHeight + height * terrainAmplitude).round().clamp(
             5,
             config.height - 20,

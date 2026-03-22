@@ -81,6 +81,12 @@ class ParticleEngineGame extends FlameGame
 
   // -- Camera configuration ---------------------------------------------------
 
+  /// Fill letterbox bars with the day-sky colour instead of black.
+  /// This is the area outside the fixed-resolution viewport when the window
+  /// aspect ratio doesn't match 16:9.
+  @override
+  Color backgroundColor() => const Color(0xFF4888C8);
+
   /// Minimum zoom — at 1.0 the world fills the fixed-resolution viewport exactly.
   static const double minZoom = 1.0;
 

@@ -34,6 +34,8 @@ void main(List<String> args) {
     engine.step(simulateElement);
   }
 
+  // Mark all chunks dirty so renderPixels produces a full frame
+  engine.markAllDirty();
   renderer.renderPixels();
 
   File('research/frame.rgba').writeAsBytesSync(renderer.pixels);
@@ -172,6 +174,25 @@ void _fillTestWorld(SimulationEngine e) {
   for (int y = (h * 0.65).round(); y < (h * 0.72).round(); y++) {
     for (int x = (w * 0.15).round(); x < (w * 0.25).round(); x++) {
       e.grid[y * w + x] = El.empty;
+    }
+  }
+
+  // Deep cave pocket (for proximity lighting gradient tests)
+  for (int y = (h * 0.78).round(); y < (h * 0.85).round(); y++) {
+    for (int x = (w * 0.35).round(); x < (w * 0.45).round(); x++) {
+      e.grid[y * w + x] = El.empty;
+    }
+  }
+  // Narrow tunnel connecting shallow cave area to deep cave (1 cell wide)
+  for (int y = (h * 0.72).round(); y < (h * 0.78).round(); y++) {
+    final tunnelX = (w * 0.25).round();
+    e.grid[y * w + tunnelX] = El.empty;
+  }
+  // Underground water pool in deep cave (for moisture tint tests)
+  for (int y = (h * 0.83).round(); y < (h * 0.85).round(); y++) {
+    for (int x = (w * 0.38).round(); x < (w * 0.42).round(); x++) {
+      e.grid[y * w + x] = El.water;
+      e.life[y * w + x] = 100;
     }
   }
 

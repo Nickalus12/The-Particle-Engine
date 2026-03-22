@@ -76,6 +76,9 @@ class FeaturePlacer {
       }
     }
 
+    // Carve rounded bubble caverns for organic cave rooms.
+    _carveBubbleCaverns(data, config, heightmap);
+
     // Multiple smoothing passes to clean up jagged edges and fill pockets.
     for (var pass = 0; pass < 3; pass++) {
       _smoothCaves(data, config, heightmap);
@@ -84,6 +87,57 @@ class FeaturePlacer {
     // For underground preset: carve dramatic cavern chambers.
     if (config.caveDensity >= 0.6 && config.vegetation <= 0.1) {
       _carveUndergroundCaverns(data, config, heightmap);
+    }
+  }
+
+  /// Carve rounded bubble caverns using overlapping noise spheres.
+  ///
+  /// Creates 2-5 organic oval rooms connected to the existing tunnel
+  /// network, giving caves a more natural feel than pure noise carving.
+  static void _carveBubbleCaverns(
+    GridData data,
+    WorldConfig config,
+    List<int> heightmap,
+  ) {
+    if (config.caveDensity < 0.1) return;
+
+    final rng = Random(config.seed + 1150);
+    final bubbleNoise = SimplexNoise(config.seed + 1160);
+
+    // Number of bubble caverns scales with cave density.
+    final count = (2 + config.caveDensity * 5).round();
+
+    for (var i = 0; i < count; i++) {
+      final cx = (config.width * 0.1 + rng.nextDouble() * config.width * 0.8).round();
+      final surfY = heightmap[cx.clamp(0, config.width - 1)];
+      final minY = surfY + 10;
+      final maxY = config.height - 10;
+      if (minY >= maxY) continue;
+      final cy = minY + rng.nextInt(maxY - minY);
+
+      // Elliptical radius with aspect variation.
+      final rx = 4 + rng.nextInt(6); // 4-9
+      final ry = 3 + rng.nextInt(4); // 3-6
+
+      for (var dy = -ry; dy <= ry; dy++) {
+        for (var dx = -rx; dx <= rx; dx++) {
+          final nx = cx + dx;
+          final ny = cy + dy;
+          if (!data.inBounds(nx, ny)) continue;
+          if (ny >= config.height - 5) continue;
+          if (ny <= heightmap[nx.clamp(0, config.width - 1)] + 6) continue;
+          if (data.get(nx, ny) != El.stone) continue;
+
+          final ex = dx.toDouble() / rx;
+          final ey = dy.toDouble() / ry;
+          final dist = ex * ex + ey * ey;
+          // Noisy edge for organic shape.
+          final edge = bubbleNoise.noise2D(nx / 5.0, ny / 5.0) * 0.15;
+          if (dist < 0.80 + edge) {
+            data.set(nx, ny, El.empty);
+          }
+        }
+      }
     }
   }
 
@@ -369,27 +423,38 @@ class FeaturePlacer {
       _placeMeadowStreams(data, config, heightmap);
     }
 
-    // --- Underground pools: small pools at cave floors ---
+    // --- Underground pools: water collects at cave floors ---
     final rng = Random(config.seed + 2000);
     for (var x = 2; x < config.width - 2; x++) {
       for (var y = config.height - 6; y > heightmap[x] + 12; y--) {
         // Look for cave floor (empty above stone).
         if (data.get(x, y) == El.empty && data.get(x, y + 1) == El.stone) {
-          // Low probability, scaled by water level.
-          if (rng.nextDouble() < config.waterLevel * 0.15) {
-            // Fill a small puddle (1-3 cells deep, 2-5 cells wide).
-            final poolWidth = 1 + rng.nextInt(3);
+          // Higher probability, scaled by water level.
+          if (rng.nextDouble() < config.waterLevel * 0.30) {
+            // Scan the floor width to fill naturally.
+            int left = x, right = x;
+            while (left > 0 && data.get(left - 1, y) == El.empty &&
+                   data.get(left - 1, y + 1) == El.stone) {
+              left--;
+            }
+            while (right < config.width - 1 && data.get(right + 1, y) == El.empty &&
+                   data.get(right + 1, y + 1) == El.stone) {
+              right++;
+            }
+            // Limit pool width to something reasonable.
+            final maxW = 2 + rng.nextInt(5);
+            final poolLeft = max(left, x - maxW);
+            final poolRight = min(right, x + maxW);
             final poolDepth = 1 + rng.nextInt(2);
-            for (var px = -poolWidth; px <= poolWidth; px++) {
+            for (var px = poolLeft; px <= poolRight; px++) {
               for (var py = 0; py < poolDepth; py++) {
-                final wx = x + px;
                 final wy = y - py;
-                if (data.get(wx, wy) == El.empty) {
-                  data.set(wx, wy, El.water);
+                if (data.inBounds(px, wy) && data.get(px, wy) == El.empty) {
+                  data.set(px, wy, El.water);
                 }
               }
             }
-            x += poolWidth + 3; // Skip ahead.
+            x = poolRight + 3; // Skip ahead.
             break;
           }
         }
@@ -806,8 +871,11 @@ class FeaturePlacer {
   // Ore veins
   // --------------------------------------------------------------------------
 
-  /// Place metal ore deposits as clustered pockets in stone layers.
-  /// Underground preset gets denser ore veins.
+  /// Place metal ore deposits as elongated veins in stone layers.
+  ///
+  /// Uses anisotropic noise sampling (stretched horizontally) to create
+  /// vein-like streaks rather than round blobs. Deeper stone has denser ore.
+  /// Underground preset gets significantly more veins.
   static void placeOre(
     GridData data,
     WorldConfig config,
@@ -815,11 +883,12 @@ class FeaturePlacer {
   ) {
     final rng = Random(config.seed + 3000);
     final oreNoise = SimplexNoise(config.seed + 3000);
+    final veinAngle = SimplexNoise(config.seed + 3100);
 
     // Underground preset gets more ore.
     final isUnderground = config.caveDensity >= 0.6 && config.vegetation <= 0.1;
-    final oreThreshold = isUnderground ? 0.55 : 0.70;
-    final oreProbability = isUnderground ? 0.75 : 0.60;
+    final oreThreshold = isUnderground ? 0.52 : 0.68;
+    final oreProbability = isUnderground ? 0.80 : 0.65;
     final minDepthBelow = isUnderground ? 10 : 20;
 
     for (var y = 0; y < config.height; y++) {
@@ -827,13 +896,24 @@ class FeaturePlacer {
         if (data.get(x, y) != El.stone) continue;
         if (y < heightmap[x] + minDepthBelow) continue;
 
-        final n = oreNoise.octaveNoise2D(
-          x / (config.width * 0.05),
-          y / (config.height * 0.05),
-          octaves: 2,
-        );
+        // Anisotropic sampling: stretch along a noise-driven angle
+        // to produce elongated vein shapes instead of round blobs.
+        final angle = veinAngle.noise2D(x / 40.0, y / 40.0) * 1.2;
+        final cosA = cos(angle);
+        final sinA = sin(angle);
+        // Rotate and stretch: 3x compression along one axis.
+        final sx = (x * cosA - y * sinA) / (config.width * 0.04);
+        final sy = (x * sinA + y * cosA) / (config.height * 0.12);
 
-        if (n > oreThreshold && rng.nextDouble() < oreProbability) {
+        final n = oreNoise.octaveNoise2D(sx, sy, octaves: 2);
+
+        // Deeper ore is slightly more common.
+        final depthFrac = ((y - heightmap[x.clamp(0, config.width - 1)]) /
+                config.height)
+            .clamp(0.0, 1.0);
+        final depthBonus = depthFrac * 0.06;
+
+        if (n > oreThreshold - depthBonus && rng.nextDouble() < oreProbability) {
           data.set(x, y, El.metal);
         }
       }
@@ -844,12 +924,16 @@ class FeaturePlacer {
   // Surface detail: sand, boulders, grass
   // --------------------------------------------------------------------------
 
-  /// Place surface details: sand near water, boulders, grass on dirt.
+  /// Place surface details: sand near water, boulders, grass on dirt,
+  /// and cliff overhangs at steep elevation changes.
   static void placeSurfaceDetail(
     GridData data,
     WorldConfig config,
     List<int> heightmap,
   ) {
+    // --- Cliff overhangs at steep drops ---
+    _placeCliffOverhangs(data, config, heightmap);
+
     final rng = Random(config.seed + 8000);
     final boulderNoise = SimplexNoise(config.seed + 8100);
 
@@ -902,6 +986,46 @@ class FeaturePlacer {
           data.setPlant(x, surfaceY - 1, kPlantGrass, kStMature);
         }
       }
+    }
+  }
+
+  /// Carve small overhangs into steep cliff faces for visual interest.
+  ///
+  /// Where the heightmap drops sharply (>4 cells between neighbors),
+  /// carve a small shelf into the cliff face to create a natural overhang.
+  static void _placeCliffOverhangs(
+    GridData data,
+    WorldConfig config,
+    List<int> heightmap,
+  ) {
+    final rng = Random(config.seed + 8200);
+
+    for (var x = 2; x < config.width - 2; x++) {
+      final h = heightmap[x];
+      final hNext = heightmap[x + 1];
+      final drop = hNext - h; // positive = terrain drops right
+
+      if (drop.abs() < 5) continue;
+      if (rng.nextDouble() > 0.4) continue;
+
+      // Carve a small shelf (2-4 wide, 1-2 tall) at the cliff face.
+      final shelfWidth = 2 + rng.nextInt(3);
+      final dir = drop > 0 ? 1 : -1;
+      final shelfY = h + (drop.abs() ~/ 3);
+
+      for (var dx = 0; dx < shelfWidth; dx++) {
+        final sx = x + dx * dir;
+        if (!data.inBounds(sx, shelfY)) continue;
+        if (data.get(sx, shelfY) == El.stone || data.get(sx, shelfY) == El.dirt) {
+          data.set(sx, shelfY, El.empty);
+          // Also carve the cell above for a taller overhang.
+          if (data.inBounds(sx, shelfY - 1) &&
+              data.get(sx, shelfY - 1) == El.stone) {
+            data.set(sx, shelfY - 1, El.empty);
+          }
+        }
+      }
+      x += shelfWidth + 2; // Skip past the overhang.
     }
   }
 

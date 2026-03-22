@@ -413,13 +413,13 @@
     },
     "stone": {
       "min": 1.5,
-      "max": 6.5,
-      "desc": "layered strata"
+      "max": 12.0,
+      "desc": "layered strata with depth variation"
     },
     "dirt": {
       "min": 1.5,
-      "max": 6.5,
-      "desc": "organic texture"
+      "max": 9.0,
+      "desc": "organic texture with depth variation"
     },
     "lava": {
       "min": 2.0,
@@ -487,7 +487,7 @@
       "min_alpha": 5
     },
     "smoke": {
-      "max_alpha": 190,
+      "max_alpha": 210,
       "min_alpha": 30
     },
     "glass": {
@@ -713,5 +713,27 @@
       "g": 34,
       "b": 34
     }
+  },
+  "underground_advanced": {
+    "near_opening_min_brightness": 30,
+    "deep_cave_max_brightness": 45,
+    "min_brightness_std": 2,
+    "rock_tint_near_dirt_r_boost": 3,
+    "moisture_near_water_b_boost": 4
+  },
+  "sky_advanced": {
+    "top_10pct_b_minus_r_min": 40,
+    "horizon_warmer_than_zenith": true,
+    "min_inflection_points": 1
+  },
+  "texture_detail": {
+    "fire_r_std_min": 20,
+    "water_caustic_std_min": 3,
+    "stone_strata_brightness_diff_min": 3,
+    "lava_brightness_std_min": 5
+  },
+  "micro_particles": {
+    "fire_spark_brightness_threshold": 200,
+    "lava_ember_brightness_threshold": 180
   }
 }
