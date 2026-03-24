@@ -59,5 +59,6 @@ research/cloud/last_pipeline.log
 research/cloud/cloud_key
 research/cloud/cloud_key.pub
 research/cloud/.thundercompute.env
+research/cloud/.github.env
 research/cloud/last_training_plan.json
 research/cloud/training_system_summary.json
