@@ -7,7 +7,7 @@
 ///   - research/frame_meta.json  Dimensions, frame count, element name map
 ///
 /// Usage:
-///   dart run research/export_frame.dart [frames]
+///   dart run research/export_frame.dart [frames] [config_path]
 library;
 
 import 'dart:convert';
@@ -23,8 +23,11 @@ import 'package:the_particle_engine/simulation/pixel_renderer.dart';
 void main(List<String> args) {
   final frames = args.isNotEmpty ? int.parse(args[0]) : 100;
   ElementRegistry.init();
-
+  final configPath = _resolveTrialConfigPath(args);
   final engine = SimulationEngine(gridW: 320, gridH: 180, seed: 42);
+  final trialConfig = configPath == null ? null : _loadTrialConfig(configPath);
+  final overrideReport =
+      trialConfig == null ? null : _applyTrialConfig(trialConfig);
   final renderer = PixelRenderer(engine);
   renderer.init();
   renderer.generateStars();
@@ -52,9 +55,23 @@ void main(List<String> args) {
   File('research/flags.bin').writeAsBytesSync(engine.flags);
 
   final meta = <String, dynamic>{
+    'contractVersion': 1,
+    'manifest': trialConfig?['manifest'] ?? 'parameter_manifest.json',
+    'pipeline': 'runtime_export',
+    'scenarioId': 'foundation_sandbox_v1',
+    'seed': 42,
     'width': 320,
     'height': 180,
     'frames': frames,
+    'trialConfig': configPath == null
+        ? null
+        : <String, dynamic>{
+            'path': configPath,
+            'sourceLabel': trialConfig?['source_label'] ?? 'external',
+            'applied': overrideReport!['applied'],
+            'ignored': overrideReport['ignored'],
+            'effectiveConfig': _buildEffectiveConfigSnapshot(trialConfig),
+          },
     'elements': <String, int>{
       for (int i = 0; i < El.count; i++) elementNames[i]: i,
     },
@@ -64,6 +81,559 @@ void main(List<String> args) {
 
   print(
       'Exported: frame.rgba, grid.bin, temp.bin, velx.bin, vely.bin, life.bin, flags.bin');
+}
+
+String? _resolveTrialConfigPath(List<String> args) {
+  if (args.length > 1 && args[1].trim().isNotEmpty) {
+    return args[1];
+  }
+
+  final envPath = Platform.environment['TRIAL_CONFIG'];
+  if (envPath != null && envPath.trim().isNotEmpty) {
+    return envPath;
+  }
+
+  return null;
+}
+
+Map<String, dynamic> _loadTrialConfig(String configPath) {
+  final raw = jsonDecode(File(configPath).readAsStringSync());
+  if (raw is Map<String, dynamic>) {
+    return raw;
+  }
+  if (raw is Map) {
+    return raw.map((key, value) => MapEntry(key.toString(), value));
+  }
+  throw FormatException('Trial config must decode to a JSON object.');
+}
+
+Map<String, List<String>> _applyTrialConfig(Map<String, dynamic> config) {
+  final applied = <String>{};
+  final ignored = <String>{};
+
+  final params = _asStringMap(config['params']);
+  if (params != null) {
+    _applyFlatParams(params, applied, ignored);
+  } else if (!_looksStructured(config)) {
+    _applyFlatParams(config, applied, ignored);
+  }
+
+  final elements = _asStringMap(config['elements']);
+  if (elements != null) {
+    _applyNestedElementOverrides(elements, applied, ignored);
+  }
+
+  final behavior = _asStringMap(config['behavior']);
+  if (behavior != null) {
+    for (final key in behavior.keys) {
+      ignored.add('behavior.$key');
+    }
+  }
+
+  final simTuning =
+      _asStringMap(config['sim_tuning']) ?? _asStringMap(config['simTuning']);
+  if (simTuning != null) {
+    final overrides = <String, dynamic>{};
+    simTuning.forEach((key, value) {
+      if (value is num) {
+        overrides[key] = value;
+        applied.add('sim_tuning.$key');
+      } else {
+        ignored.add('sim_tuning.$key');
+      }
+    });
+    SimTuning.applyOverrides(overrides);
+  }
+
+  return <String, List<String>>{
+    'applied': applied.toList()..sort(),
+    'ignored': ignored.toList()..sort(),
+  };
+}
+
+bool _looksStructured(Map<String, dynamic> config) =>
+    config.containsKey('params') ||
+    config.containsKey('elements') ||
+    config.containsKey('behavior') ||
+    config.containsKey('sim_tuning') ||
+    config.containsKey('simTuning');
+
+Map<String, dynamic>? _asStringMap(dynamic value) {
+  if (value is Map<String, dynamic>) return value;
+  if (value is Map) {
+    return value.map((key, val) => MapEntry(key.toString(), val));
+  }
+  return null;
+}
+
+int? _intValue(dynamic value) => value is num ? value.round() : null;
+
+void _applyFlatParams(
+  Map<String, dynamic> params,
+  Set<String> applied,
+  Set<String> ignored,
+) {
+  _applyElementOverride(
+    'sand',
+    El.sand,
+    applied,
+    density: _trackIntParam(params, 'sand_density', applied),
+    gravity: _trackIntParam(params, 'sand_gravity', applied),
+    meltPoint: _trackIntParam(params, 'sand_melt_point', applied),
+  );
+  _applyElementOverride(
+    'water',
+    El.water,
+    applied,
+    density: _trackIntParam(params, 'water_density', applied),
+    gravity: _trackIntParam(params, 'water_gravity', applied),
+    boilPoint: _trackIntParam(params, 'water_boil_point', applied),
+    freezePoint: _trackIntParam(params, 'water_freeze_point', applied),
+    surfaceTension: _trackIntParam(params, 'water_surface_tension', applied),
+    reactivity: _trackIntParam(params, 'water_reactivity', applied),
+  );
+  _applyElementOverride(
+    'oil',
+    El.oil,
+    applied,
+    density: _trackIntParam(params, 'oil_density', applied),
+    viscosity: _trackIntParam(params, 'oil_viscosity', applied),
+    surfaceTension: _trackIntParam(params, 'oil_surface_tension', applied),
+  );
+  _applyElementOverride(
+    'stone',
+    El.stone,
+    applied,
+    density: _trackIntParam(params, 'stone_density', applied),
+  );
+  _applyElementOverride(
+    'metal',
+    El.metal,
+    applied,
+    density: _trackIntParam(params, 'metal_density', applied),
+  );
+  _applyElementOverride(
+    'ice',
+    El.ice,
+    applied,
+    density: _trackIntParam(params, 'ice_density', applied),
+    meltPoint: _trackIntParam(params, 'ice_melt_point', applied),
+  );
+  _applyElementOverride(
+    'wood',
+    El.wood,
+    applied,
+    density: _trackIntParam(params, 'wood_density', applied),
+  );
+  _applyElementOverride(
+    'dirt',
+    El.dirt,
+    applied,
+    density: _trackIntParam(params, 'dirt_density', applied),
+  );
+  _applyElementOverride(
+    'lava',
+    El.lava,
+    applied,
+    density: _trackIntParam(params, 'lava_density', applied),
+    viscosity: _trackIntParam(params, 'lava_viscosity', applied),
+  );
+  _applyElementOverride(
+    'mud',
+    El.mud,
+    applied,
+    viscosity: _trackIntParam(params, 'mud_viscosity', applied),
+  );
+  _applyElementOverride(
+    'sodium',
+    El.sodium,
+    applied,
+    reactivity: _trackIntParam(params, 'sodium_reactivity', applied),
+  );
+  _applyElementOverride(
+    'potassium',
+    El.potassium,
+    applied,
+    reactivity: _trackIntParam(params, 'potassium_reactivity', applied),
+  );
+  _applyElementOverride(
+    'mercury',
+    El.mercury,
+    applied,
+    density: _trackIntParam(params, 'mercury_density', applied),
+    viscosity: _trackIntParam(params, 'mercury_viscosity', applied),
+  );
+  _applyElementOverride(
+    'gold',
+    El.gold,
+    applied,
+    density: _trackIntParam(params, 'gold_density', applied),
+    meltPoint: _trackIntParam(params, 'gold_melt_point', applied),
+  );
+  _applyElementOverride(
+    'fluorine',
+    El.fluorine,
+    applied,
+    reactivity: _trackIntParam(params, 'fluorine_reactivity', applied),
+  );
+  _applyElementOverride(
+    'chlorine',
+    El.chlorine,
+    applied,
+    reactivity: _trackIntParam(params, 'chlorine_reactivity', applied),
+  );
+
+  final tuningAliases = <String, String>{
+    'water_pressure_push': 'waterPressurePush',
+    'water_hydraulic_rate': 'waterHydraulicRate',
+    'fire_oxygen_consume': 'fireOxygenConsume',
+    'dirt_water_erosion': 'dirtWaterErosionBase',
+    'plant_acid_damage': 'plantAcidDamage',
+    'threshold_pressure_erupt': 'thresholdPressureErupt',
+  };
+  final tuningOverrides = <String, dynamic>{};
+  tuningAliases.forEach((sourceKey, targetKey) {
+    final value = params[sourceKey];
+    if (value is num) {
+      tuningOverrides[targetKey] = value;
+      applied.add(sourceKey);
+    }
+  });
+  if (tuningOverrides.isNotEmpty) {
+    SimTuning.applyOverrides(tuningOverrides);
+  }
+
+  final unsupportedFlatKeys = <String>{
+    'evaporation_rate',
+    'fire_spread_prob',
+    'erosion_rate',
+    'moisture_wicking_rate',
+    'latent_heat_absorption',
+    'chunk_collapse_chance',
+    'uranium_heat_rate',
+    'plutonium_heat_rate',
+    'thorium_heat_rate',
+    'phosphorus_ignition_chance',
+    'ore_richness_mult',
+  };
+  for (final key in unsupportedFlatKeys) {
+    if (params.containsKey(key) && !applied.contains(key)) {
+      ignored.add(key);
+    }
+  }
+}
+
+void _applyNestedElementOverrides(
+  Map<String, dynamic> elements,
+  Set<String> applied,
+  Set<String> ignored,
+) {
+  final elementIds = <String, int>{
+    'sand': El.sand,
+    'water': El.water,
+    'oil': El.oil,
+    'stone': El.stone,
+    'metal': El.metal,
+    'ice': El.ice,
+    'wood': El.wood,
+    'dirt': El.dirt,
+    'lava': El.lava,
+    'mud': El.mud,
+    'sodium': El.sodium,
+    'potassium': El.potassium,
+    'mercury': El.mercury,
+    'gold': El.gold,
+    'fluorine': El.fluorine,
+    'chlorine': El.chlorine,
+  };
+
+  elements.forEach((name, value) {
+    final elementConfig = _asStringMap(value);
+    final elementId = elementIds[name];
+    if (elementConfig == null || elementId == null) {
+      ignored.add('elements.$name');
+      return;
+    }
+
+    final supportedKeys = <String>{};
+    _applyElementOverride(
+      name,
+      elementId,
+      applied,
+      density: _trackNestedIntParam(
+        elementConfig,
+        name,
+        'density',
+        applied,
+        supportedKeys,
+      ),
+      gravity: _trackNestedIntParam(
+        elementConfig,
+        name,
+        'gravity',
+        applied,
+        supportedKeys,
+      ),
+      viscosity: _trackNestedIntParam(
+        elementConfig,
+        name,
+        'viscosity',
+        applied,
+        supportedKeys,
+      ),
+      meltPoint: _trackNestedIntParam(
+        elementConfig,
+        name,
+        'meltPoint',
+        applied,
+        supportedKeys,
+      ),
+      boilPoint: _trackNestedIntParam(
+        elementConfig,
+        name,
+        'boilPoint',
+        applied,
+        supportedKeys,
+      ),
+      freezePoint: _trackNestedIntParam(
+        elementConfig,
+        name,
+        'freezePoint',
+        applied,
+        supportedKeys,
+      ),
+      reductionPotential: _trackNestedIntParam(
+        elementConfig,
+        name,
+        'reductionPotential',
+        applied,
+        supportedKeys,
+      ),
+      bondEnergy: _trackNestedIntParam(
+        elementConfig,
+        name,
+        'bondEnergy',
+        applied,
+        supportedKeys,
+      ),
+      fuelValue: _trackNestedIntParam(
+        elementConfig,
+        name,
+        'fuelValue',
+        applied,
+        supportedKeys,
+      ),
+      ignitionTemp: _trackNestedIntParam(
+        elementConfig,
+        name,
+        'ignitionTemp',
+        applied,
+        supportedKeys,
+      ),
+      reactivity: _trackNestedIntParam(
+        elementConfig,
+        name,
+        'reactivity',
+        applied,
+        supportedKeys,
+      ),
+      electronMobility: _trackNestedIntParam(
+        elementConfig,
+        name,
+        'electronMobility',
+        applied,
+        supportedKeys,
+      ),
+      dielectric: _trackNestedIntParam(
+        elementConfig,
+        name,
+        'dielectric',
+        applied,
+        supportedKeys,
+      ),
+    );
+
+    for (final key in elementConfig.keys) {
+      if (!supportedKeys.contains(key)) {
+        ignored.add('elements.$name.$key');
+      }
+    }
+  });
+}
+
+int? _trackIntParam(
+  Map<String, dynamic> params,
+  String key,
+  Set<String> applied,
+) {
+  final value = _intValue(params[key]);
+  if (value != null) {
+    applied.add(key);
+  }
+  return value;
+}
+
+int? _trackNestedIntParam(
+  Map<String, dynamic> params,
+  String elementName,
+  String key,
+  Set<String> applied,
+  Set<String> supportedKeys,
+) {
+  final value = _intValue(params[key]);
+  if (value != null) {
+    applied.add('elements.$elementName.$key');
+    supportedKeys.add(key);
+  }
+  return value;
+}
+
+void _applyElementOverride(
+  String name,
+  int elementId,
+  Set<String> applied, {
+  int? density,
+  int? gravity,
+  int? viscosity,
+  int? meltPoint,
+  int? boilPoint,
+  int? freezePoint,
+  int? surfaceTension,
+  int? reductionPotential,
+  int? bondEnergy,
+  int? fuelValue,
+  int? ignitionTemp,
+  int? reactivity,
+  int? electronMobility,
+  int? dielectric,
+}) {
+  final hasChange = density != null ||
+      gravity != null ||
+      viscosity != null ||
+      meltPoint != null ||
+      boilPoint != null ||
+      freezePoint != null ||
+      surfaceTension != null ||
+      reductionPotential != null ||
+      bondEnergy != null ||
+      fuelValue != null ||
+      ignitionTemp != null ||
+      reactivity != null ||
+      electronMobility != null ||
+      dielectric != null;
+  if (!hasChange) {
+    return;
+  }
+
+  elementProperties[elementId] = elementProperties[elementId].copyWith(
+    density: density,
+    gravity: gravity,
+    viscosity: viscosity,
+    meltPoint: meltPoint,
+    boilPoint: boilPoint,
+    freezePoint: freezePoint,
+    surfaceTension: surfaceTension,
+    reductionPotential: reductionPotential,
+    bondEnergy: bondEnergy,
+    fuelValue: fuelValue,
+    ignitionTemp: ignitionTemp,
+    reactivity: reactivity,
+    electronMobility: electronMobility,
+    dielectric: dielectric,
+  );
+
+  if (density != null) {
+    elementDensity[elementId] = density.clamp(0, 255) as int;
+  }
+  if (gravity != null) {
+    elementGravity[elementId] = gravity.clamp(-128, 127) as int;
+  }
+  if (viscosity != null) {
+    elementViscosity[elementId] = viscosity.clamp(0, 255) as int;
+  }
+  if (surfaceTension != null) {
+    elementSurfaceTension[elementId] = surfaceTension.clamp(0, 255) as int;
+  }
+  if (reactivity != null) {
+    elementReactivity[elementId] = reactivity.clamp(0, 255) as int;
+  }
+  if (reductionPotential != null) {
+    elementReductionPotential[elementId] =
+        reductionPotential.clamp(-128, 127) as int;
+  }
+  if (bondEnergy != null) {
+    elementBondEnergy[elementId] = bondEnergy.clamp(0, 255) as int;
+  }
+  if (fuelValue != null) {
+    elementFuelValue[elementId] = fuelValue.clamp(0, 255) as int;
+  }
+  if (ignitionTemp != null) {
+    elementIgnitionTemp[elementId] = ignitionTemp.clamp(0, 255) as int;
+  }
+  if (electronMobility != null) {
+    elementElectronMobility[elementId] = electronMobility.clamp(0, 255) as int;
+  }
+  if (dielectric != null) {
+    elementDielectric[elementId] = dielectric.clamp(0, 255) as int;
+  }
+
+  applied.add('element:$name');
+}
+
+Map<String, dynamic> _buildEffectiveConfigSnapshot(Map<String, dynamic>? config) {
+  final trackedElements = <String, int>{
+    'water': El.water,
+    'sand': El.sand,
+    'oil': El.oil,
+    'wood': El.wood,
+    'metal': El.metal,
+    'acid': El.acid,
+    'oxygen': El.oxygen,
+    'fire': El.fire,
+    'lava': El.lava,
+    'charcoal': El.charcoal,
+    'methane': El.methane,
+    'salt': El.salt,
+    'rust': El.rust,
+  };
+
+  return <String, dynamic>{
+    'contractVersion': config?['contract_version'] ?? 1,
+    'manifest': config?['manifest'] ?? 'parameter_manifest.json',
+    'sourceLabel': config?['source_label'] ?? 'runtime_export',
+    'elements': {
+      for (final entry in trackedElements.entries)
+        entry.key: _elementSnapshot(entry.value),
+    },
+    'simTuning': {
+      'waterPressurePush': SimTuning.waterPressurePush,
+      'waterHydraulicRate': SimTuning.waterHydraulicRate,
+      'fireOxygenConsume': SimTuning.fireOxygenConsume,
+      'dirtWaterErosionBase': SimTuning.dirtWaterErosionBase,
+      'plantAcidDamage': SimTuning.plantAcidDamage,
+      'thresholdPressureErupt': SimTuning.thresholdPressureErupt,
+    },
+  };
+}
+
+Map<String, dynamic> _elementSnapshot(int elementId) {
+  final props = elementProperties[elementId];
+  return <String, dynamic>{
+    'density': props.density,
+    'gravity': props.gravity,
+    'viscosity': props.viscosity,
+    'meltPoint': props.meltPoint,
+    'boilPoint': props.boilPoint,
+    'freezePoint': props.freezePoint,
+    'surfaceTension': props.surfaceTension,
+    'reductionPotential': props.reductionPotential,
+    'bondEnergy': props.bondEnergy,
+    'fuelValue': props.fuelValue,
+    'ignitionTemp': props.ignitionTemp,
+    'reactivity': props.reactivity,
+    'electronMobility': props.electronMobility,
+    'dielectric': props.dielectric,
+  };
 }
 
 /// Populate grid with a representative test world (matches engine_benchmark).
@@ -232,4 +802,3 @@ void _fillTestWorld(SimulationEngine e) {
 
   e.markAllDirty();
 }
-

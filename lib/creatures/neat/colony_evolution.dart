@@ -138,6 +138,17 @@ class ColonyEvolution {
   /// Direct access to the population for serialization / debugging.
   NeatPopulation get population => _population;
 
+  /// Replace the live population with restored genomes and rebuild caches.
+  void restorePopulation(List<NeatGenome> genomes) {
+    if (!_initialized) {
+      initialize();
+    }
+    _population.genomes
+      ..clear()
+      ..addAll(genomes.map((genome) => genome.copy()));
+    _rebuildAllNetworks();
+  }
+
   void _rebuildAllNetworks() {
     _networkCache.clear();
     for (var i = 0; i < _population.genomes.length; i++) {

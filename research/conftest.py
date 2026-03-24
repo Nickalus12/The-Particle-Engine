@@ -7,6 +7,7 @@ Provides:
 """
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -17,6 +18,7 @@ import pytest
 
 RESEARCH_DIR = Path(__file__).parent
 PROJECT_DIR = RESEARCH_DIR.parent
+TRIAL_CONFIG_ENV = "TRIAL_CONFIG"
 
 
 @pytest.fixture(scope="session")
@@ -41,19 +43,26 @@ def simulation_frame():
     rgba_path = RESEARCH_DIR / "frame.rgba"
     grid_path = RESEARCH_DIR / "grid.bin"
     meta_path = RESEARCH_DIR / "frame_meta.json"
+    active_trial_config = os.environ.get(TRIAL_CONFIG_ENV)
 
-    # Only run Dart export if output files are missing
-    if not (rgba_path.exists() and grid_path.exists() and meta_path.exists()):
+    # Rerun export when a trial config is active so benchmark frames cannot go stale.
+    should_export = (
+        active_trial_config is not None
+        or not (rgba_path.exists() and grid_path.exists() and meta_path.exists())
+    )
+    if should_export:
         dart_exe = shutil.which("dart")
         if dart_exe is None:
             pytest.skip(
                 "Dart not found. Run 'dart run research/export_frame.dart 100' "
                 "manually before running visual tests."
             )
+        env = dict(os.environ)
         subprocess.run(
             [dart_exe, "run", str(RESEARCH_DIR / "export_frame.dart"), "100"],
             cwd=str(PROJECT_DIR),
             check=True,
+            env=env,
         )
 
     width, height = 320, 180

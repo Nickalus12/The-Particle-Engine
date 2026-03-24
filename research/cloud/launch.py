@@ -5,9 +5,10 @@ Creates an instance, waits for it to be ready, uploads the project,
 runs setup, and starts the optimizer.
 
 Usage:
-    python research/cloud/launch.py                    # Default: A6000, 8 vCPUs, 2000 trials
+    python research/cloud/launch.py                    # Default: A100, 16 vCPUs, foundation profile
     python research/cloud/launch.py --trials 5000      # More trials
     python research/cloud/launch.py --gpu h100 --vcpus 16  # Bigger instance
+    python research/cloud/launch.py --mode staged      # Staged runtime optimization only
     python research/cloud/launch.py --status            # Check running instance
     python research/cloud/launch.py --destroy           # Tear down instance
 """
@@ -22,17 +23,20 @@ import sys
 import time
 from pathlib import Path
 
+from env_utils import load_cloud_env
+
 API_BASE = "https://api.thundercompute.com:8443"
-TOKEN = os.environ.get(
-    "TNR_API_TOKEN",
-    "ebfafbe86f71cc7f72dcbdc43a945dd719d59e2820d26b8fb2b0c86bfb3213a4",
-)
+load_cloud_env()
+TOKEN = os.environ.get("TNR_API_TOKEN", "")
 PROJECT_DIR = Path(__file__).resolve().parent.parent.parent
 STATE_FILE = PROJECT_DIR / "research" / "cloud" / ".instance_state.json"
 
 
 def api(method: str, path: str, data: dict | None = None) -> dict:
     """Make an API call to ThunderCompute via curl (bypasses Cloudflare blocks)."""
+    if not TOKEN:
+        print("Missing ThunderCompute API token. Set TNR_API_TOKEN or research/cloud/.thundercompute.env.")
+        sys.exit(1)
     url = f"{API_BASE}{path}"
     cmd = [
         "curl", "-s", "-X", method,
@@ -172,12 +176,17 @@ def show_status() -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="ThunderCompute Instance Manager")
-    parser.add_argument("--gpu", default="a6000", help="GPU type: a6000, a100, h100")
-    parser.add_argument("--vcpus", type=int, default=8, help="Number of vCPUs")
+    parser.add_argument("--gpu", default="a100", help="GPU type: a6000, a100, h100")
+    parser.add_argument("--vcpus", type=int, default=16, help="Number of vCPUs")
     parser.add_argument("--disk", type=int, default=100, help="Disk size GB")
     parser.add_argument("--trials", type=int, default=2000, help="Optuna trials to run")
-    parser.add_argument("--workers", type=int, default=6, help="Parallel workers")
+    parser.add_argument("--workers", type=int, default=8, help="Parallel workers")
     parser.add_argument("--extended", action="store_true", help="Extended param space")
+    parser.add_argument("--mode", default="full-stack",
+                        choices=["legacy", "staged", "chemistry", "full-stack"],
+                        help="Unified training-system mode")
+    parser.add_argument("--profile", default="a100_foundation",
+                        help="Unified training profile")
     parser.add_argument("--status", action="store_true", help="Show instance status")
     parser.add_argument("--destroy", action="store_true", help="Destroy instance")
     parser.add_argument("--create-only", action="store_true", help="Create but don't start optimizer")
@@ -206,10 +215,11 @@ def main():
     print(f"\nOn the instance, run:")
     print(f"  bash ~/particle-engine/research/cloud/setup.sh")
     print(f"  cd ~/particle-engine && source ~/optenv/bin/activate")
-    print(f"  python3 research/cloud/run_optimizer.py run --workers {args.workers} --trials {args.trials}"
-          + (" --extended" if args.extended else ""))
+    print(f"  python3 research/cloud/training_system.py"
+          f" --profile {args.profile} --mode {args.mode}"
+          f" --workers {args.workers} --trials {args.trials}")
     print(f"\nWhen done, pull results:")
-    print(f"  scp -i research/cloud/instance_key.pem root@{ip}:~/particle-engine/research/cloud_optimization_results.json research/")
+    print(f"  scp -i research/cloud/instance_key.pem root@{ip}:~/particle-engine/research/cloud/training_system_summary.json research/cloud/")
     print(f"\nThen destroy:")
     print(f"  python research/cloud/launch.py --destroy")
 

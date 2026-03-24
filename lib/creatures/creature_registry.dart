@@ -1,3 +1,4 @@
+import '../models/game_state.dart';
 import '../simulation/simulation_engine.dart';
 import 'ant.dart';
 import 'ant_colony_ai.dart';
@@ -74,6 +75,80 @@ class CreatureRegistry {
       }
       return false;
     });
+  }
+
+  /// Restore colonies from serialized save snapshots.
+  void restoreFromSnapshots(
+    List<ColonySnapshot> snapshots, {
+    required int gridW,
+    required int gridH,
+  }) {
+    clear();
+
+    var maxId = -1;
+    for (final snapshot in snapshots) {
+      final colony = Colony(
+        originX: snapshot.originX,
+        originY: snapshot.originY,
+        id: snapshot.id,
+        species: snapshot.speciesEnum,
+        gridW: gridW,
+        gridH: gridH,
+      );
+
+      if (snapshot.genomes.isNotEmpty) {
+        colony.evolution.restorePopulation(snapshot.genomes);
+      }
+
+      colony.foodStored = snapshot.foodStored;
+      colony.ageTicks = snapshot.ageTicks;
+      colony.totalSpawned = snapshot.totalSpawned;
+      colony.totalDied = snapshot.totalDied;
+      colony.eggsCount = snapshot.eggsCount;
+      colony.larvaeCount = snapshot.larvaeCount;
+      colony.larvaeFood = snapshot.larvaeFood;
+      colony.isOrphaned = snapshot.isOrphaned;
+      colony.orphanTicks = snapshot.orphanTicks;
+      colony.nestChambers
+        ..clear()
+        ..addAll(snapshot.nestChambers);
+
+      for (final antSnapshot in snapshot.ants) {
+        final int genomeIdx = snapshot.genomes.isEmpty
+            ? 0
+            : antSnapshot.genomeIndex
+                .clamp(0, snapshot.genomes.length - 1)
+                .toInt();
+        final genome = colony.evolution.population.genomes[genomeIdx];
+        final ant = Ant(
+          x: antSnapshot.x,
+          y: antSnapshot.y,
+          colonyId: colony.id,
+          nestX: colony.originX,
+          nestY: colony.originY,
+          genomeIndex: genomeIdx,
+          genome: genome,
+          species: colony.species,
+        );
+        ant.energy = antSnapshot.energy;
+        ant.age = antSnapshot.age;
+        ant.carryingFood = antSnapshot.carryingFood;
+        ant.carriedFoodType = antSnapshot.carriedFoodType;
+        ant.carryingDirt = antSnapshot.carryingDirt;
+        ant.role = antSnapshot.roleEnum;
+        ant.phenotype = colony.makePhenotype(genome, role: ant.role);
+        if (ant.role == AntRole.queen) {
+          colony.queen = ant;
+        }
+        colony.ants.add(ant);
+      }
+
+      _colonies.add(colony);
+      _colonyAIs[colony.id] = AntColonyAI(colony: colony);
+      if (colony.id > maxId) maxId = colony.id;
+    }
+
+    _nextColonyId = maxId + 1;
   }
 
   /// Query neural decision for a cell-based ant at grid position (x, y).

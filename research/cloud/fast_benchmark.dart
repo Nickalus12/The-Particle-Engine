@@ -764,40 +764,71 @@ double _testStructural() {
 // Apply trial config parameters to element registry lookup tables
 // ---------------------------------------------------------------------------
 void _applyTrialConfig(Map<String, dynamic> config) {
-  final params = config['params'] as Map<String, dynamic>? ?? config;
+  final params = _coerceMap(config['params']) ?? config;
+  final elements = _coerceMap(config['elements']);
 
   // Helper to read int param
   int p(String key, int fallback) =>
       (params[key] as num?)?.toInt() ?? fallback;
 
+  int nested(String element, String key, int fallback) {
+    final elementMap = _coerceMap(elements?[element]);
+    return (elementMap?[key] as num?)?.toInt() ?? fallback;
+  }
+
   // Densities
-  elementDensity[El.sand] = p('sand_density', elementDensity[El.sand]);
-  elementDensity[El.water] = p('water_density', elementDensity[El.water]);
-  elementDensity[El.oil] = p('oil_density', elementDensity[El.oil]);
-  elementDensity[El.stone] = p('stone_density', elementDensity[El.stone]);
-  elementDensity[El.metal] = p('metal_density', elementDensity[El.metal]);
-  elementDensity[El.ice] = p('ice_density', elementDensity[El.ice]);
-  elementDensity[El.wood] = p('wood_density', elementDensity[El.wood]);
-  elementDensity[El.dirt] = p('dirt_density', elementDensity[El.dirt]);
-  elementDensity[El.lava] = p('lava_density', elementDensity[El.lava]);
+  elementDensity[El.sand] = nested('sand', 'density', p('sand_density', elementDensity[El.sand]));
+  elementDensity[El.water] = nested('water', 'density', p('water_density', elementDensity[El.water]));
+  elementDensity[El.oil] = nested('oil', 'density', p('oil_density', elementDensity[El.oil]));
+  elementDensity[El.stone] = nested('stone', 'density', p('stone_density', elementDensity[El.stone]));
+  elementDensity[El.metal] = nested('metal', 'density', p('metal_density', elementDensity[El.metal]));
+  elementDensity[El.ice] = nested('ice', 'density', p('ice_density', elementDensity[El.ice]));
+  elementDensity[El.wood] = nested('wood', 'density', p('wood_density', elementDensity[El.wood]));
+  elementDensity[El.dirt] = nested('dirt', 'density', p('dirt_density', elementDensity[El.dirt]));
+  elementDensity[El.lava] = nested('lava', 'density', p('lava_density', elementDensity[El.lava]));
 
   // Gravity
-  elementGravity[El.sand] = p('sand_gravity', elementGravity[El.sand]);
-  elementGravity[El.water] = p('water_gravity', elementGravity[El.water]);
+  elementGravity[El.sand] = nested('sand', 'gravity', p('sand_gravity', elementGravity[El.sand]));
+  elementGravity[El.water] = nested('water', 'gravity', p('water_gravity', elementGravity[El.water]));
 
   // Viscosity
-  elementViscosity[El.oil] = p('oil_viscosity', elementViscosity[El.oil]);
-  elementViscosity[El.mud] = p('mud_viscosity', elementViscosity[El.mud]);
-  elementViscosity[El.lava] = p('lava_viscosity', elementViscosity[El.lava]);
+  elementViscosity[El.oil] = nested('oil', 'viscosity', p('oil_viscosity', elementViscosity[El.oil]));
+  elementViscosity[El.mud] = nested('mud', 'viscosity', p('mud_viscosity', elementViscosity[El.mud]));
+  elementViscosity[El.lava] = nested('lava', 'viscosity', p('lava_viscosity', elementViscosity[El.lava]));
 
   // Surface tension
-  if (params.containsKey('water_surface_tension')) {
-    elementSurfaceTension[El.water] = p('water_surface_tension', elementSurfaceTension[El.water]);
+  final waterConfig = _coerceMap(elements?['water']);
+  if (params.containsKey('water_surface_tension') || waterConfig?.containsKey('surfaceTension') == true) {
+    elementSurfaceTension[El.water] = nested(
+      'water',
+      'surfaceTension',
+      p('water_surface_tension', elementSurfaceTension[El.water]),
+    );
   }
-  if (params.containsKey('oil_surface_tension')) {
-    elementSurfaceTension[El.oil] = p('oil_surface_tension', elementSurfaceTension[El.oil]);
+  final oilConfig = _coerceMap(elements?['oil']);
+  if (params.containsKey('oil_surface_tension') || oilConfig?.containsKey('surfaceTension') == true) {
+    elementSurfaceTension[El.oil] = nested(
+      'oil',
+      'surfaceTension',
+      p('oil_surface_tension', elementSurfaceTension[El.oil]),
+    );
   }
-  if (params.containsKey('acid_surface_tension')) {
-    elementSurfaceTension[El.acid] = p('acid_surface_tension', elementSurfaceTension[El.acid]);
+  final acidConfig = _coerceMap(elements?['acid']);
+  if (params.containsKey('acid_surface_tension') || acidConfig?.containsKey('surfaceTension') == true) {
+    elementSurfaceTension[El.acid] = nested(
+      'acid',
+      'surfaceTension',
+      p('acid_surface_tension', elementSurfaceTension[El.acid]),
+    );
   }
+}
+
+Map<String, dynamic>? _coerceMap(dynamic value) {
+  if (value is Map<String, dynamic>) {
+    return value;
+  }
+  if (value is Map) {
+    return value.map((key, value) => MapEntry(key.toString(), value));
+  }
+  return null;
 }

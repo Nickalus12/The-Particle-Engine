@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
-"""GPU-accelerated Optuna optimizer for unified chemistry parameters.
+"""GPU-accelerated Optuna optimizer for chemistry calibration surrogates.
 
-Runs 10,000+ trials on A100 GPU to find optimal values for:
-  - reductionPotential, bondEnergy, fuelValue, ignitionTemp, reactivity
-  - electronMobility, dielectric
-  - oxidizesInto, oxidationByproduct, reducesInto
+Runs large trial batches on GPU to tune scalar chemistry and electrical
+coefficients, then emits manifest-backed trial configs that can feed the
+shared training system.
 
-Each trial evaluates a parameter set by running batched GPU simulations
-across multiple scenario types and scoring against behavioral targets.
+The current search space covers:
+  - reduction potential
+  - bond energy
+  - fuel value
+  - ignition temperature
+  - reactivity
+  - electron mobility
+  - chemistry-step thresholds
+
+Each trial evaluates a parameter set by running batched surrogate
+simulations across multiple scenario types and scoring against
+behavioral targets.
 
 Usage:
     python research/cloud/gpu_chemistry_optimizer.py run --trials 10000
@@ -49,8 +58,17 @@ EL_OXYGEN = 25; EL_CO2 = 26; EL_CHARCOAL = 29; EL_RUST = 31
 EL_METHANE = 32; EL_SALT = 33
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR.parent))
+
+from parameter_contract import (  # noqa: E402
+    canonical_overrides_from_flat_params,
+    resolve_manifest_path,
+    write_trial_config,
+)
+
 STUDY_DB = SCRIPT_DIR.parent / "chemistry_optuna_study.db"
 RESULTS_FILE = SCRIPT_DIR / "chemistry_optimization_results.json"
+BEST_CONFIG_FILE = SCRIPT_DIR / "chemistry_best_trial_config.json"
 
 # ---------------------------------------------------------------------------
 # Parameter space definition
@@ -568,6 +586,15 @@ def objective(trial: optuna.Trial) -> tuple[float, float]:
     return physics_score, gameplay_score
 
 
+def _canonical_result_payload(params: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "contract_version": 1,
+        "manifest": resolve_manifest_path().name,
+        "source_label": "gpu_chemistry_optimizer",
+        "canonical_overrides": canonical_overrides_from_flat_params(params),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -652,17 +679,23 @@ def show_results(study=None):
     # Save best params to file
     if results:
         best = results[0]
+        write_trial_config(BEST_CONFIG_FILE, best["params"])
         output = {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "source_label": "gpu_chemistry_optimizer",
+            "parameter_manifest": resolve_manifest_path().name,
             "total_trials": len(study.trials),
             "best_overall": best["overall"],
             "best_params": best["params"],
             "best_scores": best["scores"],
+            "best_trial_config": str(BEST_CONFIG_FILE),
+            "best_canonical": _canonical_result_payload(best["params"]),
             "pareto_front": results,
         }
         with open(RESULTS_FILE, "w") as f:
             json.dump(output, f, indent=2)
         print(f"\nBest params saved to {RESULTS_FILE}")
+        print(f"Canonical trial config saved to {BEST_CONFIG_FILE}")
 
         # Also output Dart-ready format
         print("\n--- Dart-ready property values ---")

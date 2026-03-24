@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 
 import '../theme/colors.dart';
@@ -103,6 +101,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                           _SectionHeader('GRAPHICS'),
                           const SizedBox(height: 8),
                           _SettingsPanel(
+                            accent: AppColors.categoryEnergy,
                             children: [
                               _QualitySelector(
                                 label: 'Global Illumination',
@@ -143,6 +142,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                           _SectionHeader('CONTROLS'),
                           const SizedBox(height: 8),
                           _SettingsPanel(
+                            accent: AppColors.primary,
                             children: [
                               _PremiumSlider(
                                 label: 'Brush Size',
@@ -195,6 +195,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                           _SectionHeader('AUDIO'),
                           const SizedBox(height: 8),
                           _SettingsPanel(
+                            accent: AppColors.accent,
                             children: [
                               _PremiumSlider(
                                 label: 'Master',
@@ -236,6 +237,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                           _SectionHeader('ABOUT'),
                           const SizedBox(height: 8),
                           _SettingsPanel(
+                            accent: AppColors.categoryLife,
                             children: [
                               Padding(
                                 padding: const EdgeInsets.all(14),
@@ -384,23 +386,22 @@ class _SectionHeader extends StatelessWidget {
 // =============================================================================
 
 class _SettingsPanel extends StatelessWidget {
-  const _SettingsPanel({required this.children});
+  const _SettingsPanel({
+    required this.children,
+    this.accent = AppColors.primary,
+  });
   final List<Widget> children;
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(ParticleTheme.radiusMedium),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          decoration: ParticleTheme.glassDecoration(
-            borderRadius: ParticleTheme.radiusMedium,
-          ),
-          child: Column(
-            children: children,
-          ),
-        ),
+    return ParticleTheme.atmosphericPanel(
+      accent: accent,
+      borderRadius: ParticleTheme.radiusMedium,
+      blurAmount: 12,
+      baseColor: const Color(0xCC10131C),
+      child: Column(
+        children: children,
       ),
     );
   }

@@ -353,7 +353,7 @@ class Colony {
     );
 
     ant.role = _selectRole();
-    ant.phenotype = _makePhenotype(genome);
+    ant.phenotype = makePhenotype(genome, role: ant.role);
     ants.add(ant);
     totalSpawned++;
   }
@@ -417,16 +417,19 @@ class Colony {
     } else {
       creature.role = AntRole.worker; // Non-ant species use worker role.
     }
-    creature.phenotype = _makePhenotype(genome);
+    creature.phenotype = makePhenotype(creature.brain.genome, role: creature.role);
     ants.add(creature);
     totalSpawned++;
   }
 
   /// Create the correct phenotype for this colony's species.
-  CreaturePhenotype _makePhenotype(dynamic genome) {
+  CreaturePhenotype makePhenotype(dynamic genome, {AntRole? role}) {
     final behavior = genome.behaviorVector as List<double>?;
     final seed = genome.connections.values
         .fold<int>(0, (h, c) => h ^ c.weight.hashCode);
+    if (role == AntRole.queen) {
+      return CreaturePhenotype.forQueen(behavior, seed);
+    }
     switch (species) {
       case CreatureSpecies.ant:
         return CreaturePhenotype.forAnt(behavior, seed);

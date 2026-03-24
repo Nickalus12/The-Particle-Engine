@@ -134,21 +134,11 @@ class _ElementBottomBarState extends State<ElementBottomBar>
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
               child: Container(
-                decoration: BoxDecoration(
-                  // Dark translucent instead of grey glass
-                  color: const Color(0xCC0A0A14),
-                  borderRadius: BorderRadius.circular(ParticleTheme.radiusLarge),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.08),
-                    width: 0.5,
-                  ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x50000000),
-                      blurRadius: 30,
-                      offset: Offset(0, -4),
-                    ),
-                  ],
+                decoration: ParticleTheme.panelDecoration(
+                  borderRadius: ParticleTheme.radiusLarge,
+                  accent: _activeCategory.color,
+                  baseColor: const Color(0xCC0A0A14),
+                  borderOpacity: 0.08,
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,

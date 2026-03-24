@@ -195,16 +195,8 @@ class El {
   static const int mendelevium = 148;
   static const int nobelium = 149;
   static const int lawrencium = 150;
-// -- Periodic Table: Superheavy --
-static const int hassium = 151;
-
-// -- Atmospherics (Phase 7) --
-static const int vapor = 152;
-static const int cloud = 153;
-
-// -- Logic (Phase 8) --
-static const int silicon = 154;
-}  static const int meitnerium = 152;
+  // -- Periodic Table: Superheavy --
+  static const int hassium = 151;
   static const int darmstadtium = 153;
   static const int roentgenium = 154;
   static const int copernicium = 155;
@@ -213,13 +205,18 @@ static const int silicon = 154;
   static const int moscovium = 158;
   static const int livermorium = 159;
   static const int oganesson = 160;
+  static const int meitnerium = 152;
+
+  // -- Atmospherics (Phase 7) --
+  static const int vapor = 161;
+  static const int cloud = 162;
 
   /// Sentinel used only in the UI to represent the eraser tool.
   /// Kept outside the element ID range to avoid conflicts.
   static const int eraser = 255;
 
-  /// Total number of built-in element types (0..160 inclusive).
-  static const int count = 161;
+  /// Total number of built-in element types (0..162 inclusive).
+  static const int count = 163;
 }
 
 // ---------------------------------------------------------------------------
@@ -430,7 +427,9 @@ final List<int> baseColors = List<int>.filled(maxElements, 0x00000000)
   ..[El.flerovium] = 0xFF707078
   ..[El.moscovium] = 0xFF707078
   ..[El.livermorium] = 0xFF707078
-  ..[El.oganesson] = 0xFF707078;
+  ..[El.oganesson] = 0xFF707078
+  ..[El.vapor] = 0x40DCEEFF
+  ..[El.cloud] = 0x90E6EEF8;
 
 /// Human-readable element names (index = element type).
 /// Mutable list sized to [maxElements].
@@ -549,7 +548,8 @@ final List<String> elementNames = List<String>.filled(maxElements, '')
   ..[El.darmstadtium] = 'Darmstadtium' ..[El.roentgenium] = 'Roentgenium'
   ..[El.copernicium] = 'Copernicium' ..[El.nihonium] = 'Nihonium'
   ..[El.flerovium] = 'Flerovium' ..[El.moscovium] = 'Moscovium'
-  ..[El.livermorium] = 'Livermorium' ..[El.oganesson] = 'Oganesson';
+  ..[El.livermorium] = 'Livermorium' ..[El.oganesson] = 'Oganesson'
+  ..[El.vapor] = 'Vapor' ..[El.cloud] = 'Cloud';
 
 /// Static elements unaffected by wind or shake.
 final Set<int> staticElements = {
@@ -1000,6 +1000,88 @@ class ElementProperties {
     this.reactivity = 0,
     this.baseMass = 0,
   });
+
+  ElementProperties copyWith({
+    int? density,
+    int? viscosity,
+    int? gravity,
+    PhysicsState? state,
+    bool? flammable,
+    double? heatConductivity,
+    int? meltPoint,
+    int? boilPoint,
+    int? freezePoint,
+    int? meltsInto,
+    int? boilsInto,
+    int? freezesInto,
+    int? baseTemperature,
+    int? corrosionResistance,
+    int? lightEmission,
+    int? lightR,
+    int? lightG,
+    int? lightB,
+    int? decayRate,
+    int? decaysInto,
+    int? surfaceTension,
+    int? maxVelocity,
+    double? porosity,
+    int? hardness,
+    double? conductivity,
+    double? windResistance,
+    int? heatCapacity,
+    int? reductionPotential,
+    int? bondEnergy,
+    int? fuelValue,
+    int? ignitionTemp,
+    int? oxidizesInto,
+    int? oxidationByproduct,
+    int? reducesInto,
+    int? electronMobility,
+    int? dielectric,
+    int? reactivity,
+    int? baseMass,
+  }) {
+    return ElementProperties(
+      density: density ?? this.density,
+      viscosity: viscosity ?? this.viscosity,
+      gravity: gravity ?? this.gravity,
+      state: state ?? this.state,
+      flammable: flammable ?? this.flammable,
+      heatConductivity: heatConductivity ?? this.heatConductivity,
+      meltPoint: meltPoint ?? this.meltPoint,
+      boilPoint: boilPoint ?? this.boilPoint,
+      freezePoint: freezePoint ?? this.freezePoint,
+      meltsInto: meltsInto ?? this.meltsInto,
+      boilsInto: boilsInto ?? this.boilsInto,
+      freezesInto: freezesInto ?? this.freezesInto,
+      baseTemperature: baseTemperature ?? this.baseTemperature,
+      corrosionResistance: corrosionResistance ?? this.corrosionResistance,
+      lightEmission: lightEmission ?? this.lightEmission,
+      lightR: lightR ?? this.lightR,
+      lightG: lightG ?? this.lightG,
+      lightB: lightB ?? this.lightB,
+      decayRate: decayRate ?? this.decayRate,
+      decaysInto: decaysInto ?? this.decaysInto,
+      surfaceTension: surfaceTension ?? this.surfaceTension,
+      maxVelocity: maxVelocity ?? this.maxVelocity,
+      porosity: porosity ?? this.porosity,
+      hardness: hardness ?? this.hardness,
+      conductivity: conductivity ?? this.conductivity,
+      windResistance: windResistance ?? this.windResistance,
+      heatCapacity: heatCapacity ?? this.heatCapacity,
+      reductionPotential: reductionPotential ?? this.reductionPotential,
+      bondEnergy: bondEnergy ?? this.bondEnergy,
+      fuelValue: fuelValue ?? this.fuelValue,
+      ignitionTemp: ignitionTemp ?? this.ignitionTemp,
+      oxidizesInto: oxidizesInto ?? this.oxidizesInto,
+      oxidationByproduct: oxidationByproduct ?? this.oxidationByproduct,
+      reducesInto: reducesInto ?? this.reducesInto,
+      electronMobility: electronMobility ?? this.electronMobility,
+      dielectric: dielectric ?? this.dielectric,
+      reactivity: reactivity ?? this.reactivity,
+      baseMass: baseMass ?? this.baseMass,
+    );
+  }
 }
 
 /// Pre-computed element properties table indexed by element ID.

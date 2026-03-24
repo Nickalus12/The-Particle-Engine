@@ -3553,64 +3553,6 @@ class SimulationEngine {
   // Main simulation step
   // =========================================================================
 
-  /// Run one frame of physics simulation.
-  ///
-  /// Element behaviors are dispatched via the provided [simulateElement]
-  /// callback, keeping the engine decoupled from specific element logic.
-  void step(void Function(SimulationEngine engine, int el, int x, int y, int idx) simulateElement) {
-    simClock = !simClock;
-    final currentClockBit = simClock ? 0x80 : 0;
-
-    processExplosions();
-
-    // Apply wind force to movable elements
-    if (windForce != 0 && frameCount % 2 == 0) {
-      applyWind();
-    }
-
-    // Update temperature system every 3 frames for performance
-    if (frameCount % 3 == 0) {
-      updateTemperature();
-    }
-
-    // Update pressure system every 4 frames for performance
-    if (frameCount % 4 == 0) {
-      updatePressure();
-    }
-
-    // Update pH, dissolved substances, and charge every 4 frames
-    if (frameCount % 4 == 0) {
-      runPHAndChargePass();
-    }
-
-    // Vibration propagation every 2 frames
-    if (frameCount % 2 == 0) {
-      updateVibration();
-    }
-
-    // Stress accumulation every 4 frames
-    if (frameCount % 4 == 0) {
-      updateStress();
-    }
-
-    // Structural support propagation every 2 frames
-    if (frameCount % 2 == 0) {
-      updateSupport();
-    }
-
-    // Wind field update every 30 frames
-    if (frameCount % 30 == 0) {
-      updateWindField();
-    }
-
-    rainbowHue = (rainbowHue + 3) % 360;
-
-    if (lightningFlashFrames > 0) lightningFlashFrames--;
-
-    final dc = dirtyChunks;
-    final cols = chunkCols;
-    final w = gridW;
-
   /// Process a specific vertical slice of the grid.
   /// Used for parallelized processing.
   void _processSlice(int startX, int endX, bool leftToRight, int currentClockBit, 
@@ -4059,285 +4001,249 @@ class SimTuning {
 
   /// Load tuning from JSON (Optuna results).
   static void loadFromJson(Map<String, dynamic> json) {
+    applyOverrides(json);
+  }
+
+  /// Apply numeric overrides from an external tuning/config payload.
+  static void applyOverrides(Map<String, dynamic> json) {
     json.forEach((key, value) {
-      if (value is int) {
-        _setParam(key, value);
+      if (value is num) {
+        _setParam(key, value.round());
       }
     });
   }
 
+  static final Map<String, void Function(int)> _paramSetters = {
+    'sandToMudRate': (value) => sandToMudRate = value,
+    'sandToMudSubmergedRate': (value) => sandToMudSubmergedRate = value,
+    'waterTntDissolve': (value) => waterTntDissolve = value,
+    'waterSmokeDissolve': (value) => waterSmokeDissolve = value,
+    'waterRainbowSpread': (value) => waterRainbowSpread = value,
+    'waterPlantDamage': (value) => waterPlantDamage = value,
+    'waterAcidPlantDamage': (value) => waterAcidPlantDamage = value,
+    'waterBubbleRate': (value) => waterBubbleRate = value,
+    'waterPressurePush': (value) => waterPressurePush = value,
+    'waterMomentumReset': (value) => waterMomentumReset = value,
+    'waterDirtErosion': (value) => waterDirtErosion = value,
+    'waterSandErosion': (value) => waterSandErosion = value,
+    'waterSedimentDeposit': (value) => waterSedimentDeposit = value,
+    'waterSeepageRate': (value) => waterSeepageRate = value,
+    'waterHydraulicRate': (value) => waterHydraulicRate = value,
+    'waterStoneExit': (value) => waterStoneExit = value,
+    'fireOxygenConsume': (value) => fireOxygenConsume = value,
+    'fireOilLifetimeBase': (value) => fireOilLifetimeBase = value,
+    'fireOilLifetimeVar': (value) => fireOilLifetimeVar = value,
+    'fireLifetimeBase': (value) => fireLifetimeBase = value,
+    'fireLifetimeVar': (value) => fireLifetimeVar = value,
+    'fireBurnoutSmoke': (value) => fireBurnoutSmoke = value,
+    'firePlantIgnite': (value) => firePlantIgnite = value,
+    'fireOilChainIgnite': (value) => fireOilChainIgnite = value,
+    'fireWoodPyrolysis': (value) => fireWoodPyrolysis = value,
+    'fireFlicker': (value) => fireFlicker = value,
+    'fireLateralShimmy': (value) => fireLateralShimmy = value,
+    'iceRegelation': (value) => iceRegelation = value,
+    'iceAmbientMeltDay': (value) => iceAmbientMeltDay = value,
+    'iceAmbientMeltNight': (value) => iceAmbientMeltNight = value,
+    'lightningElectrolysis': (value) => lightningElectrolysis = value,
+    'lightningOilChain': (value) => lightningOilChain = value,
+    'dirtAshAbsorb': (value) => dirtAshAbsorb = value,
+    'dirtWaterErosionBase': (value) => dirtWaterErosionBase = value,
+    'dirtFlowingErosion': (value) => dirtFlowingErosion = value,
+    'plantAcidDamage': (value) => plantAcidDamage = value,
+    'plantDecomposeRate': (value) => plantDecomposeRate = value,
+    'plantO2Produce': (value) => plantO2Produce = value,
+    'plantSeedRateYoung': (value) => plantSeedRateYoung = value,
+    'plantSeedRateOld': (value) => plantSeedRateOld = value,
+    'plantGrassSpread': (value) => plantGrassSpread = value,
+    'plantMushroomSpread': (value) => plantMushroomSpread = value,
+    'plantTreeBranch': (value) => plantTreeBranch = value,
+    'plantTreeRootGrow': (value) => plantTreeRootGrow = value,
+    'plantTreeBranchSkip': (value) => plantTreeBranchSkip = value,
+    'lavaCoolingBase': (value) => lavaCoolingBase = value,
+    'lavaCoolingVar': (value) => lavaCoolingVar = value,
+    'lavaCoolIsolated': (value) => lavaCoolIsolated = value,
+    'lavaCoolIsolatedVar': (value) => lavaCoolIsolatedVar = value,
+    'lavaCoolPartial': (value) => lavaCoolPartial = value,
+    'lavaCoolPartialVar': (value) => lavaCoolPartialVar = value,
+    'lavaSmokeEmit': (value) => lavaSmokeEmit = value,
+    'lavaSteamEmit': (value) => lavaSteamEmit = value,
+    'lavaEruptionOpen': (value) => lavaEruptionOpen = value,
+    'lavaEruptionPressured': (value) => lavaEruptionPressured = value,
+    'lavaEruptThreshLow': (value) => lavaEruptThreshLow = value,
+    'lavaEruptThreshHigh': (value) => lavaEruptThreshHigh = value,
+    'lavaSpatter': (value) => lavaSpatter = value,
+    'lavaIgniteFlammable': (value) => lavaIgniteFlammable = value,
+    'lavaSandToGlass': (value) => lavaSandToGlass = value,
+    'lavaMeltMetal': (value) => lavaMeltMetal = value,
+    'lavaDryMud': (value) => lavaDryMud = value,
+    'snowMeltRateDay': (value) => snowMeltRateDay = value,
+    'snowMeltRateNight': (value) => snowMeltRateNight = value,
+    'snowFreezeWater': (value) => snowFreezeWater = value,
+    'snowAvalanche': (value) => snowAvalanche = value,
+    'snowWindDrift': (value) => snowWindDrift = value,
+    'woodFireSpread': (value) => woodFireSpread = value,
+    'woodBurnoutBase': (value) => woodBurnoutBase = value,
+    'woodBurnoutVar': (value) => woodBurnoutVar = value,
+    'woodCharcoalChance': (value) => woodCharcoalChance = value,
+    'woodAnoxicPyrolysis': (value) => woodAnoxicPyrolysis = value,
+    'woodWaterAbsorb': (value) => woodWaterAbsorb = value,
+    'woodWetBurn': (value) => woodWetBurn = value,
+    'woodPetrify': (value) => woodPetrify = value,
+    'metalFallResist': (value) => metalFallResist = value,
+    'metalRustRate': (value) => metalRustRate = value,
+    'metalSaltRustRate': (value) => metalSaltRustRate = value,
+    'metalSaltRustAlkaline': (value) => metalSaltRustAlkaline = value,
+    'metalHotIgniteRate': (value) => metalHotIgniteRate = value,
+    'metalHotWoodChar': (value) => metalHotWoodChar = value,
+    'metalCondensation': (value) => metalCondensation = value,
+    'smokeLateralDrift': (value) => smokeLateralDrift = value,
+    'bubbleWobble': (value) => bubbleWobble = value,
+    'ashLateralDrift': (value) => ashLateralDrift = value,
+    'ashAvalanche': (value) => ashAvalanche = value,
+    'mudContactDry': (value) => mudContactDry = value,
+    'mudProximityDry': (value) => mudProximityDry = value,
+    'steamAltitudeRain': (value) => steamAltitudeRain = value,
+    'steamDeposition': (value) => steamDeposition = value,
+    'steamIceCondense': (value) => steamIceCondense = value,
+    'steamTrappedSeep': (value) => steamTrappedSeep = value,
+    'acidLifetimeBase': (value) => acidLifetimeBase = value,
+    'acidLifetimeVar': (value) => acidLifetimeVar = value,
+    'acidWaterDilute': (value) => acidWaterDilute = value,
+    'acidIceMelt': (value) => acidIceMelt = value,
+    'acidSnowMelt': (value) => acidSnowMelt = value,
+    'acidLavaReact': (value) => acidLavaReact = value,
+    'acidWaterBubble': (value) => acidWaterBubble = value,
+    'stoneThinSupport': (value) => stoneThinSupport = value,
+    'stoneNoLateralFall': (value) => stoneNoLateralFall = value,
+    'stoneWeatherWater': (value) => stoneWeatherWater = value,
+    'stoneWeatherCrumble': (value) => stoneWeatherCrumble = value,
+    'stoneFrostWeather': (value) => stoneFrostWeather = value,
+    'stoneFrostCrumble': (value) => stoneFrostCrumble = value,
+    'stoneLavaCrack': (value) => stoneLavaCrack = value,
+    'glassLavaMeltBase': (value) => glassLavaMeltBase = value,
+    'glassLavaMeltVar': (value) => glassLavaMeltVar = value,
+    'glassThermalShatter': (value) => glassThermalShatter = value,
+    'avalancheStandard': (value) => avalancheStandard = value,
+    'avalancheExtended': (value) => avalancheExtended = value,
+    'fungusDeathToCompost': (value) => fungusDeathToCompost = value,
+    'fungusAshDecompose': (value) => fungusAshDecompose = value,
+    'fungusWoodRot': (value) => fungusWoodRot = value,
+    'fungusDirtSpread': (value) => fungusDirtSpread = value,
+    'fungusSporulate': (value) => fungusSporulate = value,
+    'fungusMethane': (value) => fungusMethane = value,
+    'sporeFallRate': (value) => sporeFallRate = value,
+    'sporeDriftRate': (value) => sporeDriftRate = value,
+    'compostDryToDirt': (value) => compostDryToDirt = value,
+    'compostNutrient': (value) => compostNutrient = value,
+    'compostMethane': (value) => compostMethane = value,
+    'rustCrumble': (value) => rustCrumble = value,
+    'methaneLateralDrift': (value) => methaneLateralDrift = value,
+    'saltDissolveRate': (value) => saltDissolveRate = value,
+    'saltDeiceRate': (value) => saltDeiceRate = value,
+    'saltPlantKill': (value) => saltPlantKill = value,
+    'algaeGrowRate': (value) => algaeGrowRate = value,
+    'algaeO2Rate': (value) => algaeO2Rate = value,
+    'algaeCO2Absorb': (value) => algaeCO2Absorb = value,
+    'algaeBloomDieoff': (value) => algaeBloomDieoff = value,
+    'algaeBloomThreshold': (value) => algaeBloomThreshold = value,
+    'seaweedO2Rate': (value) => seaweedO2Rate = value,
+    'seaweedCO2Absorb': (value) => seaweedCO2Absorb = value,
+    'seaweedBloomDieoff': (value) => seaweedBloomDieoff = value,
+    'seaweedBloomThreshold': (value) => seaweedBloomThreshold = value,
+    'mossO2Rate': (value) => mossO2Rate = value,
+    'mossCO2Absorb': (value) => mossCO2Absorb = value,
+    'vineAcidDamage': (value) => vineAcidDamage = value,
+    'vineO2Rate': (value) => vineO2Rate = value,
+    'flowerAcidDamage': (value) => flowerAcidDamage = value,
+    'flowerO2Rate': (value) => flowerO2Rate = value,
+    'honeyCrystallize': (value) => honeyCrystallize = value,
+    'honeyCrystallizeLife': (value) => honeyCrystallizeLife = value,
+    'hydrogenDrift': (value) => hydrogenDrift = value,
+    'sulfurTarnishRate': (value) => sulfurTarnishRate = value,
+    'copperPatinaBase': (value) => copperPatinaBase = value,
+    'copperAcidRate': (value) => copperAcidRate = value,
+    'webWaterDissolve': (value) => webWaterDissolve = value,
+    'webDecayLife': (value) => webDecayLife = value,
+    'thornDamage': (value) => thornDamage = value,
+    'antExplorerWander': (value) => antExplorerWander = value,
+    'antBlobDisperse': (value) => antBlobDisperse = value,
+    'colonyMigrationThreshold': (value) => colonyMigrationThreshold = value,
+    'colonyMigrationInterval': (value) => colonyMigrationInterval = value,
+    'queenEggRate': (value) => queenEggRate = value,
+    'queenMaxAge': (value) => queenMaxAge = value,
+    'queenFoodPerEgg': (value) => queenFoodPerEgg = value,
+    'queenMoveSpeed': (value) => queenMoveSpeed = value,
+    'orphanDecayRate': (value) => orphanDecayRate = value,
+    'casteWorkerRatio': (value) => casteWorkerRatio = value,
+    'casteSoldierRatio': (value) => casteSoldierRatio = value,
+    'casteNurseRatio': (value) => casteNurseRatio = value,
+    'casteScoutRatio': (value) => casteScoutRatio = value,
+    'eggHatchTicks': (value) => eggHatchTicks = value,
+    'larvaGrowTicks': (value) => larvaGrowTicks = value,
+    'larvaFoodPerGrow': (value) => larvaFoodPerGrow = value,
+    'digSuccessRate': (value) => digSuccessRate = value,
+    'dirtCarryDrop': (value) => dirtCarryDrop = value,
+    'soldierPatrolRadius': (value) => soldierPatrolRadius = value,
+    'alarmMobilizeRadius': (value) => alarmMobilizeRadius = value,
+    'spiderWebRate': (value) => spiderWebRate = value,
+    'beePollinateRate': (value) => beePollinateRate = value,
+    'wormAerateRate': (value) => wormAerateRate = value,
+    'beetleDecomposeRate': (value) => beetleDecomposeRate = value,
+    'fishEatRate': (value) => fishEatRate = value,
+    'fishMaxPop': (value) => fishMaxPop = value,
+    'beeMaxPop': (value) => beeMaxPop = value,
+    'wormMaxPop': (value) => wormMaxPop = value,
+    'throttleSandAbsorb': (value) => throttleSandAbsorb = value,
+    'throttleWaterMomentum': (value) => throttleWaterMomentum = value,
+    'throttleWaterSeep': (value) => throttleWaterSeep = value,
+    'throttleWaterPressure': (value) => throttleWaterPressure = value,
+    'throttleWaterFountain': (value) => throttleWaterFountain = value,
+    'throttleFireSpread': (value) => throttleFireSpread = value,
+    'throttleFireSmoke': (value) => throttleFireSmoke = value,
+    'throttleIceRegel': (value) => throttleIceRegel = value,
+    'throttleDirtMoistLoss': (value) => throttleDirtMoistLoss = value,
+    'throttleDirtErosion': (value) => throttleDirtErosion = value,
+    'throttlePlantHydration': (value) => throttlePlantHydration = value,
+    'throttlePlantGrow': (value) => throttlePlantGrow = value,
+    'throttlePlantPhotosynthesis': (value) => throttlePlantPhotosynthesis = value,
+    'throttlePlantSeed': (value) => throttlePlantSeed = value,
+    'throttleLavaCool': (value) => throttleLavaCool = value,
+    'throttleMetalHeat': (value) => throttleMetalHeat = value,
+    'throttleStoneCrack': (value) => throttleStoneCrack = value,
+    'throttleFungusGrow': (value) => throttleFungusGrow = value,
+    'throttleAlgaeGrow': (value) => throttleAlgaeGrow = value,
+    'throttleCompostDry': (value) => throttleCompostDry = value,
+    'thresholdPressureHigh': (value) => thresholdPressureHigh = value,
+    'thresholdPressureErupt': (value) => thresholdPressureErupt = value,
+    'thresholdColumnHeavy': (value) => thresholdColumnHeavy = value,
+    'thresholdWaterDeep': (value) => thresholdWaterDeep = value,
+    'thresholdPlantWilt': (value) => thresholdPlantWilt = value,
+    'thresholdPlantMature': (value) => thresholdPlantMature = value,
+    'thresholdPlantSeedAge': (value) => thresholdPlantSeedAge = value,
+    'thresholdPHAcidDamage': (value) => thresholdPHAcidDamage = value,
+    'thresholdPHOptimalLo': (value) => thresholdPHOptimalLo = value,
+    'thresholdPHOptimalHi': (value) => thresholdPHOptimalHi = value,
+    'thresholdLightPhotosynthesis': (value) => thresholdLightPhotosynthesis = value,
+    'thresholdLightFungusMax': (value) => thresholdLightFungusMax = value,
+    'thresholdTempHot': (value) => thresholdTempHot = value,
+    'thresholdTempWarm': (value) => thresholdTempWarm = value,
+    'thresholdMoistureWet': (value) => thresholdMoistureWet = value,
+    'thresholdAgingOld': (value) => thresholdAgingOld = value,
+    'thresholdAgingDecay': (value) => thresholdAgingDecay = value,
+    'thresholdStressFailure': (value) => thresholdStressFailure = value,
+    'thresholdVibrationBreak': (value) => thresholdVibrationBreak = value,
+    'thresholdAlgaeBloom': (value) => thresholdAlgaeBloom = value,
+    'distAntScan': (value) => distAntScan = value,
+    'distForagerScan': (value) => distForagerScan = value,
+    'distLightRadius': (value) => distLightRadius = value,
+    'distWindShelter': (value) => distWindShelter = value,
+    'distVibrationSpread': (value) => distVibrationSpread = value,
+  };
+
   static void _setParam(String key, int value) {
-    switch (key) {
-      // Sand
-      case 'sandToMudRate': sandToMudRate = value;
-      case 'sandToMudSubmergedRate': sandToMudSubmergedRate = value;
-      // Water
-      case 'waterTntDissolve': waterTntDissolve = value;
-      case 'waterSmokeDissolve': waterSmokeDissolve = value;
-      case 'waterRainbowSpread': waterRainbowSpread = value;
-      case 'waterPlantDamage': waterPlantDamage = value;
-      case 'waterAcidPlantDamage': waterAcidPlantDamage = value;
-      case 'waterBubbleRate': waterBubbleRate = value;
-      case 'waterPressurePush': waterPressurePush = value;
-      case 'waterMomentumReset': waterMomentumReset = value;
-      case 'waterDirtErosion': waterDirtErosion = value;
-      case 'waterSandErosion': waterSandErosion = value;
-      case 'waterSedimentDeposit': waterSedimentDeposit = value;
-      case 'waterSeepageRate': waterSeepageRate = value;
-      case 'waterHydraulicRate': waterHydraulicRate = value;
-      case 'waterStoneExit': waterStoneExit = value;
-      // Fire
-      case 'fireOxygenConsume': fireOxygenConsume = value;
-      case 'fireOilLifetimeBase': fireOilLifetimeBase = value;
-      case 'fireOilLifetimeVar': fireOilLifetimeVar = value;
-      case 'fireLifetimeBase': fireLifetimeBase = value;
-      case 'fireLifetimeVar': fireLifetimeVar = value;
-      case 'fireBurnoutSmoke': fireBurnoutSmoke = value;
-      case 'firePlantIgnite': firePlantIgnite = value;
-      case 'fireOilChainIgnite': fireOilChainIgnite = value;
-      case 'fireWoodPyrolysis': fireWoodPyrolysis = value;
-      case 'fireFlicker': fireFlicker = value;
-      case 'fireLateralShimmy': fireLateralShimmy = value;
-      // Ice
-      case 'iceRegelation': iceRegelation = value;
-      case 'iceAmbientMeltDay': iceAmbientMeltDay = value;
-      case 'iceAmbientMeltNight': iceAmbientMeltNight = value;
-      // Lightning
-      case 'lightningElectrolysis': lightningElectrolysis = value;
-      case 'lightningOilChain': lightningOilChain = value;
-      // Dirt
-      case 'dirtAshAbsorb': dirtAshAbsorb = value;
-      case 'dirtWaterErosionBase': dirtWaterErosionBase = value;
-      case 'dirtFlowingErosion': dirtFlowingErosion = value;
-      // Plant
-      case 'plantAcidDamage': plantAcidDamage = value;
-      case 'plantDecomposeRate': plantDecomposeRate = value;
-      case 'plantO2Produce': plantO2Produce = value;
-      case 'plantSeedRateYoung': plantSeedRateYoung = value;
-      case 'plantSeedRateOld': plantSeedRateOld = value;
-      case 'plantGrassSpread': plantGrassSpread = value;
-      case 'plantMushroomSpread': plantMushroomSpread = value;
-      case 'plantTreeBranch': plantTreeBranch = value;
-      case 'plantTreeRootGrow': plantTreeRootGrow = value;
-      case 'plantTreeBranchSkip': plantTreeBranchSkip = value;
-      // Lava
-      case 'lavaCoolingBase': lavaCoolingBase = value;
-      case 'lavaCoolingVar': lavaCoolingVar = value;
-      case 'lavaCoolIsolated': lavaCoolIsolated = value;
-      case 'lavaCoolIsolatedVar': lavaCoolIsolatedVar = value;
-      case 'lavaCoolPartial': lavaCoolPartial = value;
-      case 'lavaCoolPartialVar': lavaCoolPartialVar = value;
-      case 'lavaSmokeEmit': lavaSmokeEmit = value;
-      case 'lavaSteamEmit': lavaSteamEmit = value;
-      case 'lavaEruptionOpen': lavaEruptionOpen = value;
-      case 'lavaEruptionPressured': lavaEruptionPressured = value;
-      case 'lavaEruptThreshLow': lavaEruptThreshLow = value;
-      case 'lavaEruptThreshHigh': lavaEruptThreshHigh = value;
-      case 'lavaSpatter': lavaSpatter = value;
-      case 'lavaIgniteFlammable': lavaIgniteFlammable = value;
-      case 'lavaSandToGlass': lavaSandToGlass = value;
-      case 'lavaMeltMetal': lavaMeltMetal = value;
-      case 'lavaDryMud': lavaDryMud = value;
-      // Snow
-      case 'snowMeltRateDay': snowMeltRateDay = value;
-      case 'snowMeltRateNight': snowMeltRateNight = value;
-      case 'snowFreezeWater': snowFreezeWater = value;
-      case 'snowAvalanche': snowAvalanche = value;
-      case 'snowWindDrift': snowWindDrift = value;
-      // Wood
-      case 'woodFireSpread': woodFireSpread = value;
-      case 'woodBurnoutBase': woodBurnoutBase = value;
-      case 'woodBurnoutVar': woodBurnoutVar = value;
-      case 'woodCharcoalChance': woodCharcoalChance = value;
-      case 'woodAnoxicPyrolysis': woodAnoxicPyrolysis = value;
-      case 'woodWaterAbsorb': woodWaterAbsorb = value;
-      case 'woodWetBurn': woodWetBurn = value;
-      case 'woodPetrify': woodPetrify = value;
-      // Metal
-      case 'metalFallResist': metalFallResist = value;
-      case 'metalRustRate': metalRustRate = value;
-      case 'metalSaltRustRate': metalSaltRustRate = value;
-      case 'metalSaltRustAlkaline': metalSaltRustAlkaline = value;
-      case 'metalHotIgniteRate': metalHotIgniteRate = value;
-      case 'metalHotWoodChar': metalHotWoodChar = value;
-      case 'metalCondensation': metalCondensation = value;
-      // Smoke
-      case 'smokeLateralDrift': smokeLateralDrift = value;
-      // Bubble
-      case 'bubbleWobble': bubbleWobble = value;
-      // Ash
-      case 'ashLateralDrift': ashLateralDrift = value;
-      case 'ashAvalanche': ashAvalanche = value;
-      // Mud
-      case 'mudContactDry': mudContactDry = value;
-      case 'mudProximityDry': mudProximityDry = value;
-      // Steam
-      case 'steamAltitudeRain': steamAltitudeRain = value;
-      case 'steamDeposition': steamDeposition = value;
-      case 'steamIceCondense': steamIceCondense = value;
-      case 'steamTrappedSeep': steamTrappedSeep = value;
-      // Acid
-      case 'acidLifetimeBase': acidLifetimeBase = value;
-      case 'acidLifetimeVar': acidLifetimeVar = value;
-      case 'acidWaterDilute': acidWaterDilute = value;
-      case 'acidIceMelt': acidIceMelt = value;
-      case 'acidSnowMelt': acidSnowMelt = value;
-      case 'acidLavaReact': acidLavaReact = value;
-      case 'acidWaterBubble': acidWaterBubble = value;
-      // Stone
-      case 'stoneThinSupport': stoneThinSupport = value;
-      case 'stoneNoLateralFall': stoneNoLateralFall = value;
-      case 'stoneWeatherWater': stoneWeatherWater = value;
-      case 'stoneWeatherCrumble': stoneWeatherCrumble = value;
-      case 'stoneFrostWeather': stoneFrostWeather = value;
-      case 'stoneFrostCrumble': stoneFrostCrumble = value;
-      case 'stoneLavaCrack': stoneLavaCrack = value;
-      // Glass
-      case 'glassLavaMeltBase': glassLavaMeltBase = value;
-      case 'glassLavaMeltVar': glassLavaMeltVar = value;
-      case 'glassThermalShatter': glassThermalShatter = value;
-      // Avalanche
-      case 'avalancheStandard': avalancheStandard = value;
-      case 'avalancheExtended': avalancheExtended = value;
-      // Fungus
-      case 'fungusDeathToCompost': fungusDeathToCompost = value;
-      case 'fungusAshDecompose': fungusAshDecompose = value;
-      case 'fungusWoodRot': fungusWoodRot = value;
-      case 'fungusDirtSpread': fungusDirtSpread = value;
-      case 'fungusSporulate': fungusSporulate = value;
-      case 'fungusMethane': fungusMethane = value;
-      // Spore
-      case 'sporeFallRate': sporeFallRate = value;
-      case 'sporeDriftRate': sporeDriftRate = value;
-      // Compost
-      case 'compostDryToDirt': compostDryToDirt = value;
-      case 'compostNutrient': compostNutrient = value;
-      case 'compostMethane': compostMethane = value;
-      // Rust
-      case 'rustCrumble': rustCrumble = value;
-      // Methane
-      case 'methaneLateralDrift': methaneLateralDrift = value;
-      // Salt
-      case 'saltDissolveRate': saltDissolveRate = value;
-      case 'saltDeiceRate': saltDeiceRate = value;
-      case 'saltPlantKill': saltPlantKill = value;
-      // Algae
-      case 'algaeGrowRate': algaeGrowRate = value;
-      case 'algaeO2Rate': algaeO2Rate = value;
-      case 'algaeCO2Absorb': algaeCO2Absorb = value;
-      case 'algaeBloomDieoff': algaeBloomDieoff = value;
-      case 'algaeBloomThreshold': algaeBloomThreshold = value;
-      // Seaweed
-      case 'seaweedO2Rate': seaweedO2Rate = value;
-      case 'seaweedCO2Absorb': seaweedCO2Absorb = value;
-      case 'seaweedBloomDieoff': seaweedBloomDieoff = value;
-      case 'seaweedBloomThreshold': seaweedBloomThreshold = value;
-      // Moss
-      case 'mossO2Rate': mossO2Rate = value;
-      case 'mossCO2Absorb': mossCO2Absorb = value;
-      // Vine
-      case 'vineAcidDamage': vineAcidDamage = value;
-      case 'vineO2Rate': vineO2Rate = value;
-      // Flower
-      case 'flowerAcidDamage': flowerAcidDamage = value;
-      case 'flowerO2Rate': flowerO2Rate = value;
-      // Honey
-      case 'honeyCrystallize': honeyCrystallize = value;
-      case 'honeyCrystallizeLife': honeyCrystallizeLife = value;
-      // Hydrogen
-      case 'hydrogenDrift': hydrogenDrift = value;
-      // Sulfur
-      case 'sulfurTarnishRate': sulfurTarnishRate = value;
-      // Copper
-      case 'copperPatinaBase': copperPatinaBase = value;
-      case 'copperAcidRate': copperAcidRate = value;
-      // Web
-      case 'webWaterDissolve': webWaterDissolve = value;
-      case 'webDecayLife': webDecayLife = value;
-      // Thorn
-      case 'thornDamage': thornDamage = value;
-      // Ant
-      case 'antExplorerWander': antExplorerWander = value;
-      case 'antBlobDisperse': antBlobDisperse = value;
-      case 'colonyMigrationThreshold': colonyMigrationThreshold = value;
-      case 'colonyMigrationInterval': colonyMigrationInterval = value;
-      // Queen
-      case 'queenEggRate': queenEggRate = value;
-      case 'queenMaxAge': queenMaxAge = value;
-      case 'queenFoodPerEgg': queenFoodPerEgg = value;
-      case 'queenMoveSpeed': queenMoveSpeed = value;
-      case 'orphanDecayRate': orphanDecayRate = value;
-      // Castes
-      case 'casteWorkerRatio': casteWorkerRatio = value;
-      case 'casteSoldierRatio': casteSoldierRatio = value;
-      case 'casteNurseRatio': casteNurseRatio = value;
-      case 'casteScoutRatio': casteScoutRatio = value;
-      // Brood
-      case 'eggHatchTicks': eggHatchTicks = value;
-      case 'larvaGrowTicks': larvaGrowTicks = value;
-      case 'larvaFoodPerGrow': larvaFoodPerGrow = value;
-      // Nest Building
-      case 'digSuccessRate': digSuccessRate = value;
-      case 'dirtCarryDrop': dirtCarryDrop = value;
-      case 'soldierPatrolRadius': soldierPatrolRadius = value;
-      case 'alarmMobilizeRadius': alarmMobilizeRadius = value;
-      // Species-Specific
-      case 'spiderWebRate': spiderWebRate = value;
-      case 'beePollinateRate': beePollinateRate = value;
-      case 'wormAerateRate': wormAerateRate = value;
-      case 'beetleDecomposeRate': beetleDecomposeRate = value;
-      case 'fishEatRate': fishEatRate = value;
-      case 'fishMaxPop': fishMaxPop = value;
-      case 'beeMaxPop': beeMaxPop = value;
-      case 'wormMaxPop': wormMaxPop = value;
-      // Throttles
-      case 'throttleSandAbsorb': throttleSandAbsorb = value;
-      case 'throttleWaterMomentum': throttleWaterMomentum = value;
-      case 'throttleWaterSeep': throttleWaterSeep = value;
-      case 'throttleWaterPressure': throttleWaterPressure = value;
-      case 'throttleWaterFountain': throttleWaterFountain = value;
-      case 'throttleFireSpread': throttleFireSpread = value;
-      case 'throttleFireSmoke': throttleFireSmoke = value;
-      case 'throttleIceRegel': throttleIceRegel = value;
-      case 'throttleDirtMoistLoss': throttleDirtMoistLoss = value;
-      case 'throttleDirtErosion': throttleDirtErosion = value;
-      case 'throttlePlantHydration': throttlePlantHydration = value;
-      case 'throttlePlantGrow': throttlePlantGrow = value;
-      case 'throttlePlantPhotosynthesis': throttlePlantPhotosynthesis = value;
-      case 'throttlePlantSeed': throttlePlantSeed = value;
-      case 'throttleLavaCool': throttleLavaCool = value;
-      case 'throttleMetalHeat': throttleMetalHeat = value;
-      case 'throttleStoneCrack': throttleStoneCrack = value;
-      case 'throttleFungusGrow': throttleFungusGrow = value;
-      case 'throttleAlgaeGrow': throttleAlgaeGrow = value;
-      case 'throttleCompostDry': throttleCompostDry = value;
-      // Thresholds
-      case 'thresholdPressureHigh': thresholdPressureHigh = value;
-      case 'thresholdPressureErupt': thresholdPressureErupt = value;
-      case 'thresholdColumnHeavy': thresholdColumnHeavy = value;
-      case 'thresholdWaterDeep': thresholdWaterDeep = value;
-      case 'thresholdPlantWilt': thresholdPlantWilt = value;
-      case 'thresholdPlantMature': thresholdPlantMature = value;
-      case 'thresholdPlantSeedAge': thresholdPlantSeedAge = value;
-      case 'thresholdPHAcidDamage': thresholdPHAcidDamage = value;
-      case 'thresholdPHOptimalLo': thresholdPHOptimalLo = value;
-      case 'thresholdPHOptimalHi': thresholdPHOptimalHi = value;
-      case 'thresholdLightPhotosynthesis': thresholdLightPhotosynthesis = value;
-      case 'thresholdLightFungusMax': thresholdLightFungusMax = value;
-      case 'thresholdTempHot': thresholdTempHot = value;
-      case 'thresholdTempWarm': thresholdTempWarm = value;
-      case 'thresholdMoistureWet': thresholdMoistureWet = value;
-      case 'thresholdAgingOld': thresholdAgingOld = value;
-      case 'thresholdAgingDecay': thresholdAgingDecay = value;
-      case 'thresholdStressFailure': thresholdStressFailure = value;
-      case 'thresholdVibrationBreak': thresholdVibrationBreak = value;
-      case 'thresholdAlgaeBloom': thresholdAlgaeBloom = value;
-      // Distances
-      case 'distAntScan': distAntScan = value;
-      case 'distForagerScan': distForagerScan = value;
-      case 'distLightRadius': distLightRadius = value;
-      case 'distWindShelter': distWindShelter = value;
-      case 'distVibrationSpread': distVibrationSpread = value;
+    final setter = _paramSetters[key];
+    if (setter != null) {
+      setter(value);
     }
   }
 

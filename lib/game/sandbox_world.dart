@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flame/components.dart';
 
 import '../creatures/ant.dart';
 import '../creatures/creature_registry.dart';
+import '../models/game_state.dart';
 import '../rendering/gi_post_process.dart';
+import '../services/save_service.dart';
 import '../simulation/element_behaviors.dart';
 import '../simulation/element_registry.dart';
 import '../simulation/plant_colony.dart';
@@ -39,6 +43,8 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
   late final PheromoneRenderer pheromoneRenderer;
   late final ReactionEffectSystem reactionEffects;
   late final GIPostProcess giPostProcess;
+  final SaveService _saveService = SaveService();
+  bool _autoSaveInFlight = false;
 
   /// Whether simulation is paused.
   bool paused = false;
@@ -121,6 +127,11 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
     if (game.loadState != null) {
       // Restore from saved state.
       game.loadState!.restoreInto(simulation);
+      creatures.restoreFromSnapshots(
+        game.loadState!.colonies,
+        gridW: simulation.gridW,
+        gridH: simulation.gridH,
+      );
     } else if (!game.isBlankCanvas && game.worldConfig != null) {
       // Generate procedural world from config.
       final gridData = WorldGenerator.generate(game.worldConfig!);
@@ -135,6 +146,9 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
       gridData.loadIntoEngine(simulation);
     }
     // else: blank canvas — grid stays empty.
+
+    game.isNight = simulation.isNight;
+    game.dayNightTransition = simulation.isNight ? 1.0 : 0.0;
 
     // Propagate cell size to particle effects system.
     ReactionParticles.cellSize = cellSize;
@@ -235,6 +249,15 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
         }
       }
     }
+
+    if (!_autoSaveInFlight) {
+      _autoSaveInFlight = true;
+      unawaited(
+        _saveService.tickAutoSave(captureGameState).whenComplete(() {
+          _autoSaveInFlight = false;
+        }),
+      );
+    }
   }
 
   /// Spawn a new colony at the given grid position.
@@ -250,5 +273,25 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
   /// Toggle pheromone visualization.
   void togglePheromoneView() {
     pheromoneRenderer.enabled = !pheromoneRenderer.enabled;
+  }
+
+  GameState captureGameState() =>
+      GameState.capture(simulation, creatures.colonies);
+
+  void clearWorld() {
+    simulation.clear();
+    simulation.frameCount = 0;
+    simulation.gravityDir = 1;
+    simulation.windForce = 0;
+    simulation.isNight = false;
+    creatures.clear();
+    plantColonies.clear();
+    game.isNight = false;
+    game.dayNightTransition = 0.0;
+  }
+
+  Future<void> saveCurrentWorld({required int slot, String? name}) async {
+    await _saveService.save(captureGameState(), slot: slot, name: name);
+    _saveService.resetAutoSaveTimer();
   }
 }

@@ -1,9 +1,8 @@
 import 'dart:convert';
-import 'dart:io';
-
-import 'package:path_provider/path_provider.dart';
 
 import '../models/game_state.dart';
+import 'save_storage_stub.dart'
+    if (dart.library.io) 'save_storage_io.dart' as save_storage;
 
 /// Metadata for a save slot, shown in the load screen before the full
 /// snapshot is deserialised.
@@ -67,14 +66,18 @@ class SaveSlotMeta {
   }
 }
 
-/// Persists and restores [GameState] snapshots to local files.
+/// Persists and restores [GameState] snapshots to local storage.
 ///
 /// Supports multiple save slots, each stored as a pair of files:
 ///   - `save_<slot>.json`  — full world snapshot (grid + colonies + genomes)
 ///   - `save_<slot>.meta`  — lightweight metadata for the slot selector UI
 ///
-/// Uses [path_provider] for the app's documents directory. Save data is
-/// compressed using RLE in [GameState.toJson] and written as UTF-8 JSON.
+/// The storage backend is selected per platform:
+/// - IO platforms use app documents files.
+/// - Non-IO platforms fall back to preferences-backed string storage.
+///
+/// Save data is compressed using RLE in [GameState.toJson] and written as
+/// UTF-8 JSON.
 class SaveService {
   /// Maximum number of save slots.
   static const int maxSlots = 5;
@@ -91,30 +94,11 @@ class SaveService {
   /// Whether auto-save is enabled.
   bool autoSaveEnabled = true;
 
-  /// Cached save directory path.
-  String? _saveDirPath;
+  final save_storage.SaveStorage _storage = save_storage.createSaveStorage();
 
-  // ── Directory management ──────────────────────────────────────────────
+  String _slotFileName(int slot) => 'save_$slot.json';
 
-  /// Get or create the save directory.
-  Future<Directory> _getSaveDir() async {
-    if (_saveDirPath != null) {
-      return Directory(_saveDirPath!);
-    }
-    final appDir = await getApplicationDocumentsDirectory();
-    final saveDir = Directory('${appDir.path}/particle_engine_saves');
-    if (!await saveDir.exists()) {
-      await saveDir.create(recursive: true);
-    }
-    _saveDirPath = saveDir.path;
-    return saveDir;
-  }
-
-  File _slotFile(String dirPath, int slot) =>
-      File('$dirPath/save_$slot.json');
-
-  File _metaFile(String dirPath, int slot) =>
-      File('$dirPath/save_$slot.meta');
+  String _metaFileName(int slot) => 'save_$slot.meta';
 
   // ── Save ──────────────────────────────────────────────────────────────
 
@@ -122,7 +106,6 @@ class SaveService {
   ///
   /// Writes both the full snapshot and a lightweight metadata file.
   Future<void> save(GameState state, {int slot = 0, String? name}) async {
-    final dir = await _getSaveDir();
     final saveName = name ?? 'Save ${slot == autoSaveSlot ? "(Auto)" : slot}';
 
     // Write metadata first (quick, so UI updates fast).
@@ -136,16 +119,14 @@ class SaveService {
       colonyCount: state.colonies.length,
       fileSizeBytes: 0, // Updated after writing the data file.
     );
-    await _metaFile(dir.path, slot)
-        .writeAsString(jsonEncode(meta.toJson()));
+    await _storage.write(_metaFileName(slot), jsonEncode(meta.toJson()));
 
     // Write the full snapshot.
     final json = jsonEncode(state.toJson());
-    final dataFile = _slotFile(dir.path, slot);
-    await dataFile.writeAsString(json);
+    await _storage.write(_slotFileName(slot), json);
 
     // Update meta with actual file size.
-    final fileSize = await dataFile.length();
+    final fileSize = await _storage.length(_slotFileName(slot));
     final metaWithSize = SaveSlotMeta(
       slot: meta.slot,
       name: meta.name,
@@ -156,21 +137,16 @@ class SaveService {
       colonyCount: meta.colonyCount,
       fileSizeBytes: fileSize,
     );
-    await _metaFile(dir.path, slot)
-        .writeAsString(jsonEncode(metaWithSize.toJson()));
+    await _storage.write(_metaFileName(slot), jsonEncode(metaWithSize.toJson()));
   }
 
   // ── Load ──────────────────────────────────────────────────────────────
 
   /// Load a [GameState] from the given [slot], or `null` if none exists.
   Future<GameState?> load(int slot) async {
-    final dir = await _getSaveDir();
-    final dataFile = _slotFile(dir.path, slot);
-
-    if (!await dataFile.exists()) return null;
-
-    final json = jsonDecode(await dataFile.readAsString())
-        as Map<String, dynamic>;
+    final raw = await _storage.read(_slotFileName(slot));
+    if (raw == null) return null;
+    final json = jsonDecode(raw) as Map<String, dynamic>;
     return GameState.fromJson(json);
   }
 
@@ -180,21 +156,16 @@ class SaveService {
   ///
   /// Returns a list of up to [maxSlots] entries. Empty slots are omitted.
   Future<List<SaveSlotMeta>> listSlots() async {
-    final dir = await _getSaveDir();
     final results = <SaveSlotMeta>[];
 
     for (var slot = 0; slot < maxSlots; slot++) {
-      final metaFile = _metaFile(dir.path, slot);
-      if (!await metaFile.exists()) continue;
+      final rawMeta = await _storage.read(_metaFileName(slot));
+      if (rawMeta == null) continue;
 
       try {
-        final json = jsonDecode(await metaFile.readAsString())
-            as Map<String, dynamic>;
-        final dataFile = _slotFile(dir.path, slot);
-        final fileSize =
-            await dataFile.exists() ? await dataFile.length() : 0;
-        results.add(
-            SaveSlotMeta.fromJson(json, fileSizeBytes: fileSize));
+        final json = jsonDecode(rawMeta) as Map<String, dynamic>;
+        final fileSize = await _storage.length(_slotFileName(slot));
+        results.add(SaveSlotMeta.fromJson(json, fileSizeBytes: fileSize));
       } catch (_) {
         // Corrupted meta — skip.
       }
@@ -205,19 +176,15 @@ class SaveService {
 
   /// Check whether a slot has save data.
   Future<bool> slotExists(int slot) async {
-    final dir = await _getSaveDir();
-    return _slotFile(dir.path, slot).exists();
+    return _storage.exists(_slotFileName(slot));
   }
 
   // ── Delete ────────────────────────────────────────────────────────────
 
   /// Delete the save in [slot].
   Future<void> delete(int slot) async {
-    final dir = await _getSaveDir();
-    final dataFile = _slotFile(dir.path, slot);
-    final metaFile = _metaFile(dir.path, slot);
-    if (await dataFile.exists()) await dataFile.delete();
-    if (await metaFile.exists()) await metaFile.delete();
+    await _storage.delete(_slotFileName(slot));
+    await _storage.delete(_metaFileName(slot));
   }
 
   /// Delete all saves.

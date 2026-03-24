@@ -1,0 +1,933 @@
+{
+  "version": 1,
+  "status": "starter",
+  "description": "Canonical starter manifest for runtime-overridable element properties and simulation tunables. This is the foundation for future SciPy calibration and Optuna search surfaces.",
+  "owners": {
+    "elements": "lib/simulation/element_registry.dart",
+    "sim_tuning": "lib/simulation/simulation_engine.dart",
+    "world": "lib/simulation/world_gen/world_config.dart",
+    "runtime_export": "research/export_frame.dart"
+  },
+  "parameters": {
+    "elements.sand.density": {
+      "legacy_flat": "sand_density",
+      "type": "int",
+      "default": 150,
+      "min": 120,
+      "max": 180,
+      "group": "element_transport",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.sand.gravity": {
+      "legacy_flat": "sand_gravity",
+      "type": "int",
+      "default": 2,
+      "min": 1,
+      "max": 3,
+      "group": "element_transport",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.sand.meltPoint": {
+      "legacy_flat": "sand_melt_point",
+      "type": "int",
+      "default": 220,
+      "min": 200,
+      "max": 250,
+      "group": "element_thermodynamics",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.water.density": {
+      "legacy_flat": "water_density",
+      "type": "int",
+      "default": 100,
+      "min": 80,
+      "max": 120,
+      "group": "element_transport",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.water.gravity": {
+      "legacy_flat": "water_gravity",
+      "type": "int",
+      "default": 1,
+      "min": 1,
+      "max": 2,
+      "group": "element_transport",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.water.boilPoint": {
+      "legacy_flat": "water_boil_point",
+      "type": "int",
+      "default": 180,
+      "min": 160,
+      "max": 200,
+      "group": "element_thermodynamics",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.water.freezePoint": {
+      "legacy_flat": "water_freeze_point",
+      "type": "int",
+      "default": 30,
+      "min": 20,
+      "max": 50,
+      "group": "element_thermodynamics",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.water.surfaceTension": {
+      "legacy_flat": "water_surface_tension",
+      "type": "int",
+      "default": 5,
+      "min": 1,
+      "max": 12,
+      "group": "element_transport",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.oil.density": {
+      "legacy_flat": "oil_density",
+      "type": "int",
+      "default": 80,
+      "min": 60,
+      "max": 95,
+      "group": "element_transport",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.oil.viscosity": {
+      "legacy_flat": "oil_viscosity",
+      "type": "int",
+      "default": 2,
+      "min": 1,
+      "max": 4,
+      "group": "element_transport",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.stone.density": {
+      "legacy_flat": "stone_density",
+      "type": "int",
+      "default": 255,
+      "min": 230,
+      "max": 255,
+      "group": "element_mechanics",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.metal.density": {
+      "legacy_flat": "metal_density",
+      "type": "int",
+      "default": 240,
+      "min": 235,
+      "max": 255,
+      "group": "element_mechanics",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.ice.density": {
+      "legacy_flat": "ice_density",
+      "type": "int",
+      "default": 90,
+      "min": 80,
+      "max": 100,
+      "group": "element_transport",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.ice.meltPoint": {
+      "legacy_flat": "ice_melt_point",
+      "type": "int",
+      "default": 40,
+      "min": 30,
+      "max": 60,
+      "group": "element_thermodynamics",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.wood.density": {
+      "legacy_flat": "wood_density",
+      "type": "int",
+      "default": 85,
+      "min": 60,
+      "max": 100,
+      "group": "element_mechanics",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.dirt.density": {
+      "legacy_flat": "dirt_density",
+      "type": "int",
+      "default": 145,
+      "min": 130,
+      "max": 160,
+      "group": "element_transport",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.lava.density": {
+      "legacy_flat": "lava_density",
+      "type": "int",
+      "default": 200,
+      "min": 180,
+      "max": 220,
+      "group": "element_transport",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.lava.viscosity": {
+      "legacy_flat": "lava_viscosity",
+      "type": "int",
+      "default": 4,
+      "min": 3,
+      "max": 6,
+      "group": "element_transport",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.mud.viscosity": {
+      "legacy_flat": "mud_viscosity",
+      "type": "int",
+      "default": 3,
+      "min": 2,
+      "max": 5,
+      "group": "element_transport",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.sodium.reactivity": {
+      "legacy_flat": "sodium_reactivity",
+      "type": "int",
+      "default": 200,
+      "min": 160,
+      "max": 255,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.potassium.reactivity": {
+      "legacy_flat": "potassium_reactivity",
+      "type": "int",
+      "default": 220,
+      "min": 180,
+      "max": 255,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.mercury.density": {
+      "legacy_flat": "mercury_density",
+      "type": "int",
+      "default": 210,
+      "min": 190,
+      "max": 240,
+      "group": "element_transport",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.mercury.viscosity": {
+      "legacy_flat": "mercury_viscosity",
+      "type": "int",
+      "default": 2,
+      "min": 1,
+      "max": 4,
+      "group": "element_transport",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.gold.density": {
+      "legacy_flat": "gold_density",
+      "type": "int",
+      "default": 255,
+      "min": 220,
+      "max": 255,
+      "group": "element_mechanics",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.gold.meltPoint": {
+      "legacy_flat": "gold_melt_point",
+      "type": "int",
+      "default": 150,
+      "min": 150,
+      "max": 200,
+      "group": "element_thermodynamics",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.fluorine.reactivity": {
+      "legacy_flat": "fluorine_reactivity",
+      "type": "int",
+      "default": 255,
+      "min": 200,
+      "max": 255,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.chlorine.reactivity": {
+      "legacy_flat": "chlorine_reactivity",
+      "type": "int",
+      "default": 160,
+      "min": 160,
+      "max": 230,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "sim_tuning.waterPressurePush": {
+      "legacy_flat": "water_pressure_push",
+      "type": "int",
+      "default": 8,
+      "min": 4,
+      "max": 16,
+      "group": "sim_transport",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "sim_tuning.waterHydraulicRate": {
+      "legacy_flat": "water_hydraulic_rate",
+      "type": "int",
+      "default": 3,
+      "min": 1,
+      "max": 8,
+      "group": "sim_transport",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "sim_tuning.fireOxygenConsume": {
+      "legacy_flat": "fire_oxygen_consume",
+      "type": "int",
+      "default": 3,
+      "min": 1,
+      "max": 10,
+      "group": "sim_reactions",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "sim_tuning.dirtWaterErosionBase": {
+      "legacy_flat": "dirt_water_erosion",
+      "type": "int",
+      "default": 10,
+      "min": 5,
+      "max": 25,
+      "group": "sim_erosion",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "sim_tuning.plantAcidDamage": {
+      "legacy_flat": "plant_acid_damage",
+      "type": "int",
+      "default": 3,
+      "min": 1,
+      "max": 10,
+      "group": "sim_reactions",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "sim_tuning.thresholdPressureErupt": {
+      "legacy_flat": "threshold_pressure_erupt",
+      "type": "int",
+      "default": 16,
+      "min": 10,
+      "max": 40,
+      "group": "sim_thresholds",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "world.oreRichness": {
+      "legacy_flat": "ore_richness_mult",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.5,
+      "max": 2.0,
+      "group": "world_generation",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": false
+    },
+    "world.terrainScale": {
+      "legacy_flat": "terrain_scale",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.3,
+      "max": 2.5,
+      "group": "world_generation",
+      "stage": "optuna",
+      "runtime_mutable": false
+    },
+    "world.waterLevel": {
+      "legacy_flat": "water_level",
+      "type": "float",
+      "default": 0.4,
+      "min": 0.05,
+      "max": 0.8,
+      "group": "world_generation",
+      "stage": "optuna",
+      "runtime_mutable": false
+    },
+    "world.caveDensity": {
+      "legacy_flat": "cave_density",
+      "type": "float",
+      "default": 0.3,
+      "min": 0.0,
+      "max": 0.85,
+      "group": "world_generation",
+      "stage": "optuna",
+      "runtime_mutable": false
+    },
+    "world.vegetation": {
+      "legacy_flat": "vegetation",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.0,
+      "max": 0.95,
+      "group": "world_generation",
+      "stage": "optuna",
+      "runtime_mutable": false
+    },
+    "world.copperDepth": {
+      "legacy_flat": "copper_depth",
+      "type": "float",
+      "default": 0.3,
+      "min": 0.15,
+      "max": 0.45,
+      "group": "world_generation",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": false
+    },
+    "world.metalDepth": {
+      "legacy_flat": "metal_depth",
+      "type": "float",
+      "default": 0.6,
+      "min": 0.4,
+      "max": 0.75,
+      "group": "world_generation",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": false
+    },
+    "world.coalSeams": {
+      "legacy_flat": "coal_seams",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.0,
+      "max": 0.55,
+      "group": "world_generation",
+      "stage": "optuna",
+      "runtime_mutable": false
+    },
+    "world.sulfurNearLava": {
+      "legacy_flat": "sulfur_near_lava",
+      "type": "float",
+      "default": 0.5,
+      "min": 0.0,
+      "max": 0.75,
+      "group": "world_generation",
+      "stage": "optuna",
+      "runtime_mutable": false
+    },
+    "world.saltDeposits": {
+      "legacy_flat": "salt_deposits",
+      "type": "float",
+      "default": 0.15,
+      "min": 0.0,
+      "max": 0.45,
+      "group": "world_generation",
+      "stage": "optuna",
+      "runtime_mutable": false
+    },
+    "world.clayNearWater": {
+      "legacy_flat": "clay_near_water",
+      "type": "float",
+      "default": 0.4,
+      "min": 0.05,
+      "max": 0.6,
+      "group": "world_generation",
+      "stage": "optuna",
+      "runtime_mutable": false
+    },
+    "world.volcanicActivity": {
+      "legacy_flat": "volcanic_activity",
+      "type": "float",
+      "default": 0.3,
+      "min": 0.0,
+      "max": 0.7,
+      "group": "world_generation",
+      "stage": "optuna",
+      "runtime_mutable": false
+    },
+    "world.co2InCaves": {
+      "legacy_flat": "co2_in_caves",
+      "type": "float",
+      "default": 0.3,
+      "min": 0.0,
+      "max": 0.6,
+      "group": "world_generation",
+      "stage": "optuna",
+      "runtime_mutable": false
+    },
+    "world.compostDepth": {
+      "legacy_flat": "compost_depth",
+      "type": "float",
+      "default": 0.4,
+      "min": 0.0,
+      "max": 0.65,
+      "group": "world_generation",
+      "stage": "optuna",
+      "runtime_mutable": false
+    },
+    "world.fungalGrowth": {
+      "legacy_flat": "fungal_growth",
+      "type": "float",
+      "default": 0.3,
+      "min": 0.0,
+      "max": 0.65,
+      "group": "world_generation",
+      "stage": "optuna",
+      "runtime_mutable": false
+    },
+    "world.algaeInWater": {
+      "legacy_flat": "algae_in_water",
+      "type": "float",
+      "default": 0.4,
+      "min": 0.0,
+      "max": 0.75,
+      "group": "world_generation",
+      "stage": "optuna",
+      "runtime_mutable": false
+    },
+    "world.seedScatter": {
+      "legacy_flat": "seed_scatter",
+      "type": "float",
+      "default": 0.3,
+      "min": 0.05,
+      "max": 0.6,
+      "group": "world_generation",
+      "stage": "optuna",
+      "runtime_mutable": false
+    },
+    "world.conductiveVeins": {
+      "legacy_flat": "conductive_veins",
+      "type": "float",
+      "default": 0.3,
+      "min": 0.0,
+      "max": 0.65,
+      "group": "world_generation",
+      "stage": "optuna",
+      "runtime_mutable": false
+    },
+    "world.insulatingLayers": {
+      "legacy_flat": "insulating_layers",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.0,
+      "max": 0.45,
+      "group": "world_generation",
+      "stage": "optuna",
+      "runtime_mutable": false
+    },
+    "elements.wood.reductionPotential": {
+      "legacy_flat": "wood_redpot",
+      "type": "int",
+      "default": -30,
+      "min": -60,
+      "max": -10,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.wood.bondEnergy": {
+      "legacy_flat": "wood_bond",
+      "type": "int",
+      "default": 60,
+      "min": 30,
+      "max": 100,
+      "group": "element_chemistry",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.wood.fuelValue": {
+      "legacy_flat": "wood_fuel",
+      "type": "int",
+      "default": 120,
+      "min": 60,
+      "max": 180,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.wood.ignitionTemp": {
+      "legacy_flat": "wood_ignition",
+      "type": "int",
+      "default": 180,
+      "min": 150,
+      "max": 210,
+      "group": "element_thermodynamics",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.metal.reductionPotential": {
+      "legacy_flat": "metal_redpot",
+      "type": "int",
+      "default": -15,
+      "min": -40,
+      "max": 0,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.metal.bondEnergy": {
+      "legacy_flat": "metal_bond",
+      "type": "int",
+      "default": 180,
+      "min": 120,
+      "max": 220,
+      "group": "element_mechanics",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.metal.electronMobility": {
+      "legacy_flat": "metal_emobility",
+      "type": "int",
+      "default": 240,
+      "min": 200,
+      "max": 255,
+      "group": "element_electrical",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.oil.reductionPotential": {
+      "legacy_flat": "oil_redpot",
+      "type": "int",
+      "default": -60,
+      "min": -70,
+      "max": -20,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.oil.bondEnergy": {
+      "legacy_flat": "oil_bond",
+      "type": "int",
+      "default": 40,
+      "min": 20,
+      "max": 80,
+      "group": "element_chemistry",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.oil.fuelValue": {
+      "legacy_flat": "oil_fuel",
+      "type": "int",
+      "default": 200,
+      "min": 120,
+      "max": 240,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.oil.ignitionTemp": {
+      "legacy_flat": "oil_ignition",
+      "type": "int",
+      "default": 160,
+      "min": 130,
+      "max": 190,
+      "group": "element_thermodynamics",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.acid.reductionPotential": {
+      "legacy_flat": "acid_redpot",
+      "type": "int",
+      "default": 60,
+      "min": 30,
+      "max": 90,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.acid.bondEnergy": {
+      "legacy_flat": "acid_bond",
+      "type": "int",
+      "default": 30,
+      "min": 10,
+      "max": 60,
+      "group": "element_chemistry",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.acid.reactivity": {
+      "legacy_flat": "acid_reactivity",
+      "type": "int",
+      "default": 220,
+      "min": 150,
+      "max": 255,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.acid.electronMobility": {
+      "legacy_flat": "acid_emobility",
+      "type": "int",
+      "default": 60,
+      "min": 30,
+      "max": 100,
+      "group": "element_electrical",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.oxygen.reductionPotential": {
+      "legacy_flat": "oxygen_redpot",
+      "type": "int",
+      "default": 40,
+      "min": 20,
+      "max": 70,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.oxygen.reactivity": {
+      "legacy_flat": "oxygen_reactivity",
+      "type": "int",
+      "default": 80,
+      "min": 40,
+      "max": 120,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.fire.reductionPotential": {
+      "legacy_flat": "fire_redpot",
+      "type": "int",
+      "default": 40,
+      "min": 20,
+      "max": 80,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.fire.reactivity": {
+      "legacy_flat": "fire_reactivity",
+      "type": "int",
+      "default": 180,
+      "min": 140,
+      "max": 240,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.lava.reductionPotential": {
+      "legacy_flat": "lava_redpot",
+      "type": "int",
+      "default": 20,
+      "min": 0,
+      "max": 50,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.lava.reactivity": {
+      "legacy_flat": "lava_reactivity",
+      "type": "int",
+      "default": 180,
+      "min": 120,
+      "max": 220,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.lava.electronMobility": {
+      "legacy_flat": "lava_emobility",
+      "type": "int",
+      "default": 40,
+      "min": 20,
+      "max": 80,
+      "group": "element_electrical",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.charcoal.reductionPotential": {
+      "legacy_flat": "charcoal_redpot",
+      "type": "int",
+      "default": -25,
+      "min": -50,
+      "max": -5,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.charcoal.bondEnergy": {
+      "legacy_flat": "charcoal_bond",
+      "type": "int",
+      "default": 80,
+      "min": 40,
+      "max": 120,
+      "group": "element_chemistry",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.charcoal.fuelValue": {
+      "legacy_flat": "charcoal_fuel",
+      "type": "int",
+      "default": 180,
+      "min": 140,
+      "max": 240,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.charcoal.ignitionTemp": {
+      "legacy_flat": "charcoal_ignition",
+      "type": "int",
+      "default": 180,
+      "min": 140,
+      "max": 200,
+      "group": "element_thermodynamics",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.methane.reductionPotential": {
+      "legacy_flat": "methane_redpot",
+      "type": "int",
+      "default": -50,
+      "min": -80,
+      "max": -20,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.methane.bondEnergy": {
+      "legacy_flat": "methane_bond",
+      "type": "int",
+      "default": 20,
+      "min": 10,
+      "max": 50,
+      "group": "element_chemistry",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.methane.fuelValue": {
+      "legacy_flat": "methane_fuel",
+      "type": "int",
+      "default": 220,
+      "min": 160,
+      "max": 255,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.methane.ignitionTemp": {
+      "legacy_flat": "methane_ignition",
+      "type": "int",
+      "default": 140,
+      "min": 110,
+      "max": 170,
+      "group": "element_thermodynamics",
+      "stage": "scipy_then_optuna",
+      "runtime_mutable": true
+    },
+    "elements.salt.reductionPotential": {
+      "legacy_flat": "salt_redpot",
+      "type": "int",
+      "default": -80,
+      "min": -120,
+      "max": -40,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.salt.electronMobility": {
+      "legacy_flat": "salt_emobility",
+      "type": "int",
+      "default": 120,
+      "min": 80,
+      "max": 180,
+      "group": "element_electrical",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.rust.reductionPotential": {
+      "legacy_flat": "rust_redpot",
+      "type": "int",
+      "default": 10,
+      "min": -10,
+      "max": 30,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.water.reactivity": {
+      "legacy_flat": "water_reactivity",
+      "type": "int",
+      "default": 60,
+      "min": 30,
+      "max": 100,
+      "group": "element_chemistry",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "elements.water.electronMobility": {
+      "legacy_flat": "water_emobility",
+      "type": "int",
+      "default": 80,
+      "min": 40,
+      "max": 120,
+      "group": "element_electrical",
+      "stage": "optuna",
+      "runtime_mutable": true
+    },
+    "sim_tuning.combustionOxidizerDelta": {
+      "legacy_flat": "combustion_ox_delta",
+      "type": "int",
+      "default": 20,
+      "min": 10,
+      "max": 50,
+      "group": "sim_reactions",
+      "stage": "optuna",
+      "runtime_mutable": false
+    },
+    "sim_tuning.combustionOxidationThreshold": {
+      "legacy_flat": "combustion_ox_threshold",
+      "type": "int",
+      "default": 200,
+      "min": 160,
+      "max": 240,
+      "group": "sim_reactions",
+      "stage": "optuna",
+      "runtime_mutable": false
+    },
+    "sim_tuning.corrosionMoistureMin": {
+      "legacy_flat": "corrosion_moisture_min",
+      "type": "int",
+      "default": 40,
+      "min": 10,
+      "max": 80,
+      "group": "sim_reactions",
+      "stage": "optuna",
+      "runtime_mutable": false
+    },
+    "sim_tuning.corrosionOxidationThreshold": {
+      "legacy_flat": "corrosion_ox_threshold",
+      "type": "int",
+      "default": 220,
+      "min": 200,
+      "max": 250,
+      "group": "sim_reactions",
+      "stage": "optuna",
+      "runtime_mutable": false
+    },
+    "sim_tuning.dissolutionReactivityMin": {
+      "legacy_flat": "dissolution_react_min",
+      "type": "int",
+      "default": 150,
+      "min": 100,
+      "max": 200,
+      "group": "sim_reactions",
+      "stage": "optuna",
+      "runtime_mutable": false
+    }
+  }
+}

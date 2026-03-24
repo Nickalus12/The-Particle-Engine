@@ -26,6 +26,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from parameter_contract import write_trial_config as write_manifest_trial_config
+
 # ---------------------------------------------------------------------------
 # Windows UTF-8 fix
 # ---------------------------------------------------------------------------
@@ -173,64 +175,7 @@ def suggest_params(trial) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 def write_trial_config(params: dict[str, Any]) -> Path:
     """Write trial parameters to JSON for the benchmark to consume."""
-    config = {
-        "elements": {
-            "sand": {
-                "density": params["sand_density"],
-                "gravity": params["sand_gravity"],
-                "meltPoint": params["sand_melt_point"],
-            },
-            "water": {
-                "density": params["water_density"],
-                "gravity": params["water_gravity"],
-                "boilPoint": params["water_boil_point"],
-                "freezePoint": params["water_freeze_point"],
-            },
-            "oil": {
-                "density": params["oil_density"],
-                "viscosity": params["oil_viscosity"],
-            },
-            "stone": {"density": params["stone_density"]},
-            "metal": {"density": params["metal_density"]},
-            "ice": {
-                "density": params["ice_density"],
-                "meltPoint": params["ice_melt_point"],
-            },
-            "wood": {"density": params["wood_density"]},
-            "dirt": {"density": params["dirt_density"]},
-            "lava": {
-                "density": params["lava_density"],
-                "viscosity": params["lava_viscosity"],
-            },
-            "mud": {"viscosity": params["mud_viscosity"]},
-            # Periodic table elements
-            "sodium": {"reactivity": params["sodium_reactivity"]},
-            "potassium": {"reactivity": params["potassium_reactivity"]},
-            "mercury": {
-                "density": params["mercury_density"],
-                "viscosity": params["mercury_viscosity"],
-            },
-            "gold": {
-                "density": params["gold_density"],
-                "meltPoint": params["gold_melt_point"],
-            },
-            "fluorine": {"reactivity": params["fluorine_reactivity"]},
-            "chlorine": {"reactivity": params["chlorine_reactivity"]},
-            "uranium": {"heatRate": params["uranium_heat_rate"]},
-            "plutonium": {"heatRate": params["plutonium_heat_rate"]},
-            "thorium": {"heatRate": params["thorium_heat_rate"]},
-            "phosphorus": {"ignitionChance": params["phosphorus_ignition_chance"]},
-        },
-        "behavior": {
-            "evaporation_rate": params["evaporation_rate"],
-            "fire_spread_prob": params["fire_spread_prob"],
-            "erosion_rate": params["erosion_rate"],
-            "ore_richness_mult": params["ore_richness_mult"],
-        },
-    }
-    with open(TRIAL_CONFIG, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2)
-    return TRIAL_CONFIG
+    return write_manifest_trial_config(TRIAL_CONFIG, params)
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +193,7 @@ def objective(trial) -> tuple[float, float]:
             text=True,
             timeout=300,
             cwd=str(PROJECT_DIR),
+            env={**os.environ, "TRIAL_CONFIG": str(TRIAL_CONFIG)},
         )
     except subprocess.TimeoutExpired:
         print(f"  Trial {trial.number}: TIMEOUT (300s)")
@@ -644,6 +590,7 @@ def test_params(args: argparse.Namespace) -> None:
     result = subprocess.run(
         [sys.executable, str(RESEARCH_DIR / "benchmark.py"), "--quick"],
         cwd=str(PROJECT_DIR),
+        env={**os.environ, "TRIAL_CONFIG": str(TRIAL_CONFIG)},
     )
 
     print()

@@ -1,5 +1,4 @@
 import 'dart:math';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
@@ -8,6 +7,7 @@ import '../../creatures/colony.dart';
 import '../theme/colors.dart';
 import '../theme/particle_theme.dart';
 import '../theme/typography.dart';
+import 'hud_icon_badge.dart';
 
 /// Slide-in panel showing colony details when tapping on an ant colony.
 ///
@@ -79,6 +79,7 @@ class _ColonyInspectorState extends State<ColonyInspector>
   Widget build(BuildContext context) {
     final colony = widget.colony;
     final roles = colony.roleDistribution;
+    final accent = colony.isAlive ? AppColors.categoryLife : AppColors.danger;
 
     return SlideTransition(
       position: _slideAnimation,
@@ -88,63 +89,81 @@ class _ColonyInspectorState extends State<ColonyInspector>
           alignment: Alignment.centerLeft,
           child: Padding(
             padding: const EdgeInsets.only(left: 10, top: 40, bottom: 40),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(ParticleTheme.radiusLarge),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                child: Container(
-                  width: 220,
-                  decoration: ParticleTheme.glassDecoration(
-                    borderRadius: ParticleTheme.radiusLarge,
-                  ),
-                  padding: const EdgeInsets.all(16),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Header
-                        Row(
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: colony.isAlive
-                                    ? AppColors.success
-                                    : AppColors.danger,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: (colony.isAlive
-                                            ? AppColors.success
-                                            : AppColors.danger)
-                                        .withValues(alpha: 0.5),
-                                    blurRadius: 6,
+            child: ParticleTheme.atmosphericPanel(
+              accent: accent,
+              borderRadius: ParticleTheme.radiusLarge,
+              blurAmount: 24,
+              padding: const EdgeInsets.all(16),
+              child: SizedBox(
+                width: 246,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Colony ${colony.id + 1}',
+                                  style: AppTypography.heading.copyWith(
+                                    fontSize: 18,
                                   ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Colony ${colony.id + 1}',
-                                style: AppTypography.heading.copyWith(
-                                  fontSize: 16,
                                 ),
-                              ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  colony.isAlive
+                                      ? 'Active hive intelligence'
+                                      : 'Dormant colony record',
+                                  style: AppTypography.caption.copyWith(
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
                             ),
-                            GestureDetector(
-                              onTap: _close,
-                              child: const Icon(
-                                Icons.close_rounded,
-                                size: 18,
-                                color: AppColors.textDim,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
+                          ),
+                          HudIconBadge(
+                            icon: Icons.close_rounded,
+                            onTap: _close,
+                            tooltip: 'Close colony inspector',
+                            accent: accent,
+                            motif: HudBadgeMotif.orbit,
+                            size: 36,
+                            iconSize: 18,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _InfoChip(
+                            label: colony.isAlive ? 'Alive' : 'Collapsed',
+                            accent: accent,
+                            icon: colony.isAlive
+                                ? Icons.bolt_rounded
+                                : Icons.pause_circle_rounded,
+                          ),
+                          _InfoChip(
+                            label: colony.hasQueen ? 'Queenline' : 'Queen lost',
+                            accent: colony.hasQueen
+                                ? AppColors.categoryEnergy
+                                : AppColors.danger,
+                            icon: Icons.stars_rounded,
+                          ),
+                          _InfoChip(
+                            label: '${colony.population} ants',
+                            accent: AppColors.categoryLife,
+                            icon: Icons.groups_rounded,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
 
                         // Core stats
                         _StatRow(
@@ -284,14 +303,59 @@ class _ColonyInspectorState extends State<ColonyInspector>
                         _SectionLabel('NEURAL ACTIVITY'),
                         const SizedBox(height: 8),
                         _NeuralActivityWidget(colony: colony),
-                      ],
-                    ),
+                    ],
                   ),
                 ),
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _InfoChip extends StatelessWidget {
+  const _InfoChip({
+    required this.label,
+    required this.accent,
+    required this.icon,
+  });
+
+  final String label;
+  final Color accent;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        gradient: LinearGradient(
+          colors: [
+            accent.withValues(alpha: 0.22),
+            const Color(0xFF0C111B).withValues(alpha: 0.82),
+          ],
+        ),
+        border: Border.all(
+          color: accent.withValues(alpha: 0.28),
+          width: 0.8,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: accent),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: AppTypography.caption.copyWith(
+              color: AppColors.textPrimary,
+              fontSize: 10,
+            ),
+          ),
+        ],
       ),
     );
   }

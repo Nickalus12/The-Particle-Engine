@@ -136,8 +136,7 @@ class _SplashScreenState extends State<SplashScreen>
   Future<bool> _initServices() async {
     ElementRegistry.init();
     await AudioManager.instance.init();
-    // Load pre-trained creature brains from QDax archives (async, non-blocking)
-    GenomeLibrary.instance.loadAll();
+    await GenomeLibrary.instance.loadAll();
     final prefs = await SharedPreferences.getInstance();
     return prefs.getBool(_hasSeenIntroKey) ?? false;
   }

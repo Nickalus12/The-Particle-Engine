@@ -15,6 +15,7 @@ import '../simulation/world_gen/world_config.dart';
 import '../ui/widgets/colony_inspector.dart';
 import '../ui/widgets/element_bottom_bar.dart';
 import '../ui/widgets/element_palette.dart';
+import '../ui/widgets/hud_icon_badge.dart';
 import '../ui/widgets/periodic_table_overlay.dart';
 import '../ui/widgets/mini_map.dart';
 import '../ui/widgets/tool_bar.dart';
@@ -166,6 +167,9 @@ class ParticleEngineGame extends FlameGame
   void toggleDayNight() {
     isNight = !isNight;
     final target = isNight ? 1.0 : 0.0;
+    if (sandboxWorld.isMounted) {
+      sandboxWorld.simulation.isNight = isNight;
+    }
 
     // Remove any in-progress transition.
     _dayNightEffect?.removeFromParent();
@@ -642,39 +646,23 @@ class _ObservationHintOverlayState extends State<_ObservationHintOverlay>
     return Positioned(
       bottom: 24,
       right: 16,
-      child: GestureDetector(
-        onTap: widget.game.enterCreationMode,
-        child: AnimatedBuilder(
-          animation: _pulseAnimation,
-          builder: (context, child) {
-            return Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFFE94560).withValues(alpha: 0.2),
-                border: Border.all(
-                  color: const Color(0xFFE94560)
-                      .withValues(alpha: 0.3 + _pulseAnimation.value * 0.3),
-                  width: 1.5,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFFE94560)
-                        .withValues(alpha: 0.15 * _pulseAnimation.value),
-                    blurRadius: 20 * _pulseAnimation.value,
-                    spreadRadius: 2,
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.brush_rounded,
-                size: 24,
-                color: Color(0xFFE94560),
-              ),
-            );
-          },
-        ),
+      child: AnimatedBuilder(
+        animation: _pulseAnimation,
+        builder: (context, child) {
+          return Transform.scale(
+            scale: 0.96 + (_pulseAnimation.value * 0.08),
+            child: HudIconBadge(
+              icon: Icons.brush_rounded,
+              onTap: widget.game.enterCreationMode,
+              tooltip: 'Enter creation mode',
+              accent: const Color(0xFFE94560),
+              motif: HudBadgeMotif.pulse,
+              active: true,
+              size: 58,
+              iconSize: 24,
+            ),
+          );
+        },
       ),
     );
   }
@@ -702,31 +690,16 @@ class _BackButtonOverlayState extends State<_BackButtonOverlay> {
           onEnter: (_) => setState(() => _hovered = true),
           onExit: (_) => setState(() => _hovered = false),
           cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            onTap: () => Navigator.of(context).maybePop(),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: _hovered
-                    ? const Color(0x33FFFFFF)
-                    : const Color(0x1AFFFFFF),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: _hovered
-                      ? const Color(0x55FFFFFF)
-                      : const Color(0x33FFFFFF),
-                  width: 0.5,
-                ),
-              ),
-              child: Icon(
-                Icons.close_rounded,
-                size: 20,
-                color: _hovered
-                    ? const Color(0xFFCCCCDD)
-                    : const Color(0xFF888899),
-              ),
+          child: Opacity(
+            opacity: _hovered ? 1.0 : 0.88,
+            child: HudIconBadge(
+              icon: Icons.close_rounded,
+              onTap: () => Navigator.of(context).maybePop(),
+              tooltip: 'Back',
+              accent: const Color(0xFFAAB7D8),
+              motif: HudBadgeMotif.orbit,
+              size: 46,
+              iconSize: 20,
             ),
           ),
         ),

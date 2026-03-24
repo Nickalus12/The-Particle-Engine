@@ -169,4 +169,74 @@ class ParticleTheme {
       ),
     ];
   }
+
+  /// A richer panel treatment for hero surfaces and HUD shells.
+  static BoxDecoration panelDecoration({
+    double borderRadius = radiusLarge,
+    required Color accent,
+    Color baseColor = const Color(0xCC0A0A14),
+    double borderOpacity = 0.12,
+  }) {
+    return BoxDecoration(
+      color: baseColor,
+      borderRadius: BorderRadius.circular(borderRadius),
+      border: Border.all(
+        color: Colors.white.withValues(alpha: borderOpacity),
+        width: 0.6,
+      ),
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          accent.withValues(alpha: 0.14),
+          baseColor,
+          Colors.black.withValues(alpha: 0.18),
+        ],
+      ),
+      boxShadow: [
+        const BoxShadow(
+          color: Color(0x50000000),
+          blurRadius: 30,
+          offset: Offset(0, 6),
+        ),
+        BoxShadow(
+          color: accent.withValues(alpha: 0.12),
+          blurRadius: 28,
+          spreadRadius: 1,
+        ),
+      ],
+    );
+  }
+
+  static Widget atmosphericPanel({
+    required Widget child,
+    required Color accent,
+    double borderRadius = radiusLarge,
+    double blurAmount = 20.0,
+    EdgeInsetsGeometry? padding,
+    EdgeInsetsGeometry? margin,
+    Color baseColor = const Color(0xCC0A0A14),
+  }) {
+    return Container(
+      margin: margin,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(
+            sigmaX: blurAmount,
+            sigmaY: blurAmount,
+          ),
+          child: Container(
+            padding: padding,
+            decoration: panelDecoration(
+              borderRadius: borderRadius,
+              accent: accent,
+              baseColor: baseColor,
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
 }

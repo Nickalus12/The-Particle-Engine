@@ -7,6 +7,7 @@ import '../../simulation/element_registry.dart';
 import '../../simulation/simulation_engine.dart';
 import '../theme/colors.dart';
 import '../theme/particle_theme.dart';
+import 'hud_icon_badge.dart';
 
 /// Small corner minimap showing the full world when zoomed in.
 ///
@@ -77,9 +78,7 @@ class _MiniMapState extends State<MiniMap>
 
   void _handleTap(TapDownDetails details) {
     if (widget.onTapLocation == null) return;
-    final box = context.findRenderObject() as RenderBox?;
-    if (box == null) return;
-    final local = box.globalToLocal(details.globalPosition);
+    final local = details.localPosition;
     final gridX =
         local.dx / MiniMap.displayWidth * widget.simulation.gridW;
     final gridY =
@@ -90,33 +89,76 @@ class _MiniMapState extends State<MiniMap>
   @override
   Widget build(BuildContext context) {
     final mapHeight = widget.displayHeight;
+    final accent = widget.viewportRect != null
+        ? AppColors.categoryEnergy
+        : AppColors.primary;
     return FadeTransition(
       opacity: _fadeController,
       child: Align(
         alignment: Alignment.bottomCenter,
         child: Padding(
           padding: const EdgeInsets.only(bottom: 12),
-          child: GestureDetector(
-            onTapDown: _handleTap,
-            child: ClipRRect(
-              borderRadius:
-                  BorderRadius.circular(ParticleTheme.radiusSmall),
-              child: Container(
-                width: MiniMap.displayWidth,
-                height: mapHeight,
-                decoration: ParticleTheme.glassDecoration(
-                  borderRadius: ParticleTheme.radiusSmall,
-                  borderOpacity: 0.2,
-                ),
-                child: CustomPaint(
-                  size: Size(MiniMap.displayWidth, mapHeight),
-                  painter: _MiniMapPainter(
-                    widget.simulation.grid,
-                    widget.simulation.gridW,
-                    widget.simulation.gridH,
-                    widget.viewportRect,
+          child: ParticleTheme.atmosphericPanel(
+            accent: accent,
+            borderRadius: ParticleTheme.radiusMedium,
+            blurAmount: 18,
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 10),
+            child: SizedBox(
+              width: MiniMap.displayWidth + 16,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      IgnorePointer(
+                        child: HudIconBadge(
+                          icon: Icons.map_rounded,
+                          onTap: () {},
+                          accent: accent,
+                          motif: HudBadgeMotif.lattice,
+                          size: 28,
+                          iconSize: 14,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'World View',
+                          style: Theme.of(context).textTheme.labelMedium,
+                        ),
+                      ),
+                      Text(
+                        '${widget.simulation.gridW}×${widget.simulation.gridH}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: AppColors.textDim,
+                              fontSize: 10,
+                            ),
+                      ),
+                    ],
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTapDown: _handleTap,
+                    child: ClipRRect(
+                      borderRadius:
+                          BorderRadius.circular(ParticleTheme.radiusSmall),
+                      child: SizedBox(
+                        width: MiniMap.displayWidth,
+                        height: mapHeight,
+                        child: CustomPaint(
+                          size: Size(MiniMap.displayWidth, mapHeight),
+                          painter: _MiniMapPainter(
+                            widget.simulation.grid,
+                            widget.simulation.gridW,
+                            widget.simulation.gridH,
+                            widget.viewportRect,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -180,6 +222,12 @@ class _MiniMapPainter extends CustomPainter {
         ..style = PaintingStyle.fill;
       canvas.drawRect(vpRect, fillPaint);
     }
+
+    final framePaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.12)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    canvas.drawRect(Offset.zero & size, framePaint);
   }
 
   @override

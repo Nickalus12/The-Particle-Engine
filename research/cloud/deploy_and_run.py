@@ -39,6 +39,8 @@ import sys
 import time
 from pathlib import Path
 
+from env_utils import load_cloud_env
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -49,10 +51,8 @@ KEY_FILE = Path.home() / ".ssh" / "thundercompute"
 
 # ThunderCompute API
 API_BASE = "https://api.thundercompute.com:8443/v1"
-TOKEN = os.environ.get(
-    "TNR_API_TOKEN",
-    "e53b9e616ded72419e90d54627e310f99a8b737ab53b557e61716d7e77d524ed",
-)
+load_cloud_env()
+TOKEN = os.environ.get("TNR_API_TOKEN", "")
 
 # GPU pricing for cost estimates
 GPU_PRICING = {
@@ -118,6 +118,8 @@ def fail(msg: str):
 
 def api(method: str, path: str, data: dict | None = None) -> dict:
     """Make a ThunderCompute API call via curl."""
+    if not TOKEN:
+        fail("Missing ThunderCompute API token. Set TNR_API_TOKEN or research/cloud/.thundercompute.env.")
     url = f"{API_BASE}{path}"
     cmd = [
         "curl", "-s", "-X", method,

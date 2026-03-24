@@ -65,7 +65,7 @@ class _LoadScreenState extends State<LoadScreen>
 
     final state = await _saveService.load(slot);
     if (state != null && mounted) {
-      Navigator.of(context).push(
+      await Navigator.of(context).push(
         PageRouteBuilder(
           pageBuilder: (context, _, _) => SandboxScreen(loadState: state),
           transitionsBuilder: (context, anim, _, child) {

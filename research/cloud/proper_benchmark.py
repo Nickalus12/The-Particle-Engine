@@ -42,6 +42,10 @@ import time
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from parameter_contract import normalize_trial_config
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -1564,28 +1568,7 @@ def main():
     if args.config:
         with open(args.config) as f:
             config = json.load(f)
-        params = {}
-        if "elements" in config:
-            for elem, props in config["elements"].items():
-                for prop, val in props.items():
-                    key_map = {
-                        "density": f"{elem}_density",
-                        "gravity": f"{elem}_gravity",
-                        "viscosity": f"{elem}_viscosity",
-                        "boilPoint": f"{elem}_boil_point",
-                        "freezePoint": f"{elem}_freeze_point",
-                        "meltPoint": f"{elem}_melt_point",
-                    }
-                    params[key_map.get(prop, f"{elem}_{prop}")] = val
-            if "behavior" in config:
-                params.update(config["behavior"])
-            if "worldgen" in config:
-                params.update(config["worldgen"])
-        else:
-            params = config
-        # Fill missing with defaults
-        for k, v in DEFAULT_PARAMS.items():
-            params.setdefault(k, v)
+        params = normalize_trial_config(config, defaults=DEFAULT_PARAMS)
     else:
         params = dict(DEFAULT_PARAMS)
 

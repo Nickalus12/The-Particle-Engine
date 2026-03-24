@@ -28,6 +28,10 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parent
 RESEARCH_DIR = SCRIPT_DIR.parent
 PROJECT_DIR = RESEARCH_DIR.parent
+sys.path.insert(0, str(RESEARCH_DIR))
+
+from parameter_contract import write_trial_config as write_manifest_trial_config
+
 STUDY_DB = RESEARCH_DIR / "cloud_optuna_study.db"
 TRIAL_CONFIG = RESEARCH_DIR / "trial_config.json"
 RESULTS_FILE = RESEARCH_DIR / "cloud_optimization_results.json"
@@ -141,49 +145,10 @@ def suggest_params(trial, extended: bool = False) -> dict[str, Any]:
 
 def write_trial_config(params: dict[str, Any]) -> Path:
     """Write trial parameters to JSON for the benchmark to consume."""
-    config = {
-        "elements": {
-            "sand": {
-                "density": params.get("sand_density", 150),
-                "gravity": params.get("sand_gravity", 2),
-                "meltPoint": params.get("sand_melt_point", 220),
-            },
-            "water": {
-                "density": params.get("water_density", 100),
-                "gravity": params.get("water_gravity", 1),
-                "boilPoint": params.get("water_boil_point", 180),
-                "freezePoint": params.get("water_freeze_point", 30),
-            },
-            "oil": {
-                "density": params.get("oil_density", 80),
-                "viscosity": params.get("oil_viscosity", 2),
-            },
-            "stone": {"density": params.get("stone_density", 255)},
-            "metal": {"density": params.get("metal_density", 240)},
-            "ice": {
-                "density": params.get("ice_density", 90),
-                "meltPoint": params.get("ice_melt_point", 40),
-            },
-            "wood": {"density": params.get("wood_density", 85)},
-            "dirt": {"density": params.get("dirt_density", 145)},
-            "lava": {
-                "density": params.get("lava_density", 200),
-                "viscosity": params.get("lava_viscosity", 4),
-            },
-            "mud": {"viscosity": params.get("mud_viscosity", 3)},
-        },
-        "behavior": {
-            "evaporation_rate": params.get("evaporation_rate", 1000),
-            "fire_spread_prob": params.get("fire_spread_prob", 0.15),
-            "erosion_rate": params.get("erosion_rate", 200),
-        },
-    }
     # Write to a worker-specific file to avoid conflicts
     pid = os.getpid()
     config_path = RESEARCH_DIR / f"trial_config_{pid}.json"
-    with open(config_path, "w") as f:
-        json.dump(config, f, indent=2)
-    return config_path
+    return write_manifest_trial_config(config_path, params)
 
 
 def run_benchmark(config_path: Path, fast: bool = True) -> tuple[float, float, float]:

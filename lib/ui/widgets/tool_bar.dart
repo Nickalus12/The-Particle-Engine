@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
 import '../../game/particle_engine_game.dart';
+import '../../services/save_service.dart';
 import '../theme/colors.dart';
 import '../theme/particle_theme.dart';
 import '../theme/typography.dart';
+import 'hud_icon_badge.dart';
 
 /// Brush modes for painting elements on the grid.
 enum BrushMode {
@@ -137,7 +140,7 @@ class _ToolBarState extends State<ToolBar>
           ),
           TextButton(
             onPressed: () {
-              widget.game.sandboxWorld.simulation.clear();
+              widget.game.sandboxWorld.clearWorld();
               Navigator.pop(ctx);
             },
             child: Text('Clear',
@@ -161,6 +164,51 @@ class _ToolBarState extends State<ToolBar>
   void _openPeriodicTable() {
     widget.game.overlays.add(ParticleEngineGame.overlayPeriodicTable);
     _interact();
+  }
+
+  Future<void> _saveWorld(BuildContext context) async {
+    _interact();
+    final request = await showDialog<_SaveRequest>(
+      context: context,
+      builder: (ctx) => _SaveWorldDialog(initialName: widget.game.worldName),
+    );
+    if (request == null) return;
+
+    try {
+      await widget.game.sandboxWorld.saveCurrentWorld(
+        slot: request.slot,
+        name: request.name,
+      );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.surface,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(ParticleTheme.radiusSmall),
+          ),
+          content: Text(
+            'Saved to slot ${request.slot}',
+            style: AppTypography.body.copyWith(color: AppColors.success),
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.surface,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(ParticleTheme.radiusSmall),
+          ),
+          content: Text(
+            'Save failed',
+            style: AppTypography.body.copyWith(color: AppColors.danger),
+          ),
+        ),
+      );
+    }
   }
 
   @override
@@ -194,9 +242,16 @@ class _ToolBarState extends State<ToolBar>
                   child: BackdropFilter(
                     filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
                     child: Container(
-                      width: 64,
+                      width: 72,
                       decoration: BoxDecoration(
-                        color: AppColors.panelDark,
+                        gradient: const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Color(0xE0141B28),
+                            Color(0xD10A0F18),
+                          ],
+                        ),
                         borderRadius: BorderRadius.circular(ParticleTheme.radiusLarge),
                         border: Border.all(
                           color: AppColors.panelBorder,
@@ -210,7 +265,7 @@ class _ToolBarState extends State<ToolBar>
                           ),
                         ],
                       ),
-                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -224,6 +279,8 @@ class _ToolBarState extends State<ToolBar>
                             icon: _brushMode.icon,
                             onTap: _cycleBrushMode,
                             tooltip: _brushMode.label,
+                            accent: const Color(0xFF7EE3FF),
+                            motif: HudBadgeMotif.streak,
                           ),
                           _divider(),
                           // -- Simulation --
@@ -242,6 +299,8 @@ class _ToolBarState extends State<ToolBar>
                             icon: Icons.vibration_rounded,
                             onTap: _shake,
                             tooltip: 'Shake',
+                            accent: const Color(0xFFFFA35C),
+                            motif: HudBadgeMotif.streak,
                           ),
                           const SizedBox(height: 2),
                           _ToolIcon(
@@ -249,6 +308,17 @@ class _ToolBarState extends State<ToolBar>
                             onTap: _openPeriodicTable,
                             tooltip: 'Periodic Table',
                             iconColor: const Color(0xFF80B0E0),
+                            accent: const Color(0xFF80B0E0),
+                            motif: HudBadgeMotif.orbit,
+                          ),
+                          const SizedBox(height: 2),
+                          _ToolIcon(
+                            icon: Icons.save_outlined,
+                            onTap: () => unawaited(_saveWorld(context)),
+                            tooltip: 'Save World',
+                            iconColor: const Color(0xFF80D0A8),
+                            accent: const Color(0xFF80D0A8),
+                            motif: HudBadgeMotif.lattice,
                           ),
                           const SizedBox(height: 2),
                           _ToolIcon(
@@ -256,6 +326,8 @@ class _ToolBarState extends State<ToolBar>
                             onTap: () => _clearGrid(context),
                             tooltip: 'Clear',
                             iconColor: AppColors.danger,
+                            accent: AppColors.danger,
+                            motif: HudBadgeMotif.pulse,
                           ),
                         ],
                       ),
@@ -287,6 +359,114 @@ class _ToolBarState extends State<ToolBar>
       );
 }
 
+class _SaveRequest {
+  const _SaveRequest({
+    required this.slot,
+    required this.name,
+  });
+
+  final int slot;
+  final String? name;
+}
+
+class _SaveWorldDialog extends StatefulWidget {
+  const _SaveWorldDialog({this.initialName});
+
+  final String? initialName;
+
+  @override
+  State<_SaveWorldDialog> createState() => _SaveWorldDialogState();
+}
+
+class _SaveWorldDialogState extends State<_SaveWorldDialog> {
+  late final TextEditingController _nameController;
+  int _slot = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.initialName ?? '');
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final slots = List<int>.generate(
+      SaveService.maxSlots - 1,
+      (index) => index + 1,
+    );
+
+    return AlertDialog(
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(ParticleTheme.radiusMedium),
+      ),
+      title: Text('Save World', style: AppTypography.heading),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          DropdownButtonFormField<int>(
+            value: _slot,
+            decoration: const InputDecoration(labelText: 'Slot'),
+            items: slots
+                .map(
+                  (slot) => DropdownMenuItem<int>(
+                    value: slot,
+                    child: Text('Slot $slot'),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) {
+              if (value != null) {
+                setState(() => _slot = value);
+              }
+            },
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _nameController,
+            decoration: const InputDecoration(
+              labelText: 'Name',
+              hintText: 'Optional',
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(
+            'Cancel',
+            style: AppTypography.button.copyWith(color: AppColors.textSecondary),
+          ),
+        ),
+        TextButton(
+          onPressed: () {
+            final trimmed = _nameController.text.trim();
+            Navigator.pop(
+              context,
+              _SaveRequest(
+                slot: _slot,
+                name: trimmed.isEmpty ? null : trimmed,
+              ),
+            );
+          },
+          child: Text(
+            'Save',
+            style: AppTypography.button.copyWith(color: AppColors.success),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// Small pill-shaped toggle to collapse/expand the toolbar.
 class _CollapseToggle extends StatelessWidget {
   const _CollapseToggle({required this.collapsed, required this.onTap});
@@ -295,22 +475,14 @@ class _CollapseToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return HudIconBadge(
+      icon: collapsed ? Icons.chevron_left_rounded : Icons.chevron_right_rounded,
       onTap: onTap,
-      child: Container(
-        width: 28,
-        height: 28,
-        decoration: BoxDecoration(
-          color: AppColors.panelDark.withValues(alpha: 0.8),
-          shape: BoxShape.circle,
-          border: Border.all(color: AppColors.panelBorder, width: 0.5),
-        ),
-        child: Icon(
-          collapsed ? Icons.chevron_left_rounded : Icons.chevron_right_rounded,
-          size: 16,
-          color: AppColors.textSecondary,
-        ),
-      ),
+      tooltip: collapsed ? 'Expand toolbar' : 'Collapse toolbar',
+      accent: const Color(0xFF74A8F5),
+      motif: HudBadgeMotif.orbit,
+      size: 30,
+      iconSize: 16,
     );
   }
 }
@@ -322,48 +494,35 @@ class _ToolIcon extends StatefulWidget {
     required this.onTap,
     this.tooltip,
     this.iconColor,
+    this.accent = const Color(0xFF74A8F5),
+    this.motif = HudBadgeMotif.orbit,
   });
 
   final IconData icon;
   final VoidCallback onTap;
   final String? tooltip;
   final Color? iconColor;
+  final Color accent;
+  final HudBadgeMotif motif;
 
   @override
   State<_ToolIcon> createState() => _ToolIconState();
 }
 
 class _ToolIconState extends State<_ToolIcon> {
-  bool _hovered = false;
-
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: widget.tooltip ?? '',
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          onTap: widget.onTap,
-          child: AnimatedContainer(
-            duration: ParticleTheme.fastDuration,
-            width: 48,
-            height: 36,
-            decoration: BoxDecoration(
-              color: _hovered
-                  ? AppColors.surfaceLight.withValues(alpha: 0.3)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              widget.icon,
-              size: 20,
-              color: widget.iconColor ?? (_hovered ? AppColors.textPrimary : AppColors.textSecondary),
-            ),
-          ),
-        ),
-      ),
+    return HudIconBadge(
+      icon: widget.icon,
+      onTap: widget.onTap,
+      tooltip: widget.tooltip,
+      accent: widget.accent,
+      motif: widget.motif,
+      size: 48,
+      iconSize: 19,
+      shape: BoxShape.rectangle,
+      borderRadius: BorderRadius.circular(12),
+      iconColor: widget.iconColor,
     );
   }
 }
@@ -377,26 +536,17 @@ class _PausePlayIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = isPaused ? AppColors.danger : AppColors.success;
-    return Tooltip(
-      message: isPaused ? 'Play' : 'Pause',
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: ParticleTheme.fastDuration,
-          width: 48,
-          height: 36,
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: color.withValues(alpha: 0.3), width: 0.5),
-          ),
-          child: Icon(
-            isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
-            size: 22,
-            color: color,
-          ),
-        ),
-      ),
+    return HudIconBadge(
+      icon: isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+      onTap: onTap,
+      tooltip: isPaused ? 'Play' : 'Pause',
+      accent: color,
+      motif: HudBadgeMotif.pulse,
+      active: true,
+      size: 48,
+      iconSize: 21,
+      shape: BoxShape.rectangle,
+      borderRadius: BorderRadius.circular(12),
     );
   }
 }
@@ -410,25 +560,17 @@ class _DayNightIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = isNight ? AppColors.accent : AppColors.warning;
-    return Tooltip(
-      message: isNight ? 'Night' : 'Day',
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: ParticleTheme.fastDuration,
-          width: 48,
-          height: 36,
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(
-            isNight ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
-            size: 20,
-            color: color,
-          ),
-        ),
-      ),
+    return HudIconBadge(
+      icon: isNight ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+      onTap: onTap,
+      tooltip: isNight ? 'Night' : 'Day',
+      accent: color,
+      motif: isNight ? HudBadgeMotif.orbit : HudBadgeMotif.streak,
+      active: true,
+      size: 48,
+      iconSize: 19,
+      shape: BoxShape.rectangle,
+      borderRadius: BorderRadius.circular(12),
     );
   }
 }
@@ -450,13 +592,42 @@ class _BrushSizeButton extends StatelessWidget {
         child: Container(
           width: 48,
           height: 36,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0x331FC7FF),
+                Color(0x140A0F18),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.10),
+              width: 0.8,
+            ),
+          ),
           alignment: Alignment.center,
           child: Container(
             width: diameter.clamp(6, 28),
             height: diameter.clamp(6, 28),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: AppColors.textPrimary.withValues(alpha: 0.7),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Color(0xFFEAF8FF),
+                  Color(0xFF81D8FF),
+                ],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF74A8F5).withValues(alpha: 0.22),
+                  blurRadius: 12,
+                  spreadRadius: 1,
+                ),
+              ],
               border: Border.all(
                 color: AppColors.textPrimary,
                 width: 1,

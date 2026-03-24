@@ -107,13 +107,13 @@ class GIPostProcess extends Component {
   Future<void> _loadShaders() async {
     try {
       final results = await Future.wait([
-        ui.FragmentProgram.fromAsset('shaders/jfa_seed.frag'),
-        ui.FragmentProgram.fromAsset('shaders/jfa_step.frag'),
-        ui.FragmentProgram.fromAsset('shaders/distance_field.frag'),
-        ui.FragmentProgram.fromAsset('shaders/radiance_cascade.frag'),
-        ui.FragmentProgram.fromAsset('shaders/bloom_downsample.frag'),
-        ui.FragmentProgram.fromAsset('shaders/bloom_upsample.frag'),
-        ui.FragmentProgram.fromAsset('shaders/tonemap.frag'),
+        ui.FragmentProgram.fromAsset('assets/shaders/jfa_seed.frag'),
+        ui.FragmentProgram.fromAsset('assets/shaders/jfa_step.frag'),
+        ui.FragmentProgram.fromAsset('assets/shaders/distance_field.frag'),
+        ui.FragmentProgram.fromAsset('assets/shaders/radiance_cascade.frag'),
+        ui.FragmentProgram.fromAsset('assets/shaders/bloom_downsample.frag'),
+        ui.FragmentProgram.fromAsset('assets/shaders/bloom_upsample.frag'),
+        ui.FragmentProgram.fromAsset('assets/shaders/tonemap.frag'),
       ]);
 
       _jfaSeedProg = results[0];

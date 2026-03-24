@@ -11,8 +11,6 @@ Usage:
     python research/cloud/worldgen_optimizer.py --trials 5000 --workers 6
     python research/cloud/worldgen_optimizer.py --show --top 10
     python research/cloud/worldgen_optimizer.py --validate --worlds 1000
-
-Target: ubuntu@185.216.21.95 port 30919 (A100 + 18 CPU cores)
 """
 
 from __future__ import annotations
@@ -21,7 +19,6 @@ import argparse
 import json
 import logging
 import multiprocessing as mp
-import os
 import sys
 import time
 from pathlib import Path
@@ -49,8 +46,17 @@ except ImportError:
 SCRIPT_DIR = Path(__file__).resolve().parent
 RESEARCH_DIR = SCRIPT_DIR.parent
 PROJECT_DIR = RESEARCH_DIR.parent
+sys.path.insert(0, str(RESEARCH_DIR))
+
+from parameter_contract import (  # noqa: E402
+    canonical_overrides_from_flat_params,
+    resolve_manifest_path,
+    write_trial_config,
+)
+
 STUDY_DB = RESEARCH_DIR / "worldgen_optuna_study.db"
 RESULTS_FILE = RESEARCH_DIR / "worldgen_optimization_results.json"
+BEST_CONFIG_FILE = SCRIPT_DIR / "worldgen_best_trial_config.json"
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -370,6 +376,7 @@ def optuna_objective(trial):
     avg_score = float(np.mean(scores))
     trial.set_user_attr("avg_combined", avg_score)
     trial.set_user_attr("params", params)
+    trial.set_user_attr("canonical_overrides", canonical_overrides_from_flat_params(params))
 
     return avg_score
 
@@ -456,11 +463,16 @@ def show_results(top_n=10):
     if trials:
         best = trials[0]
         result = {
+            "source_label": "worldgen_optimizer",
+            "parameter_manifest": resolve_manifest_path().name,
             "best_trial": best.number,
             "best_score": best.value,
             "best_params": best.params,
+            "best_canonical": canonical_overrides_from_flat_params(best.params),
             "total_trials": len(trials),
         }
+        write_trial_config(BEST_CONFIG_FILE, best.params)
+        result["best_trial_config"] = str(BEST_CONFIG_FILE)
         RESULTS_FILE.write_text(json.dumps(result, indent=2))
         log.info(f"Best params saved to {RESULTS_FILE}")
 

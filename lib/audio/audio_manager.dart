@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flame_audio/flame_audio.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'ambient_mixer.dart';
@@ -29,6 +32,7 @@ class AudioManager {
   double _sfxVolume = 1.0;
   double _ambientVolume = 1.0;
   bool _initialised = false;
+  final Set<String> _availableAssets = <String>{};
 
   // ── Sub-systems ───────────────────────────────────────────────────────
   late final AmbientMixer ambientMixer;
@@ -82,6 +86,7 @@ class AudioManager {
     if (_initialised) return;
 
     await _loadPreferences();
+    await _loadAssetManifest();
 
     ambientMixer = AmbientMixer(audioManager: this);
     reactionSounds = ReactionSounds(audioManager: this);
@@ -117,12 +122,16 @@ class AudioManager {
     _soundPool[name] = now;
 
     final vol = (effectiveSfxVolume * volumeScale).clamp(0.0, 1.0);
+    final assetPath = 'assets/audio/sfx/$name.wav';
+    if (!_availableAssets.contains(assetPath)) return;
     await FlameAudio.play('sfx/$name.wav', volume: vol);
   }
 
   /// Begin looping background music.
   Future<void> playMusic(String name) async {
     if (_muted) return;
+    final assetPath = 'assets/audio/music/$name.mp3';
+    if (!_availableAssets.contains(assetPath)) return;
     await FlameAudio.bgm.play('music/$name.mp3', volume: _masterVolume);
   }
 
@@ -150,6 +159,20 @@ class AudioManager {
     _masterVolume = prefs.getDouble(_keyMasterVol) ?? 1.0;
     _sfxVolume = prefs.getDouble(_keySfxVol) ?? 1.0;
     _ambientVolume = prefs.getDouble(_keyAmbientVol) ?? 1.0;
+  }
+
+  Future<void> _loadAssetManifest() async {
+    try {
+      final manifestJson = await rootBundle.loadString('AssetManifest.json');
+      final manifest = jsonDecode(manifestJson);
+      if (manifest is Map<String, dynamic>) {
+        _availableAssets
+          ..clear()
+          ..addAll(manifest.keys);
+      }
+    } catch (_) {
+      _availableAssets.clear();
+    }
   }
 
   Future<void> _persistPreferences() async {
