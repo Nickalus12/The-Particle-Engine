@@ -1,3 +1,4 @@
+// ignore_for_file: avoid_print
 /// Headless simulation frame exporter for Python test suite.
 ///
 /// Runs the simulation for N frames, renders pixels, then writes:
@@ -14,10 +15,10 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
-import '../lib/simulation/simulation_engine.dart';
-import '../lib/simulation/element_registry.dart';
-import '../lib/simulation/element_behaviors.dart';
-import '../lib/simulation/pixel_renderer.dart';
+import 'package:the_particle_engine/simulation/simulation_engine.dart';
+import 'package:the_particle_engine/simulation/element_registry.dart';
+import 'package:the_particle_engine/simulation/element_behaviors.dart';
+import 'package:the_particle_engine/simulation/pixel_renderer.dart';
 
 void main(List<String> args) {
   final frames = args.isNotEmpty ? int.parse(args[0]) : 100;

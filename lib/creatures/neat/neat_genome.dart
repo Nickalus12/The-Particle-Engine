@@ -144,6 +144,7 @@ class NeatGenome {
     this.adjustedFitness = 0.0,
     this.speciesId = -1,
     this.age = 0,
+    this.behaviorVector,
   });
 
   /// All neuron genes, indexed by node id for fast lookup.
@@ -163,6 +164,10 @@ class NeatGenome {
 
   /// Number of ticks this organism has been alive (for rt-NEAT).
   int age;
+
+  /// QDax behavioral descriptor vector (typically 4 doubles in [0,1]).
+  /// Null for runtime-evolved genomes without behavioral data.
+  List<double>? behaviorVector;
 
   // -------------------------------------------------------------------------
   // Factory: minimal seed genome
@@ -233,6 +238,7 @@ class NeatGenome {
       adjustedFitness: adjustedFitness,
       speciesId: speciesId,
       age: age,
+      behaviorVector: behaviorVector != null ? List<double>.from(behaviorVector!) : null,
     );
   }
 
@@ -548,6 +554,7 @@ class NeatGenome {
       ],
       'fitness': fitness,
       'speciesId': speciesId,
+      if (behaviorVector != null) 'behavior': behaviorVector,
     };
   }
 
@@ -578,11 +585,16 @@ class NeatGenome {
       );
     }
 
+    final behaviorVector = (json['behavior'] as List?)
+        ?.map((e) => (e as num).toDouble())
+        .toList();
+
     return NeatGenome(
       nodes: nodes,
       connections: connections,
       fitness: (json['fitness'] as num?)?.toDouble() ?? 0.0,
       speciesId: json['speciesId'] as int? ?? -1,
+      behaviorVector: behaviorVector,
     );
   }
 

@@ -69,13 +69,12 @@ class ColonyEvolution {
     _population.ageAll();
 
     if (_tickCount % _config.rtReplacementInterval == 0) {
-      final oldCount = _population.genomes.length;
       _population.rtReplace();
 
-      // If a replacement happened, invalidate the network cache for the
-      // replaced slot.
-      if (_population.genomes.length == oldCount) {
-        _rebuildAllNetworks(); // Simple approach: rebuild all after replacement.
+      // Surgical cache invalidation
+      final changedIdx = _population.lastReplacedIndex;
+      if (changedIdx >= 0 && changedIdx < _population.genomes.length) {
+         _networkCache[changedIdx] = NeatForward.fromGenome(_population.genomes[changedIdx]);
       }
     }
   }

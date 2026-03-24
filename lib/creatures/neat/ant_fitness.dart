@@ -72,6 +72,11 @@ class AntFitness {
     _score += 15.0;
   }
 
+  /// Record that the ant dug a tunnel or deposited dirt (nest building).
+  void built() {
+    _score += 8.0;
+  }
+
   /// Record that the ant died.
   void died() {
     _score -= 5.0;

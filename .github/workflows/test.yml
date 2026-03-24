@@ -1,0 +1,193 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly Saturday at 06:00 UTC — ThunderCompute training (if budget)
+    - cron: "0 6 * * 6"
+
+# Cancel in-progress runs for the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.32.0"
+  DART_VERSION: "3.8.0"
+
+jobs:
+  # -----------------------------------------------------------------------
+  # Job 1: Flutter analysis + Dart tests (every push)
+  # -----------------------------------------------------------------------
+  analyze:
+    name: Flutter Analyze
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run Flutter tests
+        run: flutter test --no-pub
+
+  # -----------------------------------------------------------------------
+  # Job 2: Python physics test suite (every push)
+  # -----------------------------------------------------------------------
+  pytest:
+    name: Python Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        run: |
+          pip install numpy scipy scikit-image colour-science optuna \
+                    hypothesis pytest pytest-xdist Pillow
+
+      - name: Export simulation frame (needed by visual tests)
+        run: |
+          flutter pub get
+          dart run research/export_frame.dart 100
+        continue-on-error: true
+
+      - name: Generate ground truth
+        run: python research/physics_oracle.py
+        continue-on-error: true
+
+      - name: Generate visual ground truth
+        run: python research/visual_oracle.py
+        continue-on-error: true
+
+      - name: Run pytest suite
+        run: |
+          cd research
+          python -m pytest tests/ -v --tb=short -x \
+            --ignore=tests/test_snapshots.py \
+            -k "not test_visual_quality"
+        timeout-minutes: 15
+
+  # -----------------------------------------------------------------------
+  # Job 3: Integration tests for trained genomes (on PR)
+  # -----------------------------------------------------------------------
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install numpy pytest
+
+      - name: Run genome integration tests
+        run: |
+          cd research
+          python -m pytest tests/test_integration.py -v --tb=short
+        continue-on-error: true
+
+  # -----------------------------------------------------------------------
+  # Job 4: Full benchmark in CI mode (on PR, optional)
+  # -----------------------------------------------------------------------
+  benchmark:
+    name: Benchmark (PR)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'run-benchmark')
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install numpy scipy scikit-image colour-science optuna \
+                    hypothesis pytest pytest-xdist Pillow neat-python
+
+      - name: Export simulation frame
+        run: |
+          flutter pub get
+          dart run research/export_frame.dart 100
+
+      - name: Generate ground truths
+        run: |
+          python research/physics_oracle.py
+          python research/visual_oracle.py
+
+      - name: Run full test suite
+        run: |
+          cd research
+          python -m pytest tests/ -v --tb=short -x
+        timeout-minutes: 30
+
+      - name: Run Dart engine benchmark
+        run: dart run research/cloud/fast_benchmark.dart
+        continue-on-error: true
+
+  # -----------------------------------------------------------------------
+  # Job 5: Weekly ThunderCompute training (Saturday, budget-gated)
+  # -----------------------------------------------------------------------
+  weekly-train:
+    name: Weekly Cloud Training
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install numpy scipy optuna
+
+      - name: Budget check
+        env:
+          WEEKLY_BUDGET: "5.00"
+        run: |
+          python research/cloud/cost_tracker.py check \
+            --gpu a100xl --hours 2 --budget $WEEKLY_BUDGET || \
+          echo "::warning::Over budget, skipping cloud training"
+
+      - name: Cloud training (placeholder)
+        if: success()
+        run: |
+          echo "Weekly cloud training would run here."
+          echo "To enable: set TNR_API_TOKEN secret and uncomment deploy_and_run.py call"
+          # python research/cloud/deploy_and_run.py --mode creatures --gpu a100xl

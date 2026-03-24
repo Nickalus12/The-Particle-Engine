@@ -33,3 +33,4 @@ flutter:
     - assets/images/ui/
     - assets/images/backgrounds/
     - assets/shaders/
+    - assets/genomes/

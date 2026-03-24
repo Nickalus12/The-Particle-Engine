@@ -1,7 +1,7 @@
 /// Hyperparameters controlling every aspect of the NEAT algorithm.
 ///
 /// Defaults are tuned for the ant-brain use case: tiny networks
-/// (8 inputs -> variable hidden -> 6 outputs) that must evolve quickly on
+/// (9 inputs -> variable hidden -> 6 outputs) that must evolve quickly on
 /// mobile hardware. All values can be overridden at construction time.
 ///
 /// References:
@@ -12,7 +12,7 @@
 class NeatConfig {
   const NeatConfig({
     // -- Network topology --------------------------------------------------
-    this.inputCount = 8,
+    this.inputCount = 9,
     this.outputCount = 6,
 
     // -- Population --------------------------------------------------------

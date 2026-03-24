@@ -54,3 +54,7 @@ research/trial_config.json
 research/plots/*.html
 research/cloud/instance_key.pem
 research/cloud/.instance_state.json
+research/cloud/.cost_log.jsonl
+research/cloud/last_pipeline.log
+research/cloud/cloud_key
+research/cloud/cloud_key.pub

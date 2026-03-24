@@ -9,36 +9,33 @@ import 'world_config.dart';
 /// Produces a fully populated [GridData] from a [WorldConfig].
 /// Deterministic: same config always produces the same world.
 ///
-/// Usage:
-/// ```dart
-/// final config = WorldConfig.meadow(seed: 12345);
-/// final gridData = WorldGenerator.generate(config);
-/// gridData.loadIntoEngine(engine);
-/// ```
+/// Pipeline (chemistry-aware):
+/// 1. Generate heightmap via multi-octave noise
+/// 2. Fill stratigraphic terrain layers (sky, compost, dirt, clay, stone)
+/// 3. Carve caves using layered noise + cellular automata
+/// 4. Place water in depressions, underground pools, meadow streams
+/// 5. Canyon/island features
+/// 6. Waterfalls at elevation drops
+/// 7. Snow on highest peaks
+/// 8. Lava + sulfur (volcanic features)
+/// 9. Ore deposits (copper shallow, metal deep -- real geology)
+/// 10. Coal seams in organic layers
+/// 11. Salt deposits in dried beds
+/// 12. Surface detail (sand, boulders, grass)
+/// 13. Vegetation & trees
+/// 14. Atmosphere (oxygen fills air, CO2 pools in caves)
+/// 15. Ecosystem seeding (fungus, algae, seeds on fertile dirt)
+/// 16. Electrical features (conductive veins, insulating layers)
+/// 17. Ant colonies
+/// 18. Initialize temperatures
 class WorldGenerator {
   WorldGenerator._();
 
-  /// Generate a complete procedural world.
-  ///
-  /// Pipeline:
-  /// 1. Generate heightmap via multi-octave noise
-  /// 2. Fill terrain layers (sky, dirt, stone, deep stone)
-  /// 3. Carve caves using layered noise + cellular automata
-  /// 4. Place water in depressions, underground pools, meadow streams
-  /// 5. Canyon features (river, cliff caves, sandy bottom)
-  /// 6. Place waterfalls at elevation drops
-  /// 7. Place snow on highest peaks (top 10%, skips meadow)
-  /// 8. Place lava pockets deep underground (skips meadow)
-  /// 9. Place metal ore deposits in stone (enhanced for underground)
-  /// 10. Place surface detail (sand beaches, boulders, grass)
-  /// 11. Plant seeds and pre-grown trees in groves + flowers
-  /// 12. Optionally place ant colony starters
-  /// 13. Initialize temperatures
   static GridData generate(WorldConfig config) {
     // 1. Heightmap.
     final heightmap = TerrainGenerator.generateHeightmap(config);
 
-    // 2. Base terrain layers.
+    // 2. Stratigraphic terrain layers (compost, dirt, clay, stone).
     final data = TerrainGenerator.fillLayers(config, heightmap);
 
     // 3. Caves.
@@ -50,7 +47,7 @@ class WorldGenerator {
       FeaturePlacer.fillIslandOcean(data, config, heightmap);
     }
 
-    // 5. Canyon-specific features (river, cliff caves, sandy bottom).
+    // 5. Canyon-specific features.
     if (config.terrainScale >= 1.8 && config.caveDensity >= 0.4 &&
         config.waterLevel < 0.55) {
       FeaturePlacer.placeCanyonFeatures(data, config, heightmap);
@@ -62,32 +59,48 @@ class WorldGenerator {
     // 7. Snow.
     FeaturePlacer.placeSnow(data, config, heightmap);
 
-    // 8. Lava.
+    // 8. Lava + sulfur.
     FeaturePlacer.placeLava(data, config, heightmap);
+    FeaturePlacer.placeSulfur(data, config, heightmap);
 
-    // 9. Ore deposits.
+    // 9. Ore deposits (depth-ordered: copper shallow, metal deep).
     FeaturePlacer.placeOre(data, config, heightmap);
 
-    // 10. Surface detail (sand, boulders, grass).
+    // 10. Coal seams.
+    FeaturePlacer.placeCoalSeams(data, config, heightmap);
+
+    // 11. Salt deposits.
+    FeaturePlacer.placeSaltDeposits(data, config, heightmap);
+
+    // 11b. Periodic table ores (depth-stratified geological placement).
+    FeaturePlacer.placePeriodicOres(data, config, heightmap);
+
+    // 12. Surface detail (sand, boulders, grass).
     FeaturePlacer.placeSurfaceDetail(data, config, heightmap);
 
-    // 11. Vegetation & trees.
+    // 13. Vegetation & trees.
     FeaturePlacer.placeVegetation(data, config, heightmap);
 
-    // 12. Ant colonies.
+    // 14. Atmosphere (oxygen in air, CO2 in caves).
+    FeaturePlacer.placeAtmosphere(data, config, heightmap);
+
+    // 15. Ecosystem (fungus, algae, seeds).
+    FeaturePlacer.placeEcosystem(data, config, heightmap);
+
+    // 16. Electrical features (conductive veins, insulating layers).
+    FeaturePlacer.placeElectricalFeatures(data, config, heightmap);
+
+    // 17. Ant colonies.
     final colonies = FeaturePlacer.placeAntColonies(data, config, heightmap);
     data.colonyPositions.addAll(colonies);
 
-    // 13. Initialize temperatures based on element properties.
+    // 18. Initialize temperatures based on element properties.
     _initializeTemperatures(data, config);
 
     return data;
   }
 
   /// Set initial temperatures based on element base temperatures.
-  ///
-  /// Lava starts hot, ice/snow start cold, everything else neutral.
-  /// Also warms stone near lava for a natural heat gradient.
   static void _initializeTemperatures(GridData data, WorldConfig config) {
     for (var y = 0; y < config.height; y++) {
       for (var x = 0; x < config.width; x++) {
@@ -95,7 +108,6 @@ class WorldGenerator {
         final baseTemp = elementBaseTemp[el];
         if (baseTemp != 128) {
           data.setTemp(x, y, baseTemp);
-          // Warm/cool neighbors for natural gradient.
           for (var dy = -2; dy <= 2; dy++) {
             for (var dx = -2; dx <= 2; dx++) {
               if (dx == 0 && dy == 0) continue;
@@ -104,8 +116,7 @@ class WorldGenerator {
               if (!data.inBounds(nx, ny)) continue;
               final dist = dx.abs() + dy.abs();
               final neighborEl = data.get(nx, ny);
-              if (neighborEl == El.empty) continue;
-              // Blend toward the heat source/sink based on distance.
+              if (neighborEl == El.empty || neighborEl == El.oxygen) continue;
               final blend = dist <= 1 ? 0.6 : 0.3;
               final currentTemp = data.temperature[data.toIndex(nx, ny)];
               final newTemp = (currentTemp + (baseTemp - currentTemp) * blend).round().clamp(0, 255);
@@ -118,11 +129,10 @@ class WorldGenerator {
   }
 
   /// Generate a blank world with only a bottom boundary.
-  /// No side walls — the world wraps horizontally.
   static GridData generateBlank(int width, int height) {
     final data = GridData.empty(width, height);
 
-    // Bottom boundary — 3 rows of stone (bedrock).
+    // Bottom boundary -- 3 rows of stone (bedrock).
     for (var y = height - 3; y < height; y++) {
       for (var x = 0; x < width; x++) {
         data.set(x, y, El.stone);

@@ -39,11 +39,17 @@ class CreatureRegistry {
   ///
   /// Grid dimensions are passed through so that pheromone systems are
   /// allocated at the correct size.
-  Colony spawn(int x, int y, {int? seed, int gridW = 320, int gridH = 180}) {
+  Colony spawn(int x, int y, {
+    CreatureSpecies species = CreatureSpecies.ant,
+    int? seed,
+    int gridW = 320,
+    int gridH = 180,
+  }) {
     final colony = Colony(
       originX: x,
       originY: y,
       id: _nextColonyId++,
+      species: species,
       gridW: gridW,
       gridH: gridH,
       seed: seed,

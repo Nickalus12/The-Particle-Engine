@@ -5,9 +5,12 @@ import 'world_config.dart';
 
 /// Generates the base terrain layers from a heightmap.
 ///
-/// Produces the raw geological structure: sky, topsoil, dirt, stone,
-/// and deep stone. Cave carving, water, and features are applied separately
-/// by [FeaturePlacer].
+/// Produces geologically realistic stratigraphy:
+///   Sky > Grass > Compost > Dirt > Clay > Stone > Deep Stone (bedrock)
+///
+/// Density ordering matches real geology: lighter materials on top,
+/// heavier materials at depth. Ore veins, coal seams, and other
+/// geological features are placed by [FeaturePlacer] after this step.
 class TerrainGenerator {
   TerrainGenerator._();
 
@@ -23,7 +26,6 @@ class TerrainGenerator {
     final noise3 = SimplexNoise(config.seed + 200);
     final heightmap = List<int>.filled(config.width, 0);
 
-    // Terrain occupies roughly the middle portion of the grid vertically.
     final baseHeight = (config.height * 0.38).round();
     final terrainAmplitude = config.height * 0.18 * config.terrainScale;
 
@@ -57,14 +59,12 @@ class TerrainGenerator {
         lacunarity: 2.5,
       );
 
-      // Combine layers with decreasing influence.
       final combined = macro * 0.65 + medium * 0.25 + micro * 0.10;
 
       // --- Plateau effect: flatten near certain elevations ---
       final plateauNoise = noise.noise2D(nx * 2.0, 3.0);
       double height = combined;
       if (plateauNoise > 0.3) {
-        // Quantize to create flat plateaus.
         final steps = 4.0;
         final quantized = (combined * steps).roundToDouble() / steps;
         final blend = ((plateauNoise - 0.3) / 0.3).clamp(0.0, 1.0);
@@ -72,11 +72,8 @@ class TerrainGenerator {
       }
 
       // --- Ridge effect: sharp peaks at noise extremes ---
-      // Uses abs(noise) to fold the waveform, creating sharp V-ridges
-      // where the noise crosses zero.
       final ridgeNoise = noise2.noise2D(nx * 5.0, 2.0);
       if (ridgeNoise.abs() < 0.15) {
-        // Near zero-crossing: push height up for a sharp ridge.
         final ridgeStrength = 1.0 - (ridgeNoise.abs() / 0.15);
         height += ridgeStrength * 0.25 * config.terrainScale;
       }
@@ -99,34 +96,27 @@ class TerrainGenerator {
     return heightmap;
   }
 
-  /// Detect island-style config.
   static bool _isIslandConfig(WorldConfig config) =>
       config.waterLevel >= 0.60 &&
       config.terrainScale >= 1.0 &&
       config.terrainScale <= 1.5;
 
-  /// Detect canyon-style config (high terrain scale, moderate cave density).
   static bool _isCanyonConfig(WorldConfig config) =>
       config.terrainScale >= 1.8 && config.caveDensity >= 0.4 &&
       config.waterLevel < 0.55;
 
-  /// Detect underground-style config (high caves, low vegetation).
   static bool _isUndergroundConfig(WorldConfig config) =>
       config.caveDensity >= 0.6 && config.vegetation <= 0.1 &&
       config.terrainScale < 1.0;
 
-  /// Push edges of the heightmap down to create an island shape.
-  /// Creates a central landmass rising to a peak, with deep ocean at edges.
   static void _applyIslandFalloff(List<int> heightmap, WorldConfig config) {
     final center = config.width / 2.0;
     final maxDist = config.width / 2.0;
-    // Water line — where the ocean surface sits.
     final waterLine = (config.height * 0.55).round();
 
     for (var x = 0; x < config.width; x++) {
       final dist = (x - center).abs() / maxDist;
 
-      // Raise the center into a peak.
       if (dist < 0.15) {
         final peakFactor = 1.0 - (dist / 0.15);
         final raise = (peakFactor * config.height * 0.08).round();
@@ -134,12 +124,10 @@ class TerrainGenerator {
       }
 
       if (dist > 0.20) {
-        // Steep falloff at island edges — pushes terrain below water line.
         final falloff = ((dist - 0.20) / 0.80);
         final push = (falloff * falloff * falloff * config.height * 0.8).round();
         heightmap[x] = (heightmap[x] + push).clamp(0, config.height - 8);
       }
-      // Deep ocean floor at far edges.
       if (dist > 0.55) {
         final deepPush = ((dist - 0.55) / 0.45) * config.height * 0.15;
         heightmap[x] = (heightmap[x] + deepPush.round())
@@ -148,8 +136,6 @@ class TerrainGenerator {
     }
   }
 
-  /// Create a deep V-shaped valley in the center for canyon preset.
-  /// Canyon is 40-60% of grid height deep with steep cliff walls.
   static void _applyCanyonShape(List<int> heightmap, WorldConfig config) {
     final center = config.width / 2.0;
     final canyonWidth = config.width * 0.30;
@@ -159,17 +145,13 @@ class TerrainGenerator {
       final dist = (x - center).abs();
 
       if (dist < canyonWidth) {
-        // V-shape: linear depth increase toward center.
         final depth = 1.0 - (dist / canyonWidth);
-        // Canyon cuts 40-55% of grid height deep.
         final valleyDepth = (depth * config.height * 0.50).round();
-        // Add small noise for cliff texture.
         final noise = canyonNoise.noise2D(x / 8.0, 0.0) * 3;
         heightmap[x] = (heightmap[x] + valleyDepth + noise.round())
             .clamp(5, config.height - 15);
       }
 
-      // Raise cliff walls dramatically at canyon edges.
       if (dist > canyonWidth * 0.7 && dist < canyonWidth * 1.4) {
         final wallFactor =
             1.0 - ((dist - canyonWidth * 0.7) / (canyonWidth * 0.7)).abs();
@@ -179,17 +161,12 @@ class TerrainGenerator {
     }
   }
 
-  /// Push terrain very high (5-10% sky) for underground preset.
-  /// Leaves slight surface variation for 1-2 cave entrances.
   static void _applyUndergroundShape(List<int> heightmap, WorldConfig config) {
     final entranceNoise = SimplexNoise(config.seed + 500);
     for (var x = 0; x < config.width; x++) {
-      // Base surface at ~6% from top (very little sky).
       var surface = (config.height * 0.06).round();
-      // Slight variation for natural ceiling + occasional cave entrances.
       final variation = entranceNoise.noise2D(x / 12.0, 0.0);
       if (variation > 0.6) {
-        // Cave entrance dip — sky reaches deeper here.
         surface += ((variation - 0.6) * config.height * 0.10).round();
       } else {
         surface += (variation * 2).round().abs();
@@ -198,34 +175,51 @@ class TerrainGenerator {
     }
   }
 
-  /// Fill the grid with terrain layers based on the heightmap.
+  /// Fill the grid with geologically realistic terrain layers.
   ///
-  /// Layers from top to bottom at each column:
-  /// 1. Empty (sky) — above heightmap
-  /// 2. Grass (surface plant) — at terrain surface
-  /// 3. Dirt (topsoil) — at surface, variable depth
-  /// 4. Stone — bulk of underground
-  /// 5. Deep stone (indestructible boundary) — bottom 5 cells
+  /// Stratigraphy (top to bottom at each column):
+  /// 1. Empty (sky) -- above heightmap
+  /// 2. Compost -- thin decomposed organic layer under surface
+  /// 3. Dirt (topsoil) -- variable depth, thicker in meadows
+  /// 4. Clay transition -- between dirt and stone, near water bodies
+  /// 5. Stone -- bulk underground
+  /// 6. Deep stone (bedrock) -- bottom 5 cells, indestructible
+  ///
+  /// The compost and clay layers are new additions that create more
+  /// geologically realistic stratigraphy and feed the chemistry system.
   static GridData fillLayers(WorldConfig config, List<int> heightmap) {
     final data = GridData.empty(config.width, config.height);
     final noise = SimplexNoise(config.seed + 300);
+    final clayNoise = SimplexNoise(config.seed + 310);
 
     for (var x = 0; x < config.width; x++) {
       final surfaceY = heightmap[x];
       final dirtD = _dirtDepth(x, config, noise);
+      // Compost: thin organic layer just under surface.
+      final compostD = (1 + (config.compostDepth * (config.compostMaxCells - 1) *
+          ((noise.noise2D(x / 12.0, 2.0) + 1) * 0.5))).round().clamp(0, config.compostMaxCells);
+      // Clay transition between dirt and stone.
+      final clayD = (config.clayNearWater * config.clayMaxCells *
+          ((clayNoise.noise2D(x / 15.0, 0.0) + 1) * 0.5)).round().clamp(0, config.clayMaxCells);
 
       for (var y = 0; y < config.height; y++) {
         if (y < surfaceY) {
-          // Sky — already El.empty (0).
+          // Sky -- already El.empty (0).
           continue;
         }
 
         final depth = y - surfaceY;
 
-        if (depth < dirtD) {
+        if (depth < compostD && config.compostDepth > 0) {
+          // Compost layer: decomposed organics right under surface.
+          data.set(x, y, El.compost);
+        } else if (depth < dirtD) {
           data.set(x, y, El.dirt);
+        } else if (depth < dirtD + clayD) {
+          // Clay transition between dirt and stone.
+          data.set(x, y, El.clay);
         } else if (y >= config.height - 5) {
-          // Deep stone boundary (indestructible).
+          // Bedrock boundary.
           data.set(x, y, El.stone);
         } else {
           data.set(x, y, El.stone);
@@ -237,20 +231,11 @@ class TerrainGenerator {
   }
 
   /// Variable dirt depth per column using noise for organic variation.
-  /// Meadow-like configs get richer dirt (15-25), canyon gets thin (4-10).
+  /// Uses config.dirtDepthBase and config.dirtDepthVariance instead of
+  /// hardcoded values so Optuna can tune per-preset dirt profiles.
   static int _dirtDepth(int x, WorldConfig config, SimplexNoise noise) {
     final n = noise.noise2D(x / 20.0, config.seed * 0.01);
     final normalized = (n + 1.0) * 0.5; // 0..1
-
-    // Canyon: thin dirt on cliff faces (exposed stone).
-    if (_isCanyonConfig(config)) {
-      return (4 + normalized * 6).round();
-    }
-    // Meadow: rich deep dirt.
-    if (config.vegetation >= 0.8 && config.terrainScale < 1.0) {
-      return (15 + normalized * 10).round();
-    }
-    // Default.
-    return (8 + normalized * 17).round();
+    return (config.dirtDepthBase + normalized * config.dirtDepthVariance).round();
   }
 }

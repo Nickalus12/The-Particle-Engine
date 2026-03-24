@@ -1,0 +1,34 @@
+{
+  "species": "firefly",
+  "total_niches": 1296,
+  "filled_niches": 6,
+  "coverage": 0.004629629629629629,
+  "best_fitness": 689.0,
+  "mean_fitness": 193.75,
+  "behavior_labels": [
+    "env_modification",
+    "social_interaction",
+    "temporal_strategy",
+    "resource_management"
+  ],
+  "behavior_bounds": [
+    [
+      0.0,
+      1.0
+    ],
+    [
+      0.0,
+      1.0
+    ],
+    [
+      0.0,
+      1.0
+    ],
+    [
+      0.0,
+      1.0
+    ]
+  ],
+  "behavior_dims": 4,
+  "n_params": 124
+}

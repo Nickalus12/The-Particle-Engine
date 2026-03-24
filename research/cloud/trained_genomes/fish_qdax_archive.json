@@ -1,0 +1,23 @@
+{
+  "species": "fish",
+  "total_niches": 225,
+  "filled_niches": 196,
+  "coverage": 0.8711111111111111,
+  "best_fitness": 238.49000549316406,
+  "mean_fitness": 89.10784912109375,
+  "behavior_labels": [
+    "schooling",
+    "depth_preference"
+  ],
+  "behavior_bounds": [
+    [
+      0.0,
+      1.0
+    ],
+    [
+      0.0,
+      1.0
+    ]
+  ],
+  "n_params": 149
+}

@@ -18,7 +18,7 @@ import 'neat_genome.dart';
 /// microsecond per forward pass) and holds no mutable state beyond the
 /// network's pre-allocated value buffer.
 ///
-/// ## Inputs (8 neurons)
+/// ## Inputs (9 neurons)
 ///
 /// | Index | Signal | Range |
 /// |-------|--------|-------|
@@ -30,6 +30,7 @@ import 'neat_genome.dart';
 /// | 5 | Own energy level | 0-1 |
 /// | 6 | Carrying food | 0 or 1 |
 /// | 7 | Nearby enemy count (normalised) | 0-1 |
+/// | 8 | Light level (luminance at ant position) | 0-1 |
 ///
 /// ## Outputs (6 neurons)
 ///
@@ -52,7 +53,7 @@ class AntBrain {
   final NeatForward network;
 
   /// Reusable input buffer to avoid allocation every tick.
-  final Float64List _inputs = Float64List(8);
+  final Float64List _inputs = Float64List(9);
 
   /// Run one tick of neural decision-making.
   ///
@@ -98,6 +99,12 @@ class AntBrain {
 
     // [7] Nearby enemy count (normalised: 5+ enemies = 1.0).
     _inputs[7] = (nearbyEnemyCount / 5.0).clamp(0.0, 1.0);
+
+    // [8] Light level (luminance at ant position, normalised 0-1).
+    final antIdx = antY * sim.gridW + antX;
+    _inputs[8] = (antIdx >= 0 && antIdx < sim.luminance.length)
+        ? sim.luminance[antIdx] / 255.0
+        : 0.0;
 
     // -- Forward pass --------------------------------------------------------
     final outputs = network.activate(_inputs);

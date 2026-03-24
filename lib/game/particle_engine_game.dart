@@ -13,7 +13,9 @@ import 'package:flutter/services.dart';
 import '../models/game_state.dart';
 import '../simulation/world_gen/world_config.dart';
 import '../ui/widgets/colony_inspector.dart';
+import '../ui/widgets/element_bottom_bar.dart';
 import '../ui/widgets/element_palette.dart';
+import '../ui/widgets/periodic_table_overlay.dart';
 import '../ui/widgets/mini_map.dart';
 import '../ui/widgets/tool_bar.dart';
 import 'sandbox_world.dart';
@@ -379,9 +381,24 @@ class ParticleEngineGame extends FlameGame
     }
 
     // -- Vertical (always clamped) --
+    // INNOVATION: Sticky Ground and dynamic clamping
+    // We want to ensure the "baseline" (ground surface) is visible and not
+    // entirely obscured by the HUD.
+    final groundBaseline = cameraHeight * 0.75; // Estimated baseline
     final minY = halfH;
-    final maxY = cameraHeight - halfH;
-    final y = minY < maxY ? pos.y.clamp(minY, maxY) : cameraHeight / 2;
+    // Allow scrolling slightly past the bottom to clear the HUD
+    final maxY = cameraHeight - halfH + (80 / zoom); 
+    
+    double y = pos.y;
+    
+    // Sticky Ground: if we are close to the baseline, prefer it.
+    // This makes the camera "feel" the ground as a natural resting point.
+    if ((y - groundBaseline).abs() < 40 / zoom) {
+       // Smoothly pull toward baseline
+       y = y * 0.9 + groundBaseline * 0.1;
+    }
+
+    y = minY < maxY ? y.clamp(minY, maxY) : cameraHeight / 2;
 
     camera.viewfinder.position = Vector2(x, y);
   }
@@ -391,17 +408,18 @@ class ParticleEngineGame extends FlameGame
   // ---------------------------------------------------------------------------
 
   static const String overlayPalette = 'element_palette';
+  static const String overlayBottomBar = 'element_bottom_bar';
   static const String overlayToolbar = 'tool_bar';
   static const String overlayMiniMap = 'mini_map';
   static const String overlayColonyInspector = 'colony_inspector';
   static const String overlayObservationHint = 'observation_hint';
   static const String overlayBackButton = 'back_button';
+  static const String overlayPeriodicTable = 'periodic_table';
 
   /// All creation-mode overlays shown/hidden as a group.
   static const List<String> _creationOverlays = [
-    overlayPalette,
+    overlayBottomBar,
     overlayToolbar,
-    overlayMiniMap,
   ];
 
   // ---------------------------------------------------------------------------
@@ -480,6 +498,10 @@ class ParticleEngineGame extends FlameGame
                   game: game,
                   onInteraction: game.notifyHudInteraction,
                 ),
+            overlayBottomBar: (context, game) => ElementBottomBar(
+                  game: game,
+                  onInteraction: game.notifyHudInteraction,
+                ),
             overlayToolbar: (context, game) => ToolBar(
                   game: game,
                   onInteraction: game.notifyHudInteraction,
@@ -501,6 +523,11 @@ class ParticleEngineGame extends FlameGame
                 _ObservationHintOverlay(game: game),
             overlayBackButton: (context, game) =>
                 _BackButtonOverlay(game: game),
+            overlayPeriodicTable: (context, game) =>
+                PeriodicTableOverlay(
+                  game: game,
+                  onClose: () => game.overlays.remove(overlayPeriodicTable),
+                ),
           };
 }
 

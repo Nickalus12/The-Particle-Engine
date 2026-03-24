@@ -479,4 +479,172 @@ const List<ReactionRule> _builtInRules = [
     description: 'Acid melts snow into water',
     flashR: 80, flashG: 240, flashB: 100, flashCount: 3,
   ),
+
+  // ==========================================================================
+  // Periodic Table Reactions
+  // ==========================================================================
+
+  // -- Alkali metals + water (explosive, handled in behavior for main effect,
+  //    but these provide extra spread) --
+  ReactionRule(
+    source: El.sodium, target: El.water,
+    sourceBecomesElement: El.fire, targetBecomesElement: El.hydrogen,
+    probability: 0.8, description: 'Sodium reacts violently with water',
+    flashR: 255, flashG: 200, flashB: 50, flashCount: 6,
+  ),
+  ReactionRule(
+    source: El.potassium, target: El.water,
+    sourceBecomesElement: El.fire, targetBecomesElement: El.hydrogen,
+    probability: 0.9, description: 'Potassium explodes in water',
+    flashR: 255, flashG: 180, flashB: 220, flashCount: 8,
+  ),
+  ReactionRule(
+    source: El.lithium, target: El.water,
+    sourceBecomesElement: El.fire, targetBecomesElement: El.hydrogen,
+    probability: 0.6, description: 'Lithium reacts with water',
+    flashR: 255, flashG: 50, flashB: 50, flashCount: 4,
+  ),
+  ReactionRule(
+    source: El.cesium, target: El.water,
+    sourceBecomesElement: El.fire, targetBecomesElement: El.hydrogen,
+    probability: 1.0, description: 'Cesium detonates in water',
+    flashR: 255, flashG: 255, flashB: 100, flashCount: 10,
+  ),
+
+  // -- Halogen + metal → salt --
+  ReactionRule(
+    source: El.chlorine, target: El.sodium,
+    sourceBecomesElement: El.empty, targetBecomesElement: El.salt,
+    probability: 0.3, description: 'Chlorine + sodium = table salt (NaCl)',
+    flashR: 255, flashG: 255, flashB: 200, flashCount: 3,
+  ),
+  ReactionRule(
+    source: El.chlorine, target: El.metal,
+    sourceBecomesElement: El.empty, targetBecomesElement: El.rust,
+    probability: 0.1, description: 'Chlorine corrodes iron',
+  ),
+  ReactionRule(
+    source: El.fluorine, target: El.glass,
+    sourceBecomesElement: El.empty, targetBecomesElement: El.empty,
+    probability: 0.15, description: 'Fluorine etches glass',
+    flashR: 200, flashG: 255, flashB: 200, flashCount: 2,
+  ),
+  ReactionRule(
+    source: El.fluorine, target: El.water,
+    sourceBecomesElement: El.empty, targetBecomesElement: El.acid,
+    probability: 0.2, description: 'Fluorine creates hydrofluoric acid',
+  ),
+
+  // -- Metal + acid → dissolution + hydrogen gas --
+  ReactionRule(
+    source: El.acid, target: El.aluminum,
+    targetBecomesElement: El.empty,
+    probability: 0.1, description: 'Acid dissolves aluminum',
+    flashR: 100, flashG: 255, flashB: 100, flashCount: 2,
+  ),
+  ReactionRule(
+    source: El.acid, target: El.zinc,
+    targetBecomesElement: El.empty,
+    probability: 0.08, description: 'Acid dissolves zinc, produces H₂',
+    flashR: 100, flashG: 255, flashB: 100, flashCount: 2,
+  ),
+  ReactionRule(
+    source: El.acid, target: El.tin,
+    targetBecomesElement: El.empty,
+    probability: 0.08, description: 'Acid dissolves tin',
+  ),
+  // Gold resists acid (no reaction = corrosionResistance: 255)
+
+  // -- Silver tarnish --
+  ReactionRule(
+    source: El.silver, target: El.sulfur,
+    probability: 0.05, description: 'Silver tarnishes with sulfur',
+    // Visual: darken the silver (handled via life counter in renderer)
+  ),
+
+  // -- Zinc galvanization (protects iron from rust) --
+  ReactionRule(
+    source: El.zinc, target: El.rust,
+    targetBecomesElement: El.metal,
+    probability: 0.03, description: 'Zinc reduces rust back to iron',
+    flashR: 180, flashG: 200, flashB: 220, flashCount: 2,
+  ),
+
+  // -- Mercury + gold/silver amalgamation --
+  ReactionRule(
+    source: El.mercury, target: El.gold,
+    targetBecomesElement: El.mercury,
+    probability: 0.02, description: 'Mercury amalgamates gold',
+  ),
+  ReactionRule(
+    source: El.mercury, target: El.silver,
+    targetBecomesElement: El.mercury,
+    probability: 0.03, description: 'Mercury amalgamates silver',
+  ),
+
+  // -- Magnesium + fire = brilliant white flash --
+  ReactionRule(
+    source: El.magnesium, target: El.fire,
+    sourceBecomesElement: El.ash,
+    probability: 0.3, description: 'Magnesium burns with brilliant white light',
+    flashR: 255, flashG: 255, flashB: 255, flashCount: 12,
+  ),
+
+  // -- Carbon (charcoal) + extreme pressure/heat → diamond --
+  ReactionRule(
+    source: El.charcoal, target: El.lava,
+    sourceBecomesElement: El.carbon,
+    probability: 0.005, description: 'Extreme heat+pressure: charcoal → diamond',
+    flashR: 200, flashG: 230, flashB: 255, flashCount: 5,
+    requiresMinTemp: 200,
+  ),
+
+  // -- Phosphorus auto-ignition with oxygen --
+  ReactionRule(
+    source: El.phosphorus, target: El.oxygen,
+    sourceBecomesElement: El.fire,
+    probability: 0.05, description: 'White phosphorus ignites in air',
+    flashR: 255, flashG: 255, flashB: 200, flashCount: 4,
+  ),
+
+  // -- Bromine reactions --
+  ReactionRule(
+    source: El.bromine, target: El.aluminum,
+    sourceBecomesElement: El.empty, targetBecomesElement: El.salt,
+    probability: 0.1, description: 'Bromine reacts with aluminum',
+    flashR: 200, flashG: 100, flashB: 50, flashCount: 3,
+  ),
+
+  // -- Tin + copper → bronze (simplified) --
+  ReactionRule(
+    source: El.tin, target: El.copper,
+    probability: 0.01, description: 'Tin alloys with copper (bronze)',
+    requiresMinTemp: 160,
+  ),
+
+  // -- Nuclear: uranium chain reaction effects --
+  ReactionRule(
+    source: El.plutonium, target: El.plutonium,
+    probability: 0.02, description: 'Plutonium critical mass heating',
+    flashR: 60, flashG: 255, flashB: 80, flashCount: 3,
+  ),
+  ReactionRule(
+    source: El.thorium, target: El.thorium,
+    probability: 0.01, description: 'Thorium sustained heat',
+    flashR: 50, flashG: 200, flashB: 80, flashCount: 2,
+  ),
+
+  // -- Boron as neutron absorber (blocks uranium chain reactions) --
+  ReactionRule(
+    source: El.uranium, target: El.boron,
+    probability: 0.05, description: 'Boron absorbs neutrons, slowing uranium',
+    // No transformation — just presence slows chain reaction
+  ),
+
+  // -- Arsenic toxicity --
+  ReactionRule(
+    source: El.arsenic, target: El.water,
+    probability: 0.02, description: 'Arsenic poisons water',
+    flashR: 100, flashG: 80, flashB: 100, flashCount: 1,
+  ),
 ];

@@ -1,13 +1,16 @@
 import 'package:flame/components.dart';
 
+import '../creatures/ant.dart';
 import '../creatures/creature_registry.dart';
+import '../rendering/gi_post_process.dart';
 import '../simulation/element_behaviors.dart';
 import '../simulation/element_registry.dart';
+import '../simulation/plant_colony.dart';
 import '../simulation/reactions/reaction_registry.dart';
 import '../simulation/simulation_engine.dart';
 import '../simulation/world_gen/world_config.dart';
 import '../simulation/world_gen/world_generator.dart';
-import 'components/ant_renderer.dart';
+import 'components/creature_renderer.dart';
 import 'components/background_component.dart';
 import 'components/effects/reaction_effect_system.dart';
 import 'components/effects/reaction_particles.dart';
@@ -21,7 +24,7 @@ import 'particle_engine_game.dart';
 /// 1. [BackgroundComponent]  — dynamic sky gradient behind the grid.
 /// 2. [SandboxComponent]     — renders the live pixel grid every frame.
 /// 3. [PheromoneRenderer]    — optional pheromone trail overlay.
-/// 4. [AntRenderer]          — renders all living ants on top.
+/// 4. [CreatureRenderer]     — renders all living creatures on top.
 ///
 /// The [SimulationEngine] runs the cellular-automaton rules and exposes the
 /// current grid state that [SandboxComponent] reads during [render].
@@ -29,14 +32,56 @@ import 'particle_engine_game.dart';
 class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
   late final SimulationEngine simulation;
   late final CreatureRegistry creatures;
+  late final PlantColonyRegistry plantColonies;
   late final SandboxComponent sandboxComponent;
   late final BackgroundComponent backgroundComponent;
-  late final AntRenderer antRenderer;
+  late final CreatureRenderer creatureRenderer;
   late final PheromoneRenderer pheromoneRenderer;
   late final ReactionEffectSystem reactionEffects;
+  late final GIPostProcess giPostProcess;
 
   /// Whether simulation is paused.
   bool paused = false;
+
+  /// Frame timing instrumentation (microseconds, rolling averages).
+  /// Enable with [showFrameTiming] for performance profiling.
+  bool showFrameTiming = false;
+  int _timingChemistry = 0;
+  int _timingElectricity = 0;
+  int _timingLight = 0;
+  int _timingLuminance = 0;
+  int _timingStep = 0;
+  int _timingCreatures = 0;
+  int _timingTotal = 0;
+  int _timingSampleCount = 0;
+  final Stopwatch _perfWatch = Stopwatch();
+
+  /// Get the latest frame timing report as a formatted string.
+  String get frameTimingReport {
+    if (_timingSampleCount == 0) return 'No timing data';
+    final n = _timingSampleCount;
+    return 'Frame budget (avg over $n frames):\n'
+        '  Chemistry:   ${(_timingChemistry / n / 1000).toStringAsFixed(1)}ms\n'
+        '  Electricity: ${(_timingElectricity / n / 1000).toStringAsFixed(1)}ms\n'
+        '  LightEmit:   ${(_timingLight / n / 1000).toStringAsFixed(1)}ms\n'
+        '  Luminance:   ${(_timingLuminance / n / 1000).toStringAsFixed(1)}ms\n'
+        '  Step:        ${(_timingStep / n / 1000).toStringAsFixed(1)}ms\n'
+        '  Creatures:   ${(_timingCreatures / n / 1000).toStringAsFixed(1)}ms\n'
+        '  TOTAL:       ${(_timingTotal / n / 1000).toStringAsFixed(1)}ms\n'
+        '  Budget:      33.3ms (30fps)';
+  }
+
+  /// Reset accumulated timing data.
+  void resetFrameTiming() {
+    _timingChemistry = 0;
+    _timingElectricity = 0;
+    _timingLight = 0;
+    _timingLuminance = 0;
+    _timingStep = 0;
+    _timingCreatures = 0;
+    _timingTotal = 0;
+    _timingSampleCount = 0;
+  }
 
   /// Element behavior callback.
   void Function(SimulationEngine, int, int, int, int) elementBehavior =
@@ -59,6 +104,7 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
 
     simulation = SimulationEngine(gridW: gridW, gridH: gridH);
     creatures = CreatureRegistry();
+    plantColonies = PlantColonyRegistry();
     ElementRegistry.init();
     ReactionRegistry.init();
 
@@ -66,6 +112,10 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
     simulation.creatureCallback = (int x, int y) {
       return creatures.queryAntDecision(simulation, x, y) ?? {};
     };
+
+    // Wire plant colony registry for neural plant growth.
+    plantColonies.ensureSize(gridW * gridH);
+    simulation.plantColonies = plantColonies;
 
     // Populate the world based on game configuration.
     if (game.loadState != null) {
@@ -89,13 +139,18 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
     // Propagate cell size to particle effects system.
     ReactionParticles.cellSize = cellSize;
 
-    antRenderer = AntRenderer(registry: creatures);
+    creatureRenderer = CreatureRenderer(
+      registry: creatures,
+      simulation: simulation,
+    );
     pheromoneRenderer = PheromoneRenderer(registry: creatures);
     backgroundComponent = BackgroundComponent(
       gridWidth: gridW,
       gridHeight: gridH,
       cellSize: cellSize,
     );
+
+    giPostProcess = GIPostProcess(simulation: simulation);
 
     await addAll([
       backgroundComponent..priority = 0,
@@ -104,9 +159,10 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
         cellSize: cellSize,
       )..priority = 1,
       pheromoneRenderer..priority = 2,
-      antRenderer..priority = 3,
+      creatureRenderer..priority = 3,
       reactionEffects = ReactionEffectSystem(simulation: simulation)
         ..priority = 4,
+      giPostProcess..priority = 5,
     ]);
   }
 
@@ -117,14 +173,61 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
       _simAccumulator += dt;
       // Run at fixed ~30fps rate regardless of render framerate.
       if (_simAccumulator >= _simInterval) {
+        final timing = showFrameTiming;
+        if (timing) _perfWatch.start();
+
+        // Chemistry + age pass: every 3 frames (not every frame — too expensive)
+        if (simulation.frameCount % 3 == 0) {
+          if (timing) _perfWatch.reset();
+          simulation.runChemistryPass();
+          simulation.updateCellAge();
+          if (timing) _timingChemistry += _perfWatch.elapsedMicroseconds;
+        }
+        // Electricity pass: every 4 frames (voltage propagation is slow)
+        if (simulation.frameCount % 4 == 0) {
+          if (timing) _perfWatch.reset();
+          simulation.runElectricityPass();
+          if (timing) _timingElectricity += _perfWatch.elapsedMicroseconds;
+        }
+        // Light emission: every 4 frames (writes lightR/G/B per cell)
+        if (simulation.frameCount % 4 == 0) {
+          if (timing) _perfWatch.reset();
+          simulation.updateLightEmission();
+          if (timing) _timingLight += _perfWatch.elapsedMicroseconds;
+        }
+        // Luminance: every 8 frames (CPU-side light level for gameplay)
+        if (simulation.frameCount % 8 == 0) {
+          if (timing) _perfWatch.reset();
+          simulation.updateLuminance();
+          if (timing) _timingLuminance += _perfWatch.elapsedMicroseconds;
+        }
+
+        if (timing) _perfWatch.reset();
         simulation.step(elementBehavior);
+        if (timing) _timingStep += _perfWatch.elapsedMicroseconds;
+
+        if (timing) _perfWatch.reset();
         creatures.tick(simulation);
+        if (timing) _timingCreatures += _perfWatch.elapsedMicroseconds;
+
+        // Plant colony neural evolution tick
+        if (simulation.frameCount % 2 == 0) {
+          plantColonies.tick();
+        }
         // Pheromone system for ant AI (extension methods on SimulationEngine)
         if (simulation.colonyX >= 0) {
           if (simulation.frameCount % 8 == 0) simulation.evaporatePheromones();
           if (simulation.frameCount % 4 == 0) simulation.diffusePheromones();
           if (simulation.frameCount % 16 == 0) simulation.updateColonyCentroid();
         }
+
+        if (timing) {
+          _perfWatch.stop();
+          _timingTotal += _perfWatch.elapsedMicroseconds;
+          _perfWatch.reset();
+          _timingSampleCount++;
+        }
+
         _simAccumulator -= _simInterval;
         // Prevent spiral of death if frames are very slow.
         if (_simAccumulator > _simInterval * 3) {
@@ -135,9 +238,10 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
   }
 
   /// Spawn a new colony at the given grid position.
-  void spawnColony(int x, int y) {
+  void spawnColony(int x, int y, {CreatureSpecies species = CreatureSpecies.ant}) {
     creatures.spawn(
       x, y,
+      species: species,
       gridW: simulation.gridW,
       gridH: simulation.gridH,
     );

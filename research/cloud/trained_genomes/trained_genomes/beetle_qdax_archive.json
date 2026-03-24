@@ -1,0 +1,34 @@
+{
+  "species": "beetle",
+  "total_niches": 4096,
+  "filled_niches": 640,
+  "coverage": 0.15625,
+  "best_fitness": 859.5,
+  "mean_fitness": 311.54827880859375,
+  "behavior_labels": [
+    "env_modification",
+    "social_interaction",
+    "temporal_strategy",
+    "resource_management"
+  ],
+  "behavior_bounds": [
+    [
+      0.0,
+      1.0
+    ],
+    [
+      0.0,
+      1.0
+    ],
+    [
+      0.0,
+      1.0
+    ],
+    [
+      0.0,
+      1.0
+    ]
+  ],
+  "behavior_dims": 4,
+  "n_params": 158
+}

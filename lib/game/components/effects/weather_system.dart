@@ -40,6 +40,7 @@ class WeatherSystem extends Component {
         if (simulation.grid[idx] == El.empty) {
           simulation.grid[idx] = weatherElement;
           simulation.life[idx] = 0;
+          simulation.mass[idx] = elementBaseMass[weatherElement];
           simulation.markDirty(x, 0);
         }
       }

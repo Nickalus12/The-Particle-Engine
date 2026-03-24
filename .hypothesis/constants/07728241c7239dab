@@ -1,0 +1,4 @@
+# file: D:\Projects\The_Particle_Engine\research\conftest.py
+# hypothesis_version: 6.151.9
+
+[180, 320, '100', 'dart', 'elements', 'export_frame.dart', 'frame.rgba', 'frame_meta.json', 'grid', 'grid.bin', 'ground_truth.json', 'meta', 'physics_oracle.py', 'pixels', 'run', 'session', 'visual_oracle.py']

@@ -116,6 +116,16 @@ class GridData {
     engine.velY.setAll(0, velY);
     engine.temperature.setAll(0, temperature);
 
+    // Initialize mass for all placed elements
+    final g = engine.grid;
+    final m = engine.mass;
+    for (int i = 0; i < g.length; i++) {
+      final el = g[i];
+      if (el != El.empty && el < maxElements) {
+        m[i] = elementBaseMass[el];
+      }
+    }
+
     // Set primary colony position for pheromone system.
     if (colonyPositions.isNotEmpty) {
       final (cx, cy) = colonyPositions.first;

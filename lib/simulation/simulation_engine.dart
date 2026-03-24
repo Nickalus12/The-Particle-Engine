@@ -1,7 +1,9 @@
 import 'dart:math';
 import 'dart:typed_data';
 
+import '../utils/fast_rng.dart';
 import 'element_registry.dart';
+import 'plant_colony.dart';
 
 // ---------------------------------------------------------------------------
 // SimulationEngine -- Core grid data, helpers, and main simulation loop
@@ -89,6 +91,86 @@ class SimulationEngine {
   late Uint8List pheroFood;
   late Uint8List pheroHome;
 
+  // -- Chemistry fields (unified physics model) ------------------------------
+
+  /// Electrical charge per cell (-128 to +127). 0 = neutral.
+  late Int8List charge;
+
+  /// Oxidation state per cell (0-255, centered at 128). >128 = oxidized.
+  late Uint8List oxidation;
+
+  /// Water content per cell (0-255). Enables dissolution, conductivity, etc.
+  late Uint8List moisture;
+
+  /// Structural support (0-255). Propagates from anchors. 0 = falling/broken.
+  late Uint8List support;
+
+  // -- Electricity fields ----------------------------------------------------
+
+  /// Electrical potential per cell (-128 to +127). Current flows high→low.
+  late Int8List voltage;
+
+  /// Frames since last spark (Wireworld-inspired refractory period).
+  late Uint8List sparkTimer;
+
+  // -- Light emission fields (CPU-side, feeds GPU Radiance Cascades) ---------
+
+  /// Red light intensity per cell (0-255).
+  late Uint8List lightR;
+
+  /// Green light intensity per cell (0-255).
+  late Uint8List lightG;
+
+  /// Blue light intensity per cell (0-255).
+  late Uint8List lightB;
+
+  // -- Advanced physics fields -----------------------------------------------
+
+  /// Acidity per cell (0-255 mapped to pH 0.0-14.0). 128 = neutral (pH 7).
+  late Uint8List pH;
+
+  /// Element type dissolved in this liquid cell (0 = nothing dissolved).
+  late Uint8List dissolvedType;
+
+  /// Concentration of dissolved substance (0-255). 0 = pure, 255 = saturated.
+  late Uint8List concentration;
+
+  /// Per-cell wind X velocity (-128 to +127).
+  late Int8List windX2;
+
+  /// Per-cell wind Y velocity (-128 to +127).
+  late Int8List windY2;
+
+  /// Structural stress per cell (0-255). Accumulates from weight above.
+  late Uint8List stress;
+
+  /// Mechanical vibration intensity (0-255). Propagates through solids, decays.
+  late Uint8List vibration;
+
+  /// Vibration frequency band (0-255). Low = rumble, high = crackle/tinkle.
+  /// Sound synthesis reads (vibration, frequency) to generate audio.
+  late Uint8List vibrationFreq;
+
+  /// Per-cell mass (0-255). Affects gravity acceleration, momentum, impact.
+  /// Derived from element density but modified by dissolved substances,
+  /// moisture content, etc. Heavier cells fall faster, hit harder.
+  late Uint8List mass;
+
+  /// Light level received by this cell (0-255). Read back from GPU
+  /// Radiance Cascades every N frames. Drives photosynthesis, creature
+  /// vision, fungus avoidance. 0 = total darkness, 255 = full sunlight.
+  late Uint8List luminance;
+
+  /// Accumulated downward momentum (0-255). mass × velocity over time.
+  /// Determines impact force on landing: vibration, structural damage,
+  /// crater depth. Resets to 0 when cell stops moving.
+  late Uint8List momentum;
+
+  /// Ticks since this cell last changed element type (0-255, saturates).
+  /// Enables: patina, weathering, soil compaction, fossilization.
+  /// Incremented each frame if cell is unchanged, reset on change.
+  late Uint8List cellAge;
+
   // -- Colony tracking -------------------------------------------------------
 
   int colonyX = -1;
@@ -96,11 +178,20 @@ class SimulationEngine {
 
   // -- Random instance -------------------------------------------------------
 
-  late final Random rng;
+  late final FastRng rng;
 
   // -- Frame counter ---------------------------------------------------------
 
   int frameCount = 0;
+
+  /// If true, the simulation uses vertical grid slicing to parallelize processing.
+  bool parallelUpdate = true;
+
+  /// Number of vertical slices to divide the grid into for parallel processing.
+  int numSlices = 4;
+
+  /// The size of each vertical slice in pixels.
+  int sliceWidth = 0;
 
   // -- Physics manipulation --------------------------------------------------
 
@@ -140,6 +231,10 @@ class SimulationEngine {
   /// Used by simAnt() to get neural-driven decisions from the NEAT system.
   Map<String, double> Function(int x, int y)? creatureCallback;
 
+  /// Plant colony registry for neural plant growth decisions.
+  /// Set by the game layer; behaviors query this for colony-driven growth.
+  PlantColonyRegistry? plantColonies;
+
   // =========================================================================
   // Construction / initialization
   // =========================================================================
@@ -148,7 +243,7 @@ class SimulationEngine {
   ///
   /// Pass landscape-oriented values (e.g. 320x180) for widescreen layouts.
   SimulationEngine({this.gridW = 320, this.gridH = 180, int? seed}) {
-    rng = seed != null ? Random(seed) : Random();
+    rng = FastRng(seed ?? DateTime.now().millisecondsSinceEpoch);
     _allocate();
   }
 
@@ -174,6 +269,38 @@ class SimulationEngine {
 
     pheroFood = Uint8List(totalCells);
     pheroHome = Uint8List(totalCells);
+
+    // Chemistry fields
+    charge = Int8List(totalCells);
+    oxidation = Uint8List(totalCells);
+    oxidation.fillRange(0, totalCells, 128); // neutral oxidation state
+    moisture = Uint8List(totalCells);
+    support = Uint8List(totalCells);
+
+    // Electricity fields
+    voltage = Int8List(totalCells);
+    sparkTimer = Uint8List(totalCells);
+
+    // Light emission fields
+    lightR = Uint8List(totalCells);
+    lightG = Uint8List(totalCells);
+    lightB = Uint8List(totalCells);
+
+    // Advanced physics fields
+    pH = Uint8List(totalCells);
+    pH.fillRange(0, totalCells, 128); // neutral pH 7
+    dissolvedType = Uint8List(totalCells);
+    concentration = Uint8List(totalCells);
+    windX2 = Int8List(totalCells);
+    windY2 = Int8List(totalCells);
+    stress = Uint8List(totalCells);
+    vibration = Uint8List(totalCells);
+    vibrationFreq = Uint8List(totalCells);
+    mass = Uint8List(totalCells);
+    luminance = Uint8List(totalCells);
+    momentum = Uint8List(totalCells);
+    cellAge = Uint8List(totalCells);
+
     colonyX = -1;
     colonyY = -1;
   }
@@ -196,6 +323,27 @@ class SimulationEngine {
     pressure.fillRange(0, pressure.length, 0);
     pheroFood.fillRange(0, pheroFood.length, 0);
     pheroHome.fillRange(0, pheroHome.length, 0);
+    charge.fillRange(0, charge.length, 0);
+    oxidation.fillRange(0, oxidation.length, 128);
+    moisture.fillRange(0, moisture.length, 0);
+    support.fillRange(0, support.length, 0);
+    voltage.fillRange(0, voltage.length, 0);
+    sparkTimer.fillRange(0, sparkTimer.length, 0);
+    lightR.fillRange(0, lightR.length, 0);
+    lightG.fillRange(0, lightG.length, 0);
+    lightB.fillRange(0, lightB.length, 0);
+    pH.fillRange(0, pH.length, 128);
+    dissolvedType.fillRange(0, dissolvedType.length, 0);
+    concentration.fillRange(0, concentration.length, 0);
+    windX2.fillRange(0, windX2.length, 0);
+    windY2.fillRange(0, windY2.length, 0);
+    stress.fillRange(0, stress.length, 0);
+    vibration.fillRange(0, vibration.length, 0);
+    vibrationFreq.fillRange(0, vibrationFreq.length, 0);
+    mass.fillRange(0, mass.length, 0);
+    luminance.fillRange(0, luminance.length, 0);
+    momentum.fillRange(0, momentum.length, 0);
+    cellAge.fillRange(0, cellAge.length, 0);
     colonyX = -1;
     colonyY = -1;
     markAllDirty();
@@ -262,6 +410,28 @@ class SimulationEngine {
     isNight = (snapshot['isNight'] as bool?) ?? false;
     pheroFood.fillRange(0, pheroFood.length, 0);
     pheroHome.fillRange(0, pheroHome.length, 0);
+    // Reset new physics fields on restore
+    charge.fillRange(0, charge.length, 0);
+    oxidation.fillRange(0, oxidation.length, 128);
+    moisture.fillRange(0, moisture.length, 0);
+    support.fillRange(0, support.length, 0);
+    voltage.fillRange(0, voltage.length, 0);
+    sparkTimer.fillRange(0, sparkTimer.length, 0);
+    lightR.fillRange(0, lightR.length, 0);
+    lightG.fillRange(0, lightG.length, 0);
+    lightB.fillRange(0, lightB.length, 0);
+    pH.fillRange(0, pH.length, 128);
+    dissolvedType.fillRange(0, dissolvedType.length, 0);
+    concentration.fillRange(0, concentration.length, 0);
+    windX2.fillRange(0, windX2.length, 0);
+    windY2.fillRange(0, windY2.length, 0);
+    stress.fillRange(0, stress.length, 0);
+    vibration.fillRange(0, vibration.length, 0);
+    vibrationFreq.fillRange(0, vibrationFreq.length, 0);
+    mass.fillRange(0, mass.length, 0);
+    luminance.fillRange(0, luminance.length, 0);
+    momentum.fillRange(0, momentum.length, 0);
+    cellAge.fillRange(0, cellAge.length, 0);
     colonyX = -1;
     colonyY = -1;
     markAllDirty();
@@ -291,18 +461,48 @@ class SimulationEngine {
     final tmpVx = velX[a];
     final tmpVy = velY[a];
     final tmpTemp = temperature[a];
+    final tmpCharge = charge[a];
+    final tmpOx = oxidation[a];
+    final tmpMoist = moisture[a];
+    final tmpVolt = voltage[a];
+    final tmpPH = pH[a];
+    final tmpDissolved = dissolvedType[a];
+    final tmpConc = concentration[a];
+    final tmpMass = mass[a];
+    final tmpMomentum = momentum[a];
+    final tmpCellAge = cellAge[a];
 
     grid[a] = grid[b];
     life[a] = life[b];
     velX[a] = velX[b];
     velY[a] = velY[b];
     temperature[a] = temperature[b];
+    charge[a] = charge[b];
+    oxidation[a] = oxidation[b];
+    moisture[a] = moisture[b];
+    voltage[a] = voltage[b];
+    pH[a] = pH[b];
+    dissolvedType[a] = dissolvedType[b];
+    concentration[a] = concentration[b];
+    mass[a] = mass[b];
+    momentum[a] = momentum[b];
+    cellAge[a] = cellAge[b];
 
     grid[b] = tmpEl;
     life[b] = tmpLife;
     velX[b] = tmpVx;
     velY[b] = tmpVy;
     temperature[b] = tmpTemp;
+    charge[b] = tmpCharge;
+    oxidation[b] = tmpOx;
+    moisture[b] = tmpMoist;
+    voltage[b] = tmpVolt;
+    pH[b] = tmpPH;
+    dissolvedType[b] = tmpDissolved;
+    concentration[b] = tmpConc;
+    mass[b] = tmpMass;
+    momentum[b] = tmpMomentum;
+    cellAge[b] = tmpCellAge;
 
     final clockBit = simClock ? 0x80 : 0;
     flags[a] = clockBit;
@@ -373,6 +573,7 @@ class SimulationEngine {
     final maxY = gridH - 1;
     final xl = (x - 1 + w) % w;
     final xr = (x + 1) % w;
+    // Unsettle immediate 8 neighbors
     if (y > 0) {
       final rowAbove = (y - 1) * w;
       flags[rowAbove + xl] &= 0x80;
@@ -387,9 +588,59 @@ class SimulationEngine {
       flags[rowBelow + x] &= 0x80;
       flags[rowBelow + xr] &= 0x80;
     }
+    // CASCADE UPWARD: when support is removed, everything above must
+    // re-evaluate gravity. Scan the column upward and unsettle non-empty
+    // cells until we hit the surface or an already-unsettled cell.
+    // This is what makes terrain collapse when you dig under it.
+    final upDir = gravityDir == 1 ? -1 : 1; // opposite of gravity
+    for (int scanY = y + upDir; scanY >= 0 && scanY < gridH; scanY += upDir) {
+      final si = scanY * w + x;
+      if (grid[si] == El.empty) break; // hit air, stop
+      if ((flags[si] & 0x40) == 0) break; // already unsettled, stop
+      flags[si] &= 0x80; // clear stable bits
+      markDirty(x, scanY);
+      // Also unsettle the cells to left/right of this column cell
+      final sxl = wrapX(x - 1);
+      final sxr = wrapX(x + 1);
+      flags[scanY * w + sxl] &= 0x80;
+      flags[scanY * w + sxr] &= 0x80;
+      markDirty(sxl, scanY);
+      markDirty(sxr, scanY);
+    }
   }
 
   /// Check if any of the 8 neighbors contains [elType]. Wraps horizontally.
+  @pragma('vm:prefer-inline')
+  /// Reset ALL per-cell fields at [idx] to empty/neutral defaults.
+  /// Use this whenever removing an element to avoid stale physics state.
+  @pragma('vm:prefer-inline')
+  void clearCell(int idx) {
+    grid[idx] = El.empty;
+    life[idx] = 0;
+    velX[idx] = 0;
+    velY[idx] = 0;
+    temperature[idx] = 128;
+    charge[idx] = 0;
+    oxidation[idx] = 128;
+    moisture[idx] = 0;
+    voltage[idx] = 0;
+    sparkTimer[idx] = 0;
+    pH[idx] = 128;
+    dissolvedType[idx] = 0;
+    concentration[idx] = 0;
+    mass[idx] = 0;
+    momentum[idx] = 0;
+    stress[idx] = 0;
+    vibration[idx] = 0;
+    vibrationFreq[idx] = 0;
+    cellAge[idx] = 0;
+    // Light, wind, luminance are computed fields — cleared during their update passes
+    final cx = idx % gridW;
+    final cy = idx ~/ gridW;
+    markDirty(cx, cy);
+  }
+
+  /// Check if any of the 8 neighbors matches [elType]. Wraps horizontally.
   @pragma('vm:prefer-inline')
   bool checkAdjacent(int x, int y, int elType) {
     final w = gridW;
@@ -414,7 +665,109 @@ class SimulationEngine {
     return false;
   }
 
+  /// Check if any of the 8 neighbors matches [a] or [b]. Wraps horizontally.
+  /// Reads neighbors once instead of calling checkAdjacent twice.
+  @pragma('vm:prefer-inline')
+  bool checkAdjacentAny2(int x, int y, int a, int b) {
+    final w = gridW;
+    final g = grid;
+    final maxY = gridH - 1;
+    final xl = (x - 1 + w) % w;
+    final xr = (x + 1) % w;
+    if (y > 0) {
+      final ra = (y - 1) * w;
+      int n = g[ra + xl]; if (n == a || n == b) return true;
+      n = g[ra + x]; if (n == a || n == b) return true;
+      n = g[ra + xr]; if (n == a || n == b) return true;
+    }
+    int n = g[y * w + xl]; if (n == a || n == b) return true;
+    n = g[y * w + xr]; if (n == a || n == b) return true;
+    if (y < maxY) {
+      final rb = (y + 1) * w;
+      n = g[rb + xl]; if (n == a || n == b) return true;
+      n = g[rb + x]; if (n == a || n == b) return true;
+      n = g[rb + xr]; if (n == a || n == b) return true;
+    }
+    return false;
+  }
+
+  /// Check if any of the 8 neighbors matches [a], [b], or [c]. Wraps horizontally.
+  @pragma('vm:prefer-inline')
+  bool checkAdjacentAny3(int x, int y, int a, int b, int c) {
+    final w = gridW;
+    final g = grid;
+    final maxY = gridH - 1;
+    final xl = (x - 1 + w) % w;
+    final xr = (x + 1) % w;
+    if (y > 0) {
+      final ra = (y - 1) * w;
+      int n = g[ra + xl]; if (n == a || n == b || n == c) return true;
+      n = g[ra + x]; if (n == a || n == b || n == c) return true;
+      n = g[ra + xr]; if (n == a || n == b || n == c) return true;
+    }
+    int n = g[y * w + xl]; if (n == a || n == b || n == c) return true;
+    n = g[y * w + xr]; if (n == a || n == b || n == c) return true;
+    if (y < maxY) {
+      final rb = (y + 1) * w;
+      n = g[rb + xl]; if (n == a || n == b || n == c) return true;
+      n = g[rb + x]; if (n == a || n == b || n == c) return true;
+      n = g[rb + xr]; if (n == a || n == b || n == c) return true;
+    }
+    return false;
+  }
+
+  /// Read all 8 neighbor element types into [out] (length >= 8).
+  /// Order: NW, N, NE, W, E, SW, S, SE. Out-of-bounds Y => El.empty.
+  /// Wraps horizontally. Reads the grid once; callers test the buffer.
+  @pragma('vm:prefer-inline')
+  void readNeighbors(int x, int y, Uint8List out) {
+    final w = gridW;
+    final g = grid;
+    final xl = (x - 1 + w) % w;
+    final xr = (x + 1) % w;
+    if (y > 0) {
+      final ra = (y - 1) * w;
+      out[0] = g[ra + xl];
+      out[1] = g[ra + x];
+      out[2] = g[ra + xr];
+    } else {
+      out[0] = El.empty;
+      out[1] = El.empty;
+      out[2] = El.empty;
+    }
+    final row = y * w;
+    out[3] = g[row + xl];
+    out[4] = g[row + xr];
+    if (y < gridH - 1) {
+      final rb = (y + 1) * w;
+      out[5] = g[rb + xl];
+      out[6] = g[rb + x];
+      out[7] = g[rb + xr];
+    } else {
+      out[5] = El.empty;
+      out[6] = El.empty;
+      out[7] = El.empty;
+    }
+  }
+
+  /// Scratch buffer for [readNeighbors]. Allocated once, reused every call.
+  final Uint8List _neighborBuf = Uint8List(8);
+
+  /// Check if any neighbor matches any element type in the given set.
+  /// [types] is a lookup table sized to [maxElements]; nonzero = match.
+  /// Reads neighbors once and checks all 8 against the table.
+  @pragma('vm:prefer-inline')
+  bool checkAdjacentAnyOf(int x, int y, Uint8List types) {
+    readNeighbors(x, y, _neighborBuf);
+    for (int i = 0; i < 8; i++) {
+      final n = _neighborBuf[i];
+      if (n < types.length && types[n] != 0) return true;
+    }
+    return false;
+  }
+
   /// Remove one adjacent cell of the given type. Wraps horizontally.
+  /// Fully resets all per-cell physics state via [clearCell].
   void removeOneAdjacent(int x, int y, int elType) {
     for (int dy = -1; dy <= 1; dy++) {
       for (int dx = -1; dx <= 1; dx++) {
@@ -424,14 +777,87 @@ class SimulationEngine {
         if (inBoundsY(ny)) {
           final ni = ny * gridW + nx;
           if (grid[ni] == elType) {
-            grid[ni] = El.empty;
-            life[ni] = 0;
+            clearCell(ni);
             markProcessed(ni);
             return;
           }
         }
       }
     }
+  }
+
+  /// Check if any of the 8 neighbors matches a [categoryMask] bitmask.
+  /// Wraps horizontally. Use for chemistry: "any oxidizer nearby?"
+  @pragma('vm:prefer-inline')
+  bool checkAdjacentCategory(int x, int y, int categoryMask) {
+    final w = gridW;
+    final g = grid;
+    final cat = elCategory;
+    final maxY = gridH - 1;
+    final xl = (x - 1 + w) % w;
+    final xr = (x + 1) % w;
+    if (y > 0) {
+      final rowAbove = (y - 1) * w;
+      final e1 = g[rowAbove + xl]; if (e1 < maxElements && (cat[e1] & categoryMask) != 0) return true;
+      final e2 = g[rowAbove + x];  if (e2 < maxElements && (cat[e2] & categoryMask) != 0) return true;
+      final e3 = g[rowAbove + xr]; if (e3 < maxElements && (cat[e3] & categoryMask) != 0) return true;
+    }
+    final e4 = g[y * w + xl]; if (e4 < maxElements && (cat[e4] & categoryMask) != 0) return true;
+    final e5 = g[y * w + xr]; if (e5 < maxElements && (cat[e5] & categoryMask) != 0) return true;
+    if (y < maxY) {
+      final rowBelow = (y + 1) * w;
+      final e6 = g[rowBelow + xl]; if (e6 < maxElements && (cat[e6] & categoryMask) != 0) return true;
+      final e7 = g[rowBelow + x];  if (e7 < maxElements && (cat[e7] & categoryMask) != 0) return true;
+      final e8 = g[rowBelow + xr]; if (e8 < maxElements && (cat[e8] & categoryMask) != 0) return true;
+    }
+    return false;
+  }
+
+  /// Get the grid index of the first adjacent cell matching [elType], or -1.
+  /// Wraps horizontally. Useful for targeted operations on a specific neighbor.
+  @pragma('vm:prefer-inline')
+  int findAdjacentIndex(int x, int y, int elType) {
+    final w = gridW;
+    final g = grid;
+    for (int dy = -1; dy <= 1; dy++) {
+      for (int dx = -1; dx <= 1; dx++) {
+        if (dx == 0 && dy == 0) continue;
+        final nx = wrapX(x + dx);
+        final ny = y + dy;
+        if (inBoundsY(ny)) {
+          final ni = ny * w + nx;
+          if (g[ni] == elType) return ni;
+        }
+      }
+    }
+    return -1;
+  }
+
+  /// Count how many of the 8 immediate neighbors are of [elType].
+  /// Faster than countNearby for radius=1 since it's hand-unrolled.
+  @pragma('vm:prefer-inline')
+  int countAdjacent(int x, int y, int elType) {
+    int count = 0;
+    final w = gridW;
+    final g = grid;
+    final maxY = gridH - 1;
+    final xl = (x - 1 + w) % w;
+    final xr = (x + 1) % w;
+    if (y > 0) {
+      final rowAbove = (y - 1) * w;
+      if (g[rowAbove + xl] == elType) count++;
+      if (g[rowAbove + x] == elType) count++;
+      if (g[rowAbove + xr] == elType) count++;
+    }
+    if (g[y * w + xl] == elType) count++;
+    if (g[y * w + xr] == elType) count++;
+    if (y < maxY) {
+      final rowBelow = (y + 1) * w;
+      if (g[rowBelow + xl] == elType) count++;
+      if (g[rowBelow + x] == elType) count++;
+      if (g[rowBelow + xr] == elType) count++;
+    }
+    return count;
   }
 
   // =========================================================================
@@ -592,6 +1018,13 @@ class SimulationEngine {
         final newVel = (curVel + 1).clamp(0, effectiveMax);
         velY[idx] = newVel;
 
+        // Accumulate momentum during fall: momentum += mass >> 3
+        {
+          final mAdd = mass[idx] >> 3;
+          final curMom = momentum[idx] + mAdd;
+          momentum[idx] = curMom < 255 ? curMom : 255;
+        }
+
         // Multi-cell fall: when velY > 1, try to skip intermediate empty cells
         if (newVel > 1) {
           int finalY = by;
@@ -624,7 +1057,14 @@ class SimulationEngine {
           }
           queueReactionFlash(x, y, 100, 180, 255, (impactVel ~/ 2).clamp(2, 4));
         }
+        // Water splash generates vibration with mid frequency
+        final mom = momentum[idx];
+        if (mom > 10) {
+          vibration[below] = mom;
+          vibrationFreq[below] = 140; // liquid splash = mid freq
+        }
         velY[idx] = 0;
+        momentum[idx] = 0;
         final sinkWaterMass = life[below];
         grid[idx] = El.water;
         life[idx] = sinkWaterMass < 20 ? 100 : sinkWaterMass;
@@ -634,7 +1074,18 @@ class SimulationEngine {
         return;
       }
 
-      // Impact on solid: reset velocity, flash on high impact
+      // Impact on solid: reset velocity, generate vibration, flash on high impact
+      {
+        final mom = momentum[idx];
+        if (mom > 10) {
+          // Generate vibration from impact
+          vibration[idx] = mom;
+          // Frequency based on element hardness: hard = high, soft = low
+          final h = elType < maxElements ? elementHardness[elType] : 50;
+          vibrationFreq[idx] = h > 50 ? 200 + (h >> 2) : 80 + (h >> 1); // soft: 80-105, hard: 200-263 clamped
+        }
+        momentum[idx] = 0;
+      }
       if (velY[idx] > 2) {
         queueReactionFlash(x, y, 200, 200, 180, 2);
       }
@@ -705,7 +1156,7 @@ class SimulationEngine {
   // Solid fall helper (stone, glass, ice, metal)
   // =========================================================================
 
-  /// Solid block fall — straight down only (no diagonal slide like granular).
+  /// Solid block fall — straight down and diagonal sliding.
   /// Uses velY for momentum with lower terminal velocity than granular.
   /// [sinkThroughLiquids]: if true, displaces lighter liquids via density.
   /// Returns true if the element moved.
@@ -720,11 +1171,53 @@ class SimulationEngine {
     final below = by * gridW + x;
     final belowEl = grid[below];
 
+    // Check for structural support before moving
+    // Solids hold together better than granulars, so check side neighbors
+    if (belowEl != El.empty) {
+      final lx = wrapX(x - 1);
+      final rx = wrapX(x + 1);
+      final leftEl = grid[y * gridW + lx];
+      final rightEl = grid[y * gridW + rx];
+      
+      // If sandwiched between solids, don't fall (arch support)
+      if (leftEl != El.empty && rightEl != El.empty && 
+          elementHardness[leftEl] > 20 && elementHardness[rightEl] > 20) {
+         velY[idx] = 0;
+         return false;
+      }
+      
+      // Try diagonal slide if straight down is blocked
+      final dl = by * gridW + lx;
+      final dr = by * gridW + rx;
+      final dlEl = grid[dl];
+      final drEl = grid[dr];
+      
+      // Only slide if there is NO lateral support holding it in place
+      if (leftEl == El.empty && dlEl == El.empty) {
+        if (rng.nextInt(2) == 0) {
+           swap(idx, dl);
+           return true;
+        }
+      } else if (rightEl == El.empty && drEl == El.empty) {
+        if (rng.nextInt(2) == 0) {
+           swap(idx, dr);
+           return true;
+        }
+      }
+    }
+
     // Fall through empty space with momentum
     if (belowEl == El.empty) {
       final curVel = velY[idx];
       final newVel = (curVel + 1).clamp(0, 2); // lower terminal vel than granular
       velY[idx] = newVel;
+
+      // Accumulate momentum during fall
+      {
+        final mAdd = mass[idx] >> 3;
+        final curMom = momentum[idx] + mAdd;
+        momentum[idx] = curMom < 255 ? curMom : 255;
+      }
 
       // Multi-cell fall when velocity > 1
       if (newVel > 1) {
@@ -761,10 +1254,19 @@ class SimulationEngine {
       }
     }
 
-    // Landing: reset velocity
+    // Landing: generate vibration from momentum, reset velocity
     final landingVel = velY[idx];
     if (landingVel > 0) {
       velY[idx] = 0;
+      // Generate vibration from accumulated momentum
+      final mom = momentum[idx];
+      if (mom > 10) {
+        vibration[idx] = mom;
+        // Hard elements (stone, metal) = high freq (200+), soft = low (80-120)
+        final h = elType < maxElements ? elementHardness[elType] : 50;
+        vibrationFreq[idx] = h > 50 ? 200 + (h >> 2) : 80 + (h >> 1);
+      }
+      momentum[idx] = 0;
       if (landingVel > 2) {
         queueReactionFlash(x, y, 180, 180, 160, 2);
       }
@@ -1400,8 +1902,9 @@ class SimulationEngine {
   // =========================================================================
 
   /// Update pressure grid for liquid cells.
-  /// Scans columns top-to-bottom, accumulating liquid depth.
-  /// Only runs on dirty chunks for performance.
+  /// Uses a 2-pass approach:
+  /// 1. Vertical scan: accumulates depth gravity.
+  /// 2. Horizontal diffusion: equalizes pressure laterally for siphons/U-bends.
   void updatePressure() {
     final w = gridW;
     final h = gridH;
@@ -1411,31 +1914,137 @@ class SimulationEngine {
     final cols = chunkCols;
     final gDir = gravityDir;
 
-    for (int x = 0; x < w; x++) {
-      final chunkX = x >> 4;
-      // Check if any chunk in this column is dirty
-      bool columnDirty = false;
+    // Pass 1: Vertical Hydrostatic Accumulation
+    for (int cx = 0; cx < cols; cx++) {
+      bool colGroupDirty = false;
       for (int cy = 0; cy < chunkRows; cy++) {
-        if (dc[cy * cols + chunkX] != 0) { columnDirty = true; break; }
+        if (dc[cy * cols + cx] != 0) {
+          colGroupDirty = true;
+          break;
+        }
       }
-      if (!columnDirty) continue;
+      if (!colGroupDirty) continue;
 
-      // Scan from top (opposite gravity direction) accumulating pressure
-      int liquidDepth = 0;
-      final yStart = gDir == 1 ? 0 : h - 1;
-      final yEnd = gDir == 1 ? h : -1;
-      final yStep = gDir == 1 ? 1 : -1;
+      final startX = cx << 4;
+      final endX = startX + 16 < w ? startX + 16 : w;
 
-      for (int y = yStart; y != yEnd; y += yStep) {
+      for (int x = startX; x < endX; x++) {
+        int liquidDepth = 0;
+        final yStart = gDir == 1 ? 0 : h - 1;
+        final yEnd = gDir == 1 ? h : -1;
+        final yStep = gDir == 1 ? 1 : -1;
+
+        for (int y = yStart; y != yEnd; y += yStep) {
+          final idx = y * w + x;
+          final el = g[idx];
+          final state = el < maxElements ? elementPhysicsState[el] : 0;
+          if (state == PhysicsState.liquid.index) {
+            liquidDepth++;
+            p[idx] = liquidDepth < 255 ? liquidDepth : 255;
+          } else if (state == PhysicsState.gas.index) {
+            p[idx] = (liquidDepth >> 1); // Gases carry half pressure
+          } else {
+            liquidDepth = 0;
+            p[idx] = 0;
+          }
+        }
+      }
+    }
+
+    // Pass 2: Horizontal Pressure Diffusion (Pascal's Principle)
+    for (int y = 0; y < h; y++) {
+      final chunkY = y >> 4;
+      for (int x = 0; x < w; x++) {
+        final chunkIdx = chunkY * cols + (x >> 4);
+        if (dc[chunkIdx] == 0) continue;
+        
         final idx = y * w + x;
         final el = g[idx];
         final state = el < maxElements ? elementPhysicsState[el] : 0;
+        
         if (state == PhysicsState.liquid.index) {
-          liquidDepth++;
-          p[idx] = liquidDepth.clamp(0, 255);
-        } else {
-          liquidDepth = 0;
-          p[idx] = 0;
+           final left = p[y * w + wrapX(x - 1)];
+           final right = p[y * w + wrapX(x + 1)];
+           final myP = p[idx];
+           
+           int maxP = myP;
+           if (left > maxP) maxP = left;
+           if (right > maxP) maxP = right;
+
+           // Equalize laterally, losing a bit of energy to friction
+           if (maxP > myP + 1) {
+              p[idx] = maxP - 1;
+           }
+        }
+      }
+    }
+  }
+
+  /// Update moisture grid for porous cells.
+  /// Simulates capillary wicking where water spreads from wet to dry areas.
+  void updateMoisture() {
+    final w = gridW;
+    final h = gridH;
+    final g = grid;
+    final m = moisture;
+    final dc = dirtyChunks;
+    final cols = chunkCols;
+
+    for (int cy = 0; cy < chunkRows; cy++) {
+      for (int cx = 0; cx < cols; cx++) {
+        if (dc[cy * cols + cx] == 0) continue;
+
+        final startX = cx << 4;
+        final startY = cy << 4;
+        final endX = (startX + 16).clamp(0, w);
+        final endY = (startY + 16).clamp(0, h);
+
+        for (int y = startY; y < endY; y++) {
+          for (int x = startX; x < endX; x++) {
+            final idx = y * w + x;
+            final el = g[idx];
+            
+            // Source: liquids provide maximum moisture
+            if (el == El.water || el == El.mud) {
+              m[idx] = 255;
+              continue;
+            }
+
+            // Porous elements can absorb and diffuse moisture
+            final porosity = elementPorosity[el];
+            if (porosity > 0) {
+              // Sample neighbors to find average moisture
+              int total = 0;
+              int count = 0;
+              for (int dy = -1; dy <= 1; dy++) {
+                for (int dx = -1; dx <= 1; dx++) {
+                  if (dx == 0 && dy == 0) continue;
+                  final nx = wrapX(x + dx);
+                  final ny = y + dy;
+                  if (!inBoundsY(ny)) continue;
+                  final ni = ny * w + nx;
+                  total += m[ni];
+                  count++;
+                }
+              }
+              final avg = total ~/ count;
+              final current = m[idx];
+              
+              if (avg > current) {
+                // Wicking: moisture increases towards neighbor average
+                // Scaled by porosity (more porous = faster wicking)
+                final diff = avg - current;
+                final step = (diff * porosity) >> 8;
+                m[idx] = (current + (step > 0 ? step : 1)).clamp(0, 255);
+              } else if (current > 0) {
+                // Evaporation/Drainage: moisture slowly decays
+                m[idx] = (current - 1).clamp(0, 255);
+              }
+            } else {
+              // Non-porous: moisture is zero or rapidly resets
+              m[idx] = 0;
+            }
+          }
         }
       }
     }
@@ -1448,6 +2057,77 @@ class SimulationEngine {
     if (p >= 16) return 6;
     if (p >= 6) return 3;
     return 1;
+  }
+
+  /// Map of grid index to Chunk ID. 0 = no chunk.
+  late Int32List chunkMap;
+  
+  /// Active chunks currently in the simulation.
+  final List<Set<int>> activeChunks = [];
+
+  /// Update rigid-body chunks. Periodically identifies connected solids.
+  void updateChunks() {
+    final w = gridW;
+    final h = gridH;
+    final g = grid;
+    
+    // Clear old chunk data
+    chunkMap.fillRange(0, chunkMap.length, 0);
+    activeChunks.clear();
+
+    // Simplified Scan-line Seed Fill for connected structural elements
+    for (int i = 0; i < g.length; i++) {
+      final el = g[i];
+      if (chunkMap[i] != 0) continue;
+      
+      // Only wood, stone, metal, and glass form rigid chunks
+      if (el == El.wood || el == El.stone || el == El.metal || el == El.glass) {
+        final currentChunk = <int>{};
+        final queue = <int>[i];
+        chunkMap[i] = activeChunks.length + 1;
+        
+        bool isAnchored = false;
+
+        while (queue.isNotEmpty) {
+          final idx = queue.removeLast();
+          currentChunk.add(idx);
+          final cx = idx % w;
+          final cy = idx ~/ w;
+
+          // Check 4-way neighbors for connectivity
+          for (int di = 0; di < 4; di++) {
+            final nx = di == 0 ? wrapX(cx - 1) : (di == 1 ? wrapX(cx + 1) : cx);
+            final ny = di == 2 ? cy - 1 : (di == 3 ? cy + 1 : cy);
+            
+            if (inBoundsY(ny)) {
+              final ni = ny * w + nx;
+              final nEl = g[ni];
+              
+              // Anchor check: if we touch bedrock or fixed ground
+              if (nEl == El.bedrock || (nEl == El.dirt && (flags[ni] & 0x70) == 0x70)) {
+                isAnchored = true;
+              }
+
+              if (chunkMap[ni] == 0 && nEl == el) {
+                chunkMap[ni] = activeChunks.length + 1;
+                queue.add(ni);
+              }
+            }
+          }
+        }
+
+        // If the entire chunk is unsupported, mark it for falling
+        if (!isAnchored && currentChunk.length > 1) {
+          activeChunks.add(currentChunk);
+          // Apply gravity to the whole chunk
+          final gDir = gravityDir;
+          for (final cIdx in currentChunk) {
+            // Give all pixels in the chunk unified velocity
+            velY[cIdx] = (velY[cIdx] + 1).clamp(0, 127).toInt();
+          }
+        }
+      }
+    }
   }
 
   /// Check temperature-driven state changes for a cell.
@@ -1710,6 +2390,1166 @@ class SimulationEngine {
   }
 
   // =========================================================================
+  // Unified Chemistry Step (per-cell emergent reactions)
+  // =========================================================================
+
+  /// Check if any neighbor has reductionPotential above [threshold].
+  /// Used for combustion: "is there an oxidizer nearby?"
+  @pragma('vm:prefer-inline')
+  bool _hasAdjacentOxidizer(int x, int y, int threshold) {
+    final w = gridW;
+    final g = grid;
+    final maxY = gridH - 1;
+    final xl = (x - 1 + w) % w;
+    final xr = (x + 1) % w;
+    if (y > 0) {
+      final rowAbove = (y - 1) * w;
+      if (g[rowAbove + xl] < maxElements && elementReductionPotential[g[rowAbove + xl]] > threshold) return true;
+      if (g[rowAbove + x] < maxElements && elementReductionPotential[g[rowAbove + x]] > threshold) return true;
+      if (g[rowAbove + xr] < maxElements && elementReductionPotential[g[rowAbove + xr]] > threshold) return true;
+    }
+    if (g[y * w + xl] < maxElements && elementReductionPotential[g[y * w + xl]] > threshold) return true;
+    if (g[y * w + xr] < maxElements && elementReductionPotential[g[y * w + xr]] > threshold) return true;
+    if (y < maxY) {
+      final rowBelow = (y + 1) * w;
+      if (g[rowBelow + xl] < maxElements && elementReductionPotential[g[rowBelow + xl]] > threshold) return true;
+      if (g[rowBelow + x] < maxElements && elementReductionPotential[g[rowBelow + x]] > threshold) return true;
+      if (g[rowBelow + xr] < maxElements && elementReductionPotential[g[rowBelow + xr]] > threshold) return true;
+    }
+    return false;
+  }
+
+  /// Find index of the weakest-bonded neighbor (lowest bondEnergy > 0).
+  /// Returns -1 if no dissolvable neighbor found.
+  @pragma('vm:prefer-inline')
+  int _findWeakestNeighbor(int x, int y, int minReactivity) {
+    final w = gridW;
+    final g = grid;
+    final bondEn = elementBondEnergy;
+    final maxY = gridH - 1;
+    int bestIdx = -1;
+    int bestBond = 256;
+    
+    final xl = x == 0 ? w - 1 : x - 1;
+    final xr = x == w - 1 ? 0 : x + 1;
+    
+    // Helper closure or macro-like behavior inline
+    void check(int ni) {
+      final ne = g[ni];
+      if (ne == 0 || ne >= maxElements) return;
+      final bond = bondEn[ne];
+      if (bond > 0 && bond < minReactivity && bond < bestBond) {
+        bestBond = bond;
+        bestIdx = ni;
+      }
+    }
+
+    if (y > 0) {
+      final r = (y - 1) * w;
+      check(r + xl); check(r + x); check(r + xr);
+    }
+    final r = y * w;
+    check(r + xl); check(r + xr);
+    if (y < maxY) {
+      final r = (y + 1) * w;
+      check(r + xl); check(r + x); check(r + xr);
+    }
+    
+    return bestIdx;
+  }
+
+  /// Find the adjacent cell index with the highest voltage.
+  /// Returns -1 if no conductive neighbor found, or all neighbors are at
+  /// equal or lower voltage.
+  @pragma('vm:prefer-inline')
+  int _findHighestVoltageNeighbor(int x, int y, int myVoltage) {
+    final w = gridW;
+    final g = grid;
+    final v = voltage;
+    final maxY = gridH - 1;
+    int bestIdx = -1;
+    int bestVolt = myVoltage;
+
+    final xl = x == 0 ? w - 1 : x - 1;
+    final xr = x == w - 1 ? 0 : x + 1;
+
+    void check(int ni) {
+      final ne = g[ni];
+      if (ne == 0 || ne >= maxElements) return;
+      final nv = v[ni];
+      if (nv > bestVolt) {
+        bestVolt = nv;
+        bestIdx = ni;
+      }
+    }
+
+    if (y > 0) {
+      final r = (y - 1) * w;
+      check(r + xl); check(r + x); check(r + xr);
+    }
+    final r = y * w;
+    check(r + xl); check(r + xr);
+    if (y < maxY) {
+      final r = (y + 1) * w;
+      check(r + xl); check(r + x); check(r + xr);
+    }
+
+    return bestIdx;
+  }
+
+  /// Process unified chemistry for a single active cell.
+  ///
+  /// Handles combustion, corrosion, dissolution, moisture spread, and mass
+  /// update using only the dynamic property tables — no hardcoded element
+  /// checks. Every threshold and rate derives from ElementProperties so
+  /// Optuna can tune any property and measure different outcomes.
+  ///
+  /// Called per dirty-chunk cell BEFORE element-specific behaviors.
+  @pragma('vm:prefer-inline')
+  void chemistryStep(int x, int y, int idx) {
+    final el = grid[idx];
+    if (el == El.empty || el >= maxElements) return;
+
+    final temp = temperature[idx];
+    final moist = moisture[idx];
+    final ox = oxidation[idx];
+    final react = elementReactivity[el];
+
+    // -- COMBUSTION --
+    // Element has fuel AND is hot enough AND an oxidizer is nearby.
+    // Oxidizer detection threshold scales inversely with fuel reactivity:
+    // highly reactive fuels ignite with weaker oxidizers.
+    final fuel = elementFuelValue[el];
+    if (fuel > 0) {
+      final ignition = elementIgnitionTemp[el];
+      // Oxidizer threshold: fuels with high reactivity need weaker oxidizers
+      // reactivity 200 -> threshold ~7, reactivity 10 -> threshold ~55
+      final oxThreshold = 60 - (react >> 2); // 60 - reactivity/4
+      if (temp > ignition && _hasAdjacentOxidizer(x, y, oxThreshold > 0 ? oxThreshold : 0)) {
+        // Burn rate scales with fuelValue: high-energy fuels burn faster.
+        // fuel 255 -> rate 5, fuel 100 -> rate 2, fuel 50 -> rate 1
+        final burnRate = 1 + (fuel >> 6) + (react >> 7);
+        final newOx = ox + burnRate;
+        if (newOx > 255) {
+          // Fully combusted — transform
+          final product = elementOxidizesInto[el];
+          if (product != 0) {
+            grid[idx] = product;
+            life[idx] = 0;
+            oxidation[idx] = 128; // reset
+            // Spawn byproduct above if space available
+            final byproduct = elementOxidationByproduct[el];
+            if (byproduct != 0) {
+              final aboveY = y - gravityDir;
+              if (inBoundsY(aboveY)) {
+                final aboveIdx = aboveY * gridW + x;
+                if (grid[aboveIdx] == El.empty) {
+                  grid[aboveIdx] = byproduct;
+                  life[aboveIdx] = 0;
+                  oxidation[aboveIdx] = 128;
+                  // Byproduct temperature: proportional to fuel energy
+                  final byTemp = temp - (fuel >> 3);
+                  temperature[aboveIdx] = byTemp > 0 ? byTemp : 0;
+                  markDirty(x, aboveY);
+                }
+              }
+            }
+          } else {
+            clearCell(idx);
+          }
+          // Heat release proportional to fuelValue and bondEnergy (breaking
+          // bonds releases stored energy). High bond + high fuel = big boom.
+          final bond = elementBondEnergy[el];
+          final heatRelease = (fuel >> 2) + (bond >> 5);
+          final newTemp = temp + heatRelease;
+          temperature[idx] = newTemp < 255 ? newTemp : 255;
+          markDirty(x, y);
+          unsettleNeighbors(x, y);
+          queueReactionFlash(x, y, 255, 140, 20, 3);
+          return; // cell transformed, done
+        }
+        oxidation[idx] = newOx;
+        // Pre-combustion heating: scales with fuel energy density
+        final preheat = (fuel >> 4) + (react >> 6);
+        final preTemp = temp + preheat;
+        temperature[idx] = preTemp < 255 ? preTemp : 255;
+      }
+    }
+
+    // -- CORROSION --
+    // Negative reductionPotential elements + moisture + adjacent oxidizer.
+    // Moisture threshold scales with corrosionResistance: resistant metals
+    // need more moisture to begin corroding.
+    final redPot = elementReductionPotential[el];
+    if (redPot < 0) {
+      final corrResist = elementCorrosionResistance[el];
+      // Moisture threshold: corrResist 90 -> need 53, corrResist 0 -> need 10
+      final moistThreshold = 10 + (corrResist >> 1);
+      // Oxidizer threshold: elements with more negative potential corrode
+      // even with weaker oxidizers present
+      final corrOxThreshold = redPot + 40; // e.g. -15+40=25, -80+40=-40
+      if (moist > moistThreshold && _hasAdjacentOxidizer(x, y, corrOxThreshold < 0 ? 0 : corrOxThreshold)) {
+        // Corrosion rate: wetter = faster, more negative potential = faster
+        // moist 255 -> +3, redPot -80 -> +1 extra
+        final moistFactor = (moist - moistThreshold) >> 6;
+        final potFactor = (-redPot) >> 6;
+        final corrRate = 1 + moistFactor + potFactor;
+        final newOx = ox + corrRate;
+        if (newOx > 255) {
+          // Fully corroded — transform (e.g. metal -> rust)
+          final product = elementOxidizesInto[el];
+          if (product != 0) {
+            grid[idx] = product;
+            life[idx] = 0;
+            oxidation[idx] = 128;
+            markDirty(x, y);
+            unsettleNeighbors(x, y);
+            queueReactionFlash(x, y, 160, 80, 20, 2);
+          }
+          return;
+        }
+        oxidation[idx] = newOx;
+      }
+    }
+
+    // -- DISSOLUTION --
+    // Reactive elements dissolve weak-bonded neighbors.
+    // Reactivity threshold: only elements with reactivity > bondEnergy/2
+    // of self can dissolve others. Self-consumption scales with reactivity.
+    if (react > 100) {
+      // Dissolution power: reactivity determines what can be dissolved
+      final victimIdx = _findWeakestNeighbor(x, y, react);
+      if (victimIdx >= 0) {
+        final victimX = victimIdx % gridW;
+        final victimY = victimIdx ~/ gridW;
+        clearCell(victimIdx);
+        markDirty(victimX, victimY);
+        // Self-consumption rate scales inversely with own bondEnergy:
+        // strong acids (high react, low bond) wear out faster
+        final selfBond = elementBondEnergy[el];
+        final wearRate = 1 + ((255 - selfBond) >> 6); // bond 30->4, bond 200->1
+        final newLife = life[idx] + wearRate;
+        // Exhaustion threshold: higher reactivity = more uses before depletion
+        final exhaustion = 200 + (react >> 3); // react 220->227, react 100->212
+        if (newLife > exhaustion) {
+          clearCell(idx);
+          markDirty(x, y);
+          return;
+        }
+        life[idx] = newLife;
+        queueReactionFlash(victimX, victimY, 30, 255, 30, 2);
+      }
+    }
+
+    // -- MOISTURE SPREAD --
+    // Liquid cells spread moisture to porous neighbors.
+    // Transfer rate scales with source reactivity (reactive liquids wet more
+    // aggressively) and neighbor porosity.
+    if ((elCategory[el] & ElCat.liquid) != 0) {
+      // Source moisture intensity: water-like reactivity drives wetting
+      final srcIntensity = 1 + (react >> 5); // react 60->2, react 220->7
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = (x + dx + gridW) % gridW;
+          final ny = y + dy;
+          if (ny < 0 || ny >= gridH) continue;
+          final ni = ny * gridW + nx;
+          final ne = grid[ni];
+          if (ne == El.empty || ne >= maxElements) continue;
+          final porosity = elementPorosity[ne];
+          if (porosity > 0) {
+            // Transfer: porosity/64 * srcIntensity (porosity 255->4*src, 30->0*src)
+            final transfer = (porosity >> 6) * srcIntensity;
+            if (transfer > 0) {
+              final nm = moisture[ni];
+              final updated = nm + transfer;
+              moisture[ni] = updated < 255 ? updated : 255;
+            }
+          }
+        }
+      }
+    }
+
+    // Hot cells evaporate moisture.
+    // Evaporation threshold derived from element's boilPoint (if it has one)
+    // or heatCapacity. Higher heat capacity = resists evaporation longer.
+    if (moist > 0 && temp > 128) {
+      final heatCap = elementHeatCapacity[el];
+      // Evaporation temp threshold: heatCap 10->178, heatCap 1->133
+      final evapThreshold = 128 + (heatCap * 5);
+      if (temp > evapThreshold) {
+        // Rate scales with temperature excess
+        final evap = 1 + ((temp - evapThreshold) >> 3);
+        moisture[idx] = moist > evap ? moist - evap : 0;
+      }
+    }
+
+    // -- MASS UPDATE --
+    // mass = baseMass + moisture contribution + concentration contribution
+    final bm = elementBaseMass[el];
+    if (bm > 0) {
+      final moistAdd = moist >> 3;
+      final concAdd = concentration[idx] >> 4;
+      final total = bm + moistAdd + concAdd;
+      mass[idx] = total < 255 ? total : 255;
+    }
+  }
+
+  // =========================================================================
+  // Electricity Step (voltage propagation, ohmic heating)
+  // =========================================================================
+
+  /// Process electricity for a single conductive cell.
+  ///
+  /// Handles voltage propagation from high to low potential, ohmic heating,
+  /// refractory period (Wireworld-inspired), electrolysis, and moisture
+  /// conductivity boost. All thresholds derive from ElementProperties so
+  /// Optuna can tune electronMobility, dielectric, bondEnergy, reactivity
+  /// and measure different outcomes.
+  ///
+  /// Called per conductive cell every 2 frames.
+  @pragma('vm:prefer-inline')
+  void electricityStep(int x, int y, int idx) {
+    final el = grid[idx];
+    if (el == El.empty || el >= maxElements) return;
+
+    final mobility = elementElectronMobility[el];
+    // Moisture boosts effective conductivity (wet materials conduct better)
+    final moistBoost = moisture[idx] >> 2;
+    // Dissolved salt in water further boosts conductivity
+    final saltBoost = (el == El.water && dissolvedType[idx] == El.salt)
+        ? concentration[idx] >> 3 // conc 200 -> +25 mobility
+        : 0;
+    final effectiveMobility = mobility + moistBoost + saltBoost;
+    // Conductivity threshold: dielectric constant determines minimum
+    // mobility needed. High dielectric = needs more mobility to conduct.
+    final dielectricThreshold = elementDielectric[el] >> 5; // 0..7
+    if (effectiveMobility <= dielectricThreshold) return;
+
+    final st = sparkTimer[idx];
+
+    // Refractory period: cooldown length scales with dielectric
+    // (insulators that DO conduct take longer to recover)
+    final cooldownMax = 3 + (elementDielectric[el] >> 6); // 3..6
+    if (st > 2) {
+      if (st < cooldownMax) {
+        sparkTimer[idx] = st - 1;
+      } else {
+        sparkTimer[idx] = 2; // snap down if somehow above max
+      }
+      return;
+    }
+    // Tail state: transition to cooling
+    if (st == 2) {
+      sparkTimer[idx] = cooldownMax;
+      voltage[idx] = 0;
+      return;
+    }
+
+    final myVolt = voltage[idx];
+
+    // Find highest-voltage neighbor
+    final srcIdx = _findHighestVoltageNeighbor(x, y, myVolt);
+    if (srcIdx >= 0) {
+      final srcVolt = voltage[srcIdx];
+      final gradient = srcVolt - myVolt;
+      // Flow threshold: scales with dielectric. Good conductors (low
+      // dielectric) propagate smaller gradients. Insulators need big gaps.
+      final flowThreshold = 1 + (elementDielectric[el] >> 5); // 1..8
+      if (gradient > flowThreshold) {
+        // Resistance = inverse of effective mobility
+        final clampedMobility = effectiveMobility < 255 ? effectiveMobility : 255;
+        final resistance = 255 - clampedMobility;
+        // Attenuation: resistance/32, so mobility 240->0, mobility 80->5
+        final attenuation = 1 + (resistance >> 5);
+        final received = gradient - attenuation;
+
+        if (received > 0) {
+          final newVolt = myVolt + received;
+          voltage[idx] = newVolt < 127 ? newVolt : 127;
+
+          // Mark as spark head if was ready
+          if (st == 0) {
+            sparkTimer[idx] = 1; // head
+          }
+
+          // Ohmic heating: voltageDrop * resistance / 256.
+          // High-resistance elements heat more (e.g. water conducts but heats,
+          // copper conducts with almost no heat).
+          // heatCapacity dampens: dense materials absorb the heat.
+          final voltageDrop = gradient - received;
+          final heatCap = elementHeatCapacity[el];
+          final heating = (voltageDrop * resistance) >> (7 + heatCap);
+          if (heating > 0) {
+            final t = temperature[idx];
+            final newTemp = t + heating;
+            temperature[idx] = newTemp < 255 ? newTemp : 255;
+          }
+
+          markDirty(x, y);
+        }
+      }
+    }
+
+    // Spark head transitions to tail next frame
+    if (st == 1) {
+      sparkTimer[idx] = 2;
+    }
+
+    // -- CHARGE ACCUMULATION from voltage flow --
+    // When current flows through a cell, charge builds up.
+    if (myVolt.abs() > 5) {
+      final ch = charge[idx];
+      final addCharge = myVolt >> 2; // voltage/4
+      final newCharge = ch + addCharge;
+      charge[idx] = newCharge.clamp(-128, 127);
+    }
+
+    // -- ELECTROLYSIS --
+    // Conductive liquid + high voltage splits molecules.
+    // Voltage threshold scales with bondEnergy: stronger bonds need more
+    // voltage to break. Probability scales with reactivity.
+    // High charge on water also boosts electrolysis likelihood.
+    final bond = elementBondEnergy[el];
+    final react = elementReactivity[el];
+    // Electrolysis voltage threshold: bondEnergy/3 + 10
+    // water(bond=100) -> 43, salt(bond=100) -> 43
+    final electrolysisThreshold = (bond >> 2) + 10;
+    // High charge lowers the threshold (accumulated charge assists splitting)
+    final ch = charge[idx];
+    final chargeAssist = ch > 20 ? (ch - 20) >> 2 : 0;
+    final effectiveThreshold = electrolysisThreshold - chargeAssist;
+    if (myVolt > effectiveThreshold && (elCategory[el] & ElCat.liquid) != 0) {
+      // Probability: higher reactivity = more likely to split
+      // react 60 -> 1/28, react 220 -> 1/10
+      final prob = 40 - (react >> 3); // 40 - react/8
+      final clampedProb = prob > 3 ? prob : 3;
+      if (rng.nextInt(clampedProb) == 0) {
+        // Determine products from element's reduction potential
+        final reducesTo = elementReducesInto[el];
+        if (reducesTo != 0) {
+          // Reduce: e.g. rust + voltage -> metal
+          grid[idx] = reducesTo;
+        } else {
+          // Default: split into oxygen
+          grid[idx] = El.oxygen;
+        }
+        life[idx] = 0;
+        oxidation[idx] = 128;
+        moisture[idx] = 0;
+        voltage[idx] = 0;
+        sparkTimer[idx] = 0;
+        markDirty(x, y);
+        unsettleNeighbors(x, y);
+        // Spawn hydrogen above if space (only for water-like elements)
+        if (el == El.water) {
+          final aboveY = y - gravityDir;
+          if (inBoundsY(aboveY)) {
+            final aboveIdx = aboveY * gridW + x;
+            if (grid[aboveIdx] == El.empty) {
+              grid[aboveIdx] = El.hydrogen;
+              life[aboveIdx] = 0;
+              markDirty(x, aboveY);
+            }
+          }
+        }
+        queueReactionFlash(x, y, 100, 200, 255, 3);
+      }
+    }
+  }
+
+  // =========================================================================
+  // pH, Dissolved Substances, and Charge Step
+  // =========================================================================
+
+  /// Process pH assignment, diffusion, dissolved substance effects, and
+  /// charge accumulation/decay for a single cell.
+  ///
+  /// pH values: 0 = extremely acidic (pH ~0), 128 = neutral (pH 7),
+  /// 255 = extremely alkaline (pH ~14).
+  /// Called per dirty-chunk cell every 4 frames for performance.
+  @pragma('vm:prefer-inline')
+  void pHAndChargeStep(int x, int y, int idx) {
+    final el = grid[idx];
+    if (el == El.empty || el >= maxElements) return;
+
+    // -- pH ASSIGNMENT --
+    // Certain elements enforce their intrinsic pH on the cell.
+    // Acid: very acidic (pH ~1.1), Water: neutral (pH 7),
+    // Ash: alkaline (pH ~11), Compost: slightly acidic (pH ~6.5).
+    if (el == El.acid) {
+      pH[idx] = 20;
+    } else if (el == El.water) {
+      // Water starts neutral but can be shifted by dissolved substances
+      final dissolved = dissolvedType[idx];
+      if (dissolved == El.co2) {
+        // Carbonic acid: pH drops proportional to concentration
+        // conc 30->~115, conc 200->~68
+        final conc = concentration[idx];
+        final acidShift = conc >> 2; // 0..63
+        final newPH = 128 - acidShift;
+        pH[idx] = newPH > 0 ? newPH : 0;
+      } else if (dissolved == 0) {
+        // Pure water drifts toward neutral
+        final curPH = pH[idx];
+        if (curPH < 126) {
+          pH[idx] = curPH + 1;
+        } else if (curPH > 130) {
+          pH[idx] = curPH - 1;
+        }
+      }
+      // Salty water: pH stays near neutral (salt is neutral)
+    } else if (el == El.ash) {
+      pH[idx] = 200;
+    } else if (el == El.compost) {
+      pH[idx] = 115;
+    }
+
+    // -- pH DIFFUSION --
+    // pH spreads to neighbors slowly (every 4 frames, 1/4 the rate of temp).
+    // Only diffuse from cells with strong pH signal (far from neutral).
+    final myPH = pH[idx];
+    final phDist = myPH > 128 ? myPH - 128 : 128 - myPH; // distance from neutral
+    if (phDist > 10) {
+      // Pick one random neighbor to diffuse to (cheap, avoids 8-neighbor loop)
+      final ndx = rng.nextInt(3) - 1; // -1, 0, 1
+      final ndy = rng.nextInt(3) - 1;
+      if (ndx != 0 || ndy != 0) {
+        final nx = (x + ndx + gridW) % gridW;
+        final ny = y + ndy;
+        if (ny >= 0 && ny < gridH) {
+          final ni = ny * gridW + nx;
+          final ne = grid[ni];
+          if (ne != El.empty && ne < maxElements) {
+            final neighborPH = pH[ni];
+            // Move neighbor pH 1 step toward this cell's pH
+            if (myPH > neighborPH + 2) {
+              pH[ni] = neighborPH + 1;
+            } else if (myPH < neighborPH - 2) {
+              pH[ni] = neighborPH - 1;
+            }
+          }
+        }
+      }
+    }
+
+    // -- NEUTRALIZATION: acid adjacent to ash --
+    // Both pH values shift toward 128 (neutral).
+    if (el == El.acid) {
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = (x + dx + gridW) % gridW;
+          final ny = y + dy;
+          if (ny < 0 || ny >= gridH) continue;
+          final ni = ny * gridW + nx;
+          if (grid[ni] == El.ash) {
+            // Shift both toward neutral by 4 per step
+            final acidPH = pH[idx];
+            final ashPH = pH[ni];
+            pH[idx] = acidPH < 124 ? acidPH + 4 : 128;
+            pH[ni] = ashPH > 132 ? ashPH - 4 : 128;
+            markDirty(nx, ny);
+            break; // One neutralization per step
+          }
+        }
+      }
+    }
+
+    // -- DISSOLVED SUBSTANCE EFFECTS --
+    // Dissolved salt in water boosts effective conductivity.
+    // This is handled in electricityStep via concentration check.
+    // Dissolved CO2 lowers pH (handled above in pH assignment).
+
+    // When water evaporates (becomes steam), deposits are left behind
+    // in the evaporation code in simWater. This step handles concentration
+    // decay for non-liquid cells (shouldn't have dissolved stuff).
+    if ((elCategory[el] & ElCat.liquid) == 0 && concentration[idx] > 0) {
+      // Non-liquids lose dissolved substances
+      concentration[idx] = 0;
+      dissolvedType[idx] = 0;
+    }
+
+    // Saturation cap
+    if (concentration[idx] > 200) {
+      concentration[idx] = 200;
+    }
+
+    // -- CHARGE ACCUMULATION AND DECAY --
+    // Charge accumulates from voltage flow (set in electricityStep).
+    // Decays slowly toward 0.
+    final ch = charge[idx];
+    if (ch != 0) {
+      // Decay: 1 unit every step toward 0
+      if (ch > 0) {
+        charge[idx] = ch - 1;
+      } else {
+        charge[idx] = ch + 1;
+      }
+    }
+
+    // High voltage on this cell adds charge
+    final v = voltage[idx];
+    if (v.abs() > 10) {
+      final addCharge = v >> 3; // voltage/8
+      final newCharge = ch + addCharge;
+      charge[idx] = newCharge.clamp(-128, 127);
+    }
+  }
+
+  // =========================================================================
+  // Chemistry + Electricity pass over dirty chunks
+  // =========================================================================
+
+  /// Run chemistry on all active cells in dirty chunks.
+  void runChemistryPass() {
+    final w = gridW;
+    final h = gridH;
+    final g = grid;
+    final dc = dirtyChunks;
+    final cols = chunkCols;
+
+    for (int y = 0; y < h; y++) {
+      final chunkY = y >> 4;
+      for (int x = 0; x < w; x++) {
+        final chunkIdx = chunkY * cols + (x >> 4);
+        if (dc[chunkIdx] == 0) continue;
+        final idx = y * w + x;
+        if (g[idx] == El.empty) continue;
+        chemistryStep(x, y, idx);
+      }
+    }
+  }
+
+  /// Run pH, dissolved substances, and charge on all dirty-chunk cells.
+  /// Called every 4 frames for performance.
+  void runPHAndChargePass() {
+    final w = gridW;
+    final h = gridH;
+    final g = grid;
+    final dc = dirtyChunks;
+    final cols = chunkCols;
+
+    for (int y = 0; y < h; y++) {
+      final chunkY = y >> 4;
+      for (int x = 0; x < w; x++) {
+        final chunkIdx = chunkY * cols + (x >> 4);
+        if (dc[chunkIdx] == 0) continue;
+        final idx = y * w + x;
+        if (g[idx] == El.empty) continue;
+        pHAndChargeStep(x, y, idx);
+      }
+    }
+  }
+
+  /// Run electricity on all conductive cells in dirty chunks.
+  void runElectricityPass() {
+    final w = gridW;
+    final h = gridH;
+    final g = grid;
+    final dc = dirtyChunks;
+    final cols = chunkCols;
+
+    for (int y = 0; y < h; y++) {
+      final chunkY = y >> 4;
+      for (int x = 0; x < w; x++) {
+        final chunkIdx = chunkY * cols + (x >> 4);
+        if (dc[chunkIdx] == 0) continue;
+        final idx = y * w + x;
+        final el = g[idx];
+        if (el == El.empty || el >= maxElements) continue;
+        // Only process cells with any conductivity
+        if (elementElectronMobility[el] > 0 || moisture[idx] > 20) {
+          electricityStep(x, y, idx);
+        }
+      }
+    }
+  }
+
+  // =========================================================================
+  // Vibration propagation
+  // =========================================================================
+
+  /// Propagate vibration through solid cells. Called every 2 frames.
+  /// Vibration spreads through solids based on hardness, decays each step.
+  void updateVibration() {
+    final w = gridW;
+    final h = gridH;
+    final g = grid;
+    final dc = dirtyChunks;
+    final cols = chunkCols;
+    final vib = vibration;
+    final vFreq = vibrationFreq;
+    final hard = elementHardness;
+
+    for (int y = 0; y < h; y++) {
+      final chunkY = y >> 4;
+      for (int x = 0; x < w; x++) {
+        final chunkIdx = chunkY * cols + (x >> 4);
+        if (dc[chunkIdx] == 0) continue;
+        final idx = y * w + x;
+        final v = vib[idx];
+        if (v == 0) continue;
+        final el = g[idx];
+        if (el == El.empty) { vib[idx] = 0; continue; }
+
+        // Spread to solid cardinal neighbors
+        final myHardness = el < maxElements ? hard[el] : 0;
+        if (myHardness > 0) {
+          // Check 4 cardinal neighbors
+          final above = y > 0 ? (y - 1) * w + x : -1;
+          final below = y < h - 1 ? (y + 1) * w + x : -1;
+          final left = y * w + ((x - 1 + w) % w);
+          final right = y * w + ((x + 1) % w);
+
+          // Propagation factor: (vibration * neighborHardness) >> 10
+          for (final ni in [above, below, left, right]) {
+            if (ni < 0) continue;
+            final ne = g[ni];
+            if (ne == El.empty) continue;
+            final nh = ne < maxElements ? hard[ne] : 0;
+            if (nh == 0) continue; // only propagates through solids
+            final spread = (v * nh) >> 10;
+            if (spread > 0) {
+              final nv = vib[ni] + spread;
+              vib[ni] = nv < 255 ? nv : 255;
+              // Propagate frequency
+              if (vFreq[ni] == 0) vFreq[ni] = vFreq[idx];
+            }
+          }
+        }
+
+        // Decay: vibration * 240 >> 8 (loses ~6% per step)
+        final decayed = (v * 240) >> 8;
+        vib[idx] = decayed;
+        if (decayed == 0) vFreq[idx] = 0;
+
+        // High vibration on weak structures causes collapse
+        if (v > 200) {
+          final bond = el < maxElements ? elementBondEnergy[el] : 255;
+          if (bond < 50 && rng.nextInt(4) == 0) {
+            // Structural collapse: weak element crumbles
+            if (el == El.stone || el == El.dirt || el == El.mud) {
+              grid[idx] = El.sand;
+              life[idx] = 0;
+              mass[idx] = elementBaseMass[El.sand];
+              vib[idx] = 0;
+              vFreq[idx] = 0;
+              markDirty(x, y);
+              unsettleNeighbors(x, y);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // =========================================================================
+  // Structural Support / Cantilever Physics
+  // =========================================================================
+
+  /// Propagates structural support from anchored elements (bedrock).
+  /// Replaces the slow global Chunk finding with O(1) local propagation.
+  /// Called every 2 frames.
+  void updateSupport() {
+    final w = gridW;
+    final h = gridH;
+    final g = grid;
+    final sup = support;
+    final dc = dirtyChunks;
+    final cols = chunkCols;
+
+    for (int y = h - 1; y >= 0; y--) {
+      final chunkY = y >> 4;
+      for (int x = 0; x < w; x++) {
+        final chunkIdx = chunkY * cols + (x >> 4);
+        if (dc[chunkIdx] == 0) continue;
+        
+        final idx = y * w + x;
+        final el = g[idx];
+
+        if (el == El.empty) {
+          sup[idx] = 0;
+          continue;
+        }
+
+        final state = el < maxElements ? elementPhysicsState[el] : 0;
+        
+        // Granular, liquid, and gas elements provide zero cantilever support
+        if (state != PhysicsState.solid.index && state != PhysicsState.special.index) {
+          sup[idx] = 0;
+          continue;
+        }
+
+        // Anchors provide maximum support
+        if (el == El.bedrock || (el == El.dirt && y == h - 1)) {
+          sup[idx] = 255;
+          continue;
+        }
+
+        // Structural elements pass support. Hardness determines how far they can stretch.
+        int bestNeighborSupport = 0;
+        
+        final below = y < h - 1 ? (y + 1) * w + x : -1;
+        final left = y * w + wrapX(x - 1);
+        final right = y * w + wrapX(x + 1);
+        final above = y > 0 ? (y - 1) * w + x : -1;
+
+        // Support flows mostly from below and sides
+        if (below >= 0 && sup[below] > bestNeighborSupport) bestNeighborSupport = sup[below];
+        if (sup[left] > bestNeighborSupport) bestNeighborSupport = sup[left];
+        if (sup[right] > bestNeighborSupport) bestNeighborSupport = sup[right];
+        // Hanging support is weaker (requires stronger bonds)
+        if (above >= 0 && sup[above] > bestNeighborSupport) bestNeighborSupport = sup[above];
+
+        // Decay per tile based on material hardness
+        // Hardness 100 (metal) -> decay 3 (can build ~80 tiles out)
+        // Hardness 50 (stone) -> decay 10 (can build ~25 tiles out)
+        // Hardness 20 (wood) -> decay 20 (can build ~12 tiles out)
+        final hardness = el < maxElements ? elementHardness[el] : 10;
+        final decay = ((120 - hardness) / 5).clamp(1, 50).toInt();
+        
+        final newSupport = bestNeighborSupport > decay ? bestNeighborSupport - decay : 0;
+        sup[idx] = newSupport;
+
+        // If support hits 0 and it's a rigid body, it snaps and falls
+        if (newSupport == 0 && state == PhysicsState.solid.index) {
+           velY[idx] = (velY[idx] + 1).clamp(0, 127).toInt();
+           // Small chance to crumble from stress
+           if (rng.nextInt(20) == 0) {
+              if (el == El.stone) grid[idx] = El.dirt;
+              else if (el == El.wood) grid[idx] = El.sand;
+           }
+        }
+      }
+    }
+  }
+
+  // =========================================================================
+  // Stress accumulation
+  // =========================================================================
+
+  /// Accumulate structural stress from weight above. Called every 4 frames.
+  /// Stress = cumulative mass of cells above in the column.
+  void updateStress() {
+    final w = gridW;
+    final h = gridH;
+    final g = grid;
+    final dc = dirtyChunks;
+    final cols = chunkCols;
+    final st = stress;
+    final m = mass;
+    final bond = elementBondEnergy;
+
+    // Scan columns top-to-bottom (gravity dir = 1)
+    for (int x = 0; x < w; x++) {
+      int accumulated = 0;
+      for (int y = 0; y < h; y++) {
+        final chunkIdx = (y >> 4) * cols + (x >> 4);
+        if (dc[chunkIdx] == 0) {
+          // Reset accumulation through non-dirty region
+          accumulated = 0;
+          continue;
+        }
+        final idx = y * w + x;
+        final el = g[idx];
+        if (el == El.empty) {
+          accumulated = 0;
+          st[idx] = 0;
+          continue;
+        }
+        final cellMass = m[idx];
+        accumulated = accumulated + cellMass;
+        if (accumulated > 255) accumulated = 255;
+        st[idx] = accumulated;
+
+        // Structural failure: stress exceeds bondEnergy * 2
+        if (el < maxElements) {
+          final threshold = bond[el] << 1; // bondEnergy * 2
+          if (accumulated > threshold && threshold > 0 && rng.nextInt(8) == 0) {
+            // Crumble based on element type
+            if (el == El.stone) {
+              g[idx] = El.dirt;
+              life[idx] = 0;
+              m[idx] = elementBaseMass[El.dirt];
+              markDirty(x, y);
+              unsettleNeighbors(x, y);
+            } else if (el == El.ice) {
+              g[idx] = El.water;
+              life[idx] = 100;
+              m[idx] = elementBaseMass[El.water];
+              markDirty(x, y);
+              unsettleNeighbors(x, y);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // =========================================================================
+  // Wind field update
+  // =========================================================================
+
+  /// Update per-cell wind field with Perlin-like variation. Called every 30 frames.
+  /// Base wind from global windForce, local variation from hash.
+  @pragma('vm:prefer-inline')
+  static int _windHash(int x, int y, int t) {
+    // Fast integer hash for wind variation
+    int h = x * 374761393 + y * 668265263 + t * 1274126177;
+    h = (h ^ (h >> 13)) * 1103515245;
+    return h;
+  }
+
+  void updateWindField() {
+    final w = gridW;
+    final h = gridH;
+    final g = grid;
+    final dc = dirtyChunks;
+    final cols = chunkCols;
+    final wx = windX2;
+    final wy = windY2;
+    final globalW = windForce;
+    final t = frameCount ~/ 30; // changes every 30 frames
+
+    for (int y = 0; y < h; y++) {
+      final chunkY = y >> 4;
+      for (int x = 0; x < w; x++) {
+        final chunkIdx = chunkY * cols + (x >> 4);
+        if (dc[chunkIdx] == 0) continue;
+        final idx = y * w + x;
+
+        // Terrain blocks wind: solid cells get zero wind
+        final el = g[idx];
+        if (el != El.empty) {
+          final state = el < maxElements ? elementPhysicsState[el] : 0;
+          if (state == PhysicsState.solid.index) {
+            wx[idx] = 0;
+            wy[idx] = 0;
+            continue;
+          }
+        }
+
+        // Base wind + hash variation
+        final hash = _windHash(x, y, t);
+        // Variation range: -3 to +3
+        final varX = ((hash & 0x7) - 3);
+        final varY = (((hash >> 3) & 0x7) - 3);
+
+        // Check for solid terrain behind (upwind) reducing wind
+        int shelter = 0;
+        final windDir = globalW > 0 ? -1 : 1;
+        for (int d = 1; d <= 3; d++) {
+          final checkX = (x + windDir * d + w) % w;
+          final checkEl = g[y * w + checkX];
+          if (checkEl != El.empty) {
+            final checkState = checkEl < maxElements ? elementPhysicsState[checkEl] : 0;
+            if (checkState == PhysicsState.solid.index) {
+              shelter += 2;
+            }
+          }
+        }
+
+        final effectiveWind = globalW > 0
+            ? (globalW - shelter > 0 ? globalW - shelter : 0)
+            : (globalW + shelter < 0 ? globalW + shelter : 0);
+
+        final localX = effectiveWind + varX;
+        final localY = varY >> 1; // vertical wind is weaker
+        wx[idx] = localX.clamp(-127, 127);
+        wy[idx] = localY.clamp(-127, 127);
+      }
+    }
+  }
+
+  /// Increment cellAge for all non-empty cells in dirty chunks.
+  void updateCellAge() {
+    final w = gridW;
+    final h = gridH;
+    final g = grid;
+    final dc = dirtyChunks;
+    final cols = chunkCols;
+    final age = cellAge;
+
+    for (int y = 0; y < h; y++) {
+      final chunkY = y >> 4;
+      for (int x = 0; x < w; x++) {
+        final chunkIdx = chunkY * cols + (x >> 4);
+        if (dc[chunkIdx] == 0) continue;
+        final idx = y * w + x;
+        if (g[idx] != El.empty) {
+          final a = age[idx];
+          if (a < 255) age[idx] = a + 1;
+        }
+      }
+    }
+  }
+
+  // =========================================================================
+  // Light emission + luminance
+  // =========================================================================
+
+  /// Write lightR/G/B for emitting cells in dirty chunks.
+  /// Called every 4 frames from the game loop.
+  void updateLightEmission() {
+    final w = gridW;
+    final h = gridH;
+    final g = grid;
+    final dc = dirtyChunks;
+    final cols = chunkCols;
+    final lr = lightR;
+    final lg = lightG;
+    final lb = lightB;
+    final temp = temperature;
+    final st = sparkTimer;
+
+    for (int y = 0; y < h; y++) {
+      final chunkY = y >> 4;
+      for (int x = 0; x < w; x++) {
+        final chunkIdx = chunkY * cols + (x >> 4);
+        if (dc[chunkIdx] == 0) continue;
+        final idx = y * w + x;
+        final el = g[idx];
+
+        if (el == El.empty) {
+          lr[idx] = 0;
+          lg[idx] = 0;
+          lb[idx] = 0;
+          continue;
+        }
+
+        final emission = elementLightEmission[el];
+
+        // Electrical sparks: white light
+        if (st[idx] == 1) {
+          lr[idx] = 200;
+          lg[idx] = 220;
+          lb[idx] = 255;
+          continue;
+        }
+
+        // Hot cells: incandescent glow
+        final t = temp[idx];
+        if (t > 200) {
+          final heat = t - 200; // 0-55
+          final rRaw = heat << 2;
+          final r = rRaw < 255 ? rRaw : 255;
+          final gvRaw = heat << 1;
+          final gv = gvRaw < 255 ? gvRaw : 255;
+          // Combine with element's own emission (take max)
+          lr[idx] = r > elementLightR[el] ? r : elementLightR[el];
+          lg[idx] = gv > elementLightG[el] ? gv : elementLightG[el];
+          lb[idx] = elementLightB[el];
+          continue;
+        }
+
+        // Normal element emission
+        if (emission > 0) {
+          lr[idx] = elementLightR[el];
+          lg[idx] = elementLightG[el];
+          lb[idx] = elementLightB[el];
+        } else {
+          lr[idx] = 0;
+          lg[idx] = 0;
+          lb[idx] = 0;
+        }
+      }
+    }
+  }
+
+  /// Compute luminance for each cell from nearby light emitters.
+  /// Called every 8 frames from the game loop. Used by plants, fungi, creatures.
+  void updateLuminance() {
+    final w = gridW;
+    final h = gridH;
+    final g = grid;
+    final lr = lightR;
+    final lg = lightG;
+    final lb = lightB;
+    final lum = luminance;
+    final night = isNight;
+    // Base luminance for surface cells from day/night cycle
+    final baseLum = night ? 30 : 200;
+
+    // Simple approach: scan radius 8 for emitters, accumulate weighted by distance.
+    // For performance, only process dirty chunks.
+    final dc = dirtyChunks;
+    final cols = chunkCols;
+
+    for (int cy = 0; cy < h; cy++) {
+      final chunkY = cy >> 4;
+      for (int cx = 0; cx < w; cx++) {
+        final chunkIdx = chunkY * cols + (cx >> 4);
+        if (dc[chunkIdx] == 0) continue;
+        final idx = cy * w + cx;
+
+        // Surface detection: is there open sky above this cell?
+        // Scan upward for the first non-empty, non-gas cell
+        bool isSurface = false;
+        for (int sy = cy - 1; sy >= 0 && sy >= cy - 20; sy--) {
+          final above = g[sy * w + cx];
+          if (above == El.empty || above == El.oxygen || above == El.co2 ||
+              above == El.smoke || above == El.steam || above == El.methane ||
+              above == El.hydrogen) {
+            continue;
+          }
+          // Hit a solid/liquid — not surface
+          break;
+        }
+        // If we scanned all the way without hitting anything solid, it's surface
+        if (cy <= 20 || g[0 * w + cx] == El.empty) {
+          // Simple heuristic: check if sky column above is mostly empty
+          int emptyCount = 0;
+          int scanTop = cy - 20; if (scanTop < 0) scanTop = 0;
+          for (int sy = cy - 1; sy >= scanTop; sy--) {
+            if (g[sy * w + cx] == El.empty) emptyCount++;
+          }
+          isSurface = emptyCount > (cy - scanTop) ~/ 2;
+        }
+
+        // Accumulate light from nearby emitters
+        int accum = 0;
+        const radius = 8;
+        final hm1 = h - 1;
+        final wm1 = w - 1;
+        int yMin = cy - radius; if (yMin < 0) yMin = 0;
+        int yMax = cy + radius; if (yMax > hm1) yMax = hm1;
+        int xMin = cx - radius; if (xMin < 0) xMin = 0;
+        int xMax = cx + radius; if (xMax > wm1) xMax = wm1;
+
+        for (int ey = yMin; ey <= yMax; ey++) {
+          final dy = ey - cy; final ady = dy < 0 ? -dy : dy;
+          final rowBase = ey * w;
+          for (int ex = xMin; ex <= xMax; ex++) {
+            final eidx = rowBase + ex;
+            final r = lr[eidx];
+            final gv = lg[eidx];
+            final b = lb[eidx];
+            if ((r | gv | b) == 0) continue;
+            final dx = ex - cx; final adx = dx < 0 ? -dx : dx;
+            final dist = ady > adx ? ady : adx; // Chebyshev distance
+            if (dist == 0) continue;
+            // Perceived brightness: approximate (r+g+b)/3 weighted by 1/dist
+            final brightness = (r + gv + b) ~/ 3;
+            accum += brightness ~/ dist;
+          }
+        }
+
+        // Combine: surface gets base daylight, underground relies on emitters
+        int finalLum;
+        if (isSurface) {
+          finalLum = baseLum + (accum > 55 ? 55 : accum);
+        } else {
+          finalLum = accum;
+        }
+        if (finalLum > 255) finalLum = 255;
+        lum[idx] = finalLum;
+      }
+    }
+  }
+
+  // =========================================================================
   // Main simulation step
   // =========================================================================
 
@@ -1738,6 +3578,31 @@ class SimulationEngine {
       updatePressure();
     }
 
+    // Update pH, dissolved substances, and charge every 4 frames
+    if (frameCount % 4 == 0) {
+      runPHAndChargePass();
+    }
+
+    // Vibration propagation every 2 frames
+    if (frameCount % 2 == 0) {
+      updateVibration();
+    }
+
+    // Stress accumulation every 4 frames
+    if (frameCount % 4 == 0) {
+      updateStress();
+    }
+
+    // Structural support propagation every 2 frames
+    if (frameCount % 2 == 0) {
+      updateSupport();
+    }
+
+    // Wind field update every 30 frames
+    if (frameCount % 30 == 0) {
+      updateWindField();
+    }
+
     rainbowHue = (rainbowHue + 3) % 360;
 
     if (lightningFlashFrames > 0) lightningFlashFrames--;
@@ -1746,21 +3611,28 @@ class SimulationEngine {
     final cols = chunkCols;
     final w = gridW;
 
-    final leftToRight = frameCount.isEven;
+  /// Process a specific vertical slice of the grid.
+  /// Used for parallelized processing.
+  void _processSlice(int startX, int endX, bool leftToRight, int currentClockBit, 
+                    void Function(SimulationEngine engine, int el, int x, int y, int idx) simulateElement) {
     final yStart = gravityDir == 1 ? gridH - 1 : 0;
     final yEnd = gravityDir == 1 ? -1 : gridH;
     final yStep = gravityDir == 1 ? -1 : 1;
+    final dc = dirtyChunks;
+    final cols = chunkCols;
+    final w = gridW;
+
     for (int y = yStart; y != yEnd; y += yStep) {
       final chunkY = y >> 4;
-      final startX = leftToRight ? 0 : gridW - 1;
-      final endX = leftToRight ? gridW : -1;
+      final rowXStart = leftToRight ? startX : endX - 1;
+      final rowXEnd = leftToRight ? endX : startX - 1;
       final dx = leftToRight ? 1 : -1;
-      for (int x = startX; x != endX; x += dx) {
+
+      for (int x = rowXStart; x != rowXEnd; x += dx) {
         final chunkIdx = chunkY * cols + (x >> 4);
         if (dc[chunkIdx] == 0) continue;
 
         final idx = y * w + x;
-
         final flagVal = flags[idx];
         if ((flagVal & 0x80) == currentClockBit) continue;
 
@@ -1801,8 +3673,43 @@ class SimulationEngine {
         }
       }
     }
+  }
 
-    // Swap dirty chunk buffers for next frame
+  /// Run one frame of physics simulation.
+  void step(void Function(SimulationEngine engine, int el, int x, int y, int idx) simulateElement) {
+    simClock = !simClock;
+    final currentClockBit = simClock ? 0x80 : 0;
+
+    processExplosions();
+
+    if (windForce != 0 && frameCount % 2 == 0) applyWind();
+    if (frameCount % 3 == 0) updateTemperature();
+    if (frameCount % 4 == 0) updatePressure();
+    if (frameCount % 4 == 0) runPHAndChargePass();
+    if (frameCount % 2 == 0) updateVibration();
+    if (frameCount % 4 == 0) updateStress();
+    if (frameCount % 2 == 0) updateSupport();
+    if (frameCount % 30 == 0) updateWindField();
+
+    rainbowHue = (rainbowHue + 3) % 360;
+    if (lightningFlashFrames > 0) lightningFlashFrames--;
+
+    final leftToRight = frameCount.isEven;
+
+    if (parallelUpdate && numSlices > 1) {
+      // PHASE 9: Parallel Grid Slicing
+      // In a real multi-isolate environment, we would dispatch to worker isolates.
+      // Here we simulate the logic for a multi-threaded pass.
+      final sWidth = gridW ~/ numSlices;
+      for (int i = 0; i < numSlices; i++) {
+        final startX = i * sWidth;
+        final endX = (i == numSlices - 1) ? gridW : (i + 1) * sWidth;
+        _processSlice(startX, endX, leftToRight, currentClockBit, simulateElement);
+      }
+    } else {
+      _processSlice(0, gridW, leftToRight, currentClockBit, simulateElement);
+    }
+
     final tmp = dirtyChunks;
     dirtyChunks = nextDirtyChunks;
     nextDirtyChunks = tmp;
@@ -1810,4 +3717,863 @@ class SimulationEngine {
 
     frameCount++;
   }
+}
+
+// ---------------------------------------------------------------------------
+// SimTuning -- Centralized tuning parameters for all simulation probabilities
+// ---------------------------------------------------------------------------
+
+/// Every probability, rate, and threshold in the physics engine is stored here.
+/// Optuna searches this parameter space to find optimal values.
+/// All rates are 1/N chance per eligible tick unless otherwise noted.
+class SimTuning {
+  // -- Sand --
+  static int sandToMudRate = 10;             // 1/N surface sand->mud with water
+  static int sandToMudSubmergedRate = 80;    // 1/N submerged sand->mud (slower)
+
+  // -- Water --
+  static int waterTntDissolve = 10;          // 1/N dissolve TNT
+  static int waterSmokeDissolve = 10;        // 1/N dissolve smoke
+  static int waterRainbowSpread = 40;        // 1/N spread rainbow
+  static int waterPlantDamage = 20;          // 1/N damage plant
+  static int waterAcidPlantDamage = 10;      // 1/N acidic water damages plant
+  static int waterBubbleRate = 500;          // 1/N spawn bubble at high mass
+  static int waterPressurePush = 8;          // 1/N push sand/dirt sideways
+  static int waterMomentumReset = 4;         // 1/N velocity resets
+  static int waterDirtErosion = 20;          // 1/N erode dirt
+  static int waterSandErosion = 30;          // 1/N erode sand
+  static int waterSedimentDeposit = 40;      // 1/N deposit sediment
+  static int waterSeepageRate = 12;          // 1/N underground seepage
+  static int waterHydraulicRate = 3;         // 1/N hydraulic displacement
+  static int waterStoneExit = 6;             // 1/N pressurized stone exit
+
+  // -- Fire --
+  static int fireOxygenConsume = 3;          // 1/N consume oxygen
+  static int fireOilLifetimeBase = 70;       // base ticks near oil
+  static int fireOilLifetimeVar = 50;        // variance near oil
+  static int fireLifetimeBase = 40;          // base ticks
+  static int fireLifetimeVar = 40;           // variance
+  static int fireBurnoutSmoke = 3;           // N-1/N become smoke (2/3)
+  static int firePlantIgnite = 2;            // 1/N ignite plant/seed
+  static int fireOilChainIgnite = 3;         // 1/N chain ignite oil
+  static int fireWoodPyrolysis = 3;          // 1/N start wood charring
+  static int fireFlicker = 6;               // flicker range (0-5)
+  static int fireLateralShimmy = 5;          // 1/N lateral move when trapped
+
+  // -- Ice --
+  static int iceRegelation = 4;              // 1/N regelation melt
+  static int iceAmbientMeltDay = 20;         // 1/N ambient melt (day)
+  static int iceAmbientMeltNight = 60;       // 1/N ambient melt (night)
+
+  // -- Lightning --
+  static int lightningElectrolysis = 3;      // 1/N water->bubble
+  static int lightningOilChain = 3;          // 1/N chain ignite oil
+
+  // -- Dirt --
+  static int dirtAshAbsorb = 10;             // 1/N absorb ash
+  static int dirtWaterErosionBase = 10;      // 1/N water erosion check
+  static int dirtFlowingErosion = 8;         // 1/N flowing water erosion
+  static int dirtCompactRate = 10;           // alias for backward compat
+
+  // -- Plant --
+  static int plantAcidDamage = 3;            // 1/N acid damage
+  static int plantDecomposeRate = 10;        // 1/N decompose to compost with fungus
+  static int plantO2Produce = 8;             // 1/N produce oxygen
+  static int plantSeedRateYoung = 500;       // 1/N seed (young mature)
+  static int plantSeedRateOld = 200;         // 1/N seed (aged mature)
+  static int plantGrassSpread = 40;          // 1/N grass lateral spread
+  static int plantMushroomSpread = 80;       // 1/N mushroom colony spread
+  static int plantTreeBranch = 3;            // 1/N tree branch at wide canopy
+  static int plantTreeRootGrow = 50;         // 1/N tree root growth
+  static int plantTreeBranchSkip = 2;        // 1/N skip branch side
+
+  // -- Lava --
+  static int lavaCoolingBase = 200;          // base cooling threshold
+  static int lavaCoolingVar = 50;            // cooling variance
+  static int lavaCoolIsolated = 80;          // isolated base
+  static int lavaCoolIsolatedVar = 30;       // isolated variance
+  static int lavaCoolPartial = 140;          // partial base
+  static int lavaCoolPartialVar = 40;        // partial variance
+  static int lavaSmokeEmit = 80;             // 1/N smoke emission
+  static int lavaSteamEmit = 120;            // 1/N steam emission
+  static int lavaEruptionOpen = 60;          // 1/N eruption (low pressure)
+  static int lavaEruptionPressured = 30;     // 1/N eruption (high pressure)
+  static int lavaEruptThreshLow = 20;        // eruption threshold (low pressure)
+  static int lavaEruptThreshHigh = 10;       // eruption threshold (high pressure)
+  static int lavaSpatter = 100;              // 1/N spatter
+  static int lavaIgniteFlammable = 2;        // 1/N ignite plant/oil/wood/seed
+  static int lavaSandToGlass = 40;           // 1/N sand->glass
+  static int lavaMeltMetal = 80;             // 1/N melt metal
+  static int lavaDryMud = 10;               // 1/N mud->dirt
+  static int lavaGasEmit = 100;              // 1/N gas emission (legacy)
+
+  // -- Snow --
+  static int snowMeltRateDay = 20;           // 1/N proximity melt rate (day)
+  static int snowMeltRateNight = 40;         // 1/N proximity melt rate (night)
+  static int snowFreezeWater = 30;           // 1/N freeze adjacent water
+  static int snowAvalanche = 3;              // 1/N avalanche check
+  static int snowWindDrift = 2;              // 1/N wind-driven drift
+
+  // -- Wood --
+  static int woodFireSpread = 12;            // 1/N fire spread to adjacent
+  static int woodBurnoutBase = 40;           // base ticks before burnout
+  static int woodBurnoutVar = 20;            // burnout variance
+  static int woodCharcoalChance = 5;         // N<2 = charcoal, else ash
+  static int woodAnoxicPyrolysis = 60;       // 1/N anoxic pyrolysis
+  static int woodWaterAbsorb = 30;           // 1/N water absorption
+  static int woodWetBurn = 5;               // 1/N burn when waterlogged
+  static int woodPetrify = 80;              // 1/N petrification
+
+  // -- Metal --
+  static int metalFallResist = 30;           // 1/N start falling when unsupported
+  static int metalRustRate = 500;            // 1/N rust in water (base)
+  static int metalSaltRustRate = 100;        // 1/N rust in salt water
+  static int metalSaltRustAlkaline = 300;    // 1/N salt rust (alkaline)
+  static int metalHotIgniteRate = 6;         // 1/N hot metal ignites flammables
+  static int metalHotWoodChar = 10;          // 1/N hot metal chars wood
+  static int metalCondensation = 100;        // 1/N condensation
+
+  // -- Smoke --
+  static int smokeLateralDrift = 3;          // 1/N lateral drift
+
+  // -- Bubble --
+  static int bubbleWobble = 20;              // 1/N lateral wobble
+
+  // -- Ash --
+  static int ashLateralDrift = 3;            // 1/N lateral drift in water
+  static int ashAvalanche = 3;               // 1/N avalanche
+
+  // -- Mud --
+  static int mudContactDry = 4;              // 1/N contact drying near fire
+  static int mudProximityDry = 40;           // 1/N proximity drying
+
+  // -- Steam --
+  static int steamAltitudeRain = 5;          // 1/N condense at sky edge
+  static int steamDeposition = 3;            // 1/N deposit as ice
+  static int steamIceCondense = 4;           // N-1/N condense on ice (3/4)
+  static int steamTrappedSeep = 40;          // 1/N seep through cracks
+
+  // -- Oil --
+  // (no standalone magic numbers — ignition handled by fire/lava)
+
+  // -- Acid --
+  static int acidLifetimeBase = 200;         // base life before expiry
+  static int acidLifetimeVar = 60;           // variance
+  static int acidWaterDilute = 8;            // 1/N dilute in water
+  static int acidIceMelt = 8;               // 1/N melt ice
+  static int acidSnowMelt = 5;              // 1/N melt snow
+  static int acidLavaReact = 5;             // 1/N react with lava
+  static int acidWaterBubble = 20;           // 1/N produce bubble in water
+
+  // -- Stone --
+  static int stoneThinSupport = 60;          // 1/N thin support crumble
+  static int stoneNoLateralFall = 8;         // 1/N fall without diagonal support
+  static int stoneWeatherWater = 60;         // 1/N water weathering
+  static int stoneWeatherCrumble = 20;       // 1/N crumble when fully weathered
+  static int stoneFrostWeather = 20;         // 1/N frost weathering
+  static int stoneFrostCrumble = 15;         // 1/N frost crumble
+  static int stoneLavaCrack = 200;           // 1/N crack into lava
+
+  // -- Glass --
+  static int glassLavaMeltBase = 80;         // base life near lava before melt
+  static int glassLavaMeltVar = 40;          // variance
+  static int glassThermalShatter = 3;        // 1/N probabilistic thermal shatter
+
+  // -- Avalanche --
+  static int avalancheStandard = 3;          // N-1/N chance (2/3 standard)
+  static int avalancheExtended = 4;          // 1/N extended roll
+
+  // -- Fungus --
+  static int fungusDeathToCompost = 20;      // 1/N die to compost when dry
+  static int fungusAshDecompose = 5;         // 1/N convert ash to compost
+  static int fungusWoodRot = 80;             // 1/N decompose wood
+  static int fungusDirtSpread = 40;          // 1/N spread to dirt
+  static int fungusSporulate = 200;          // 1/N release spore
+  static int fungusMethane = 300;            // 1/N produce methane
+
+  // -- Spore --
+  static int sporeFallRate = 3;              // 1/N slow fall
+  static int sporeDriftRate = 2;             // 1/N lateral drift
+
+  // -- Compost --
+  static int compostDryToDirt = 100;         // 1/N become dirt when dry
+  static int compostNutrient = 100;          // 1/N nutrient diffusion
+  static int compostMethane = 400;           // 1/N produce methane
+
+  // -- Rust --
+  static int rustCrumble = 50;              // 1/N crumble under weight
+
+  // -- Methane --
+  static int methaneLateralDrift = 2;        // 1/N lateral drift
+
+  // -- Salt --
+  static int saltDissolveRate = 5;           // 1/N dissolve in water
+  static int saltDeiceRate = 15;             // 1/N melt ice
+  static int saltPlantKill = 30;             // 1/N damage plant
+
+  // -- Algae --
+  static int algaeGrowRate = 10;             // 1/N spread
+  static int algaeO2Rate = 40;              // 1/N produce oxygen
+  static int algaeCO2Absorb = 10;           // 1/N absorb CO2
+  static int algaeBloomDieoff = 50;          // 1/N overpopulation death
+  static int algaeBloomThreshold = 12;       // nearby algae count for bloom
+
+  // -- Seaweed --
+  static int seaweedO2Rate = 30;             // 1/N produce oxygen
+  static int seaweedCO2Absorb = 8;           // 1/N absorb CO2
+  static int seaweedBloomDieoff = 60;        // 1/N overpopulation death
+  static int seaweedBloomThreshold = 14;     // nearby count for die-off
+
+  // -- Moss --
+  static int mossO2Rate = 60;               // 1/N produce oxygen
+  static int mossCO2Absorb = 15;            // 1/N absorb CO2
+
+  // -- Vine --
+  static int vineAcidDamage = 3;            // 1/N acid damage
+  static int vineO2Rate = 5;               // 1/N produce oxygen
+
+  // -- Flower --
+  static int flowerAcidDamage = 3;          // 1/N acid damage
+  static int flowerO2Rate = 6;             // 1/N produce oxygen
+
+  // -- Honey --
+  static int honeyCrystallize = 50;          // 1/N crystallize at max life
+  static int honeyCrystallizeLife = 250;     // life threshold
+
+  // -- Hydrogen --
+  static int hydrogenDrift = 2;             // 1/N lateral drift
+
+  // -- Sulfur --
+  static int sulfurTarnishRate = 300;        // 1/N tarnish metal
+
+  // -- Copper --
+  static int copperPatinaBase = 2000;        // 1/N base patina rate
+  static int copperAcidRate = 20;           // 1/N acid dissolution
+
+  // -- Web --
+  static int webWaterDissolve = 30;          // 1/N dissolve in water
+  static int webDecayLife = 200;             // ticks before decay
+
+  // -- Thorn --
+  static int thornDamage = 15;              // life damage per hit
+
+  // -- Ant --
+  static int antExplorerWander = 60;         // 1/N switch to explorer mode
+  static int antBlobDisperse = 3;            // 1/N blob dispersal
+
+  // -- Colony Dynamics --
+  static int colonyMigrationThreshold = 5;  // min distance before colony moves
+  static int colonyMigrationInterval = 60;  // ticks between migration checks
+
+  // -- Queen --
+  static int queenEggRate = 100;            // 1/N chance per tick to lay egg
+  static int queenMaxAge = 180000;          // 10x worker lifespan
+  static int queenFoodPerEgg = 3;           // food consumed per egg laid
+  static int queenMoveSpeed = 10;           // ticks between queen movements (slow)
+  static int orphanDecayRate = 500;         // 1/N chance orphan ant loses energy
+
+  // -- Castes --
+  static int casteWorkerRatio = 70;         // % workers in colony
+  static int casteSoldierRatio = 15;        // % soldiers
+  static int casteNurseRatio = 10;          // % nurses
+  static int casteScoutRatio = 5;           // % scouts
+
+  // -- Brood --
+  static int eggHatchTicks = 200;           // ticks for egg → larva
+  static int larvaGrowTicks = 400;          // ticks for larva → adult
+  static int larvaFoodPerGrow = 2;          // food units per larva maturation
+
+  // -- Nest Building --
+  static int digSuccessRate = 3;            // 1/N chance dig succeeds per tick
+  static int dirtCarryDrop = 2;             // 1/N chance to drop carried dirt
+  static int soldierPatrolRadius = 8;       // cells soldiers patrol from nest
+  static int alarmMobilizeRadius = 15;      // cells soldiers respond to alarm
+
+  // -- Species-Specific --
+  static int spiderWebRate = 8;             // 1/N chance spider spins web per tick
+  static int beePollinateRate = 12;         // 1/N chance bee pollinates flower
+  static int wormAerateRate = 15;           // 1/N chance worm aerates dirt
+  static int beetleDecomposeRate = 10;      // 1/N chance beetle eats compost
+  static int fishEatRate = 8;              // 1/N chance fish eats algae
+  static int fishMaxPop = 30;              // max fish per colony
+  static int beeMaxPop = 20;              // max bees per colony
+  static int wormMaxPop = 40;             // max worms per colony
+
+  // ===================================================================
+  // THROTTLES — how often behaviors update (frameCount % N)
+  // Lower = more frequent = more responsive but more CPU
+  // ===================================================================
+  static int throttleSandAbsorb = 3;         // sand moisture check interval
+  static int throttleWaterMomentum = 6;      // water velocity damping interval
+  static int throttleWaterSeep = 8;          // underground seepage interval
+  static int throttleWaterPressure = 3;      // pressure-driven flow interval
+  static int throttleWaterFountain = 4;      // high-pressure eruption interval
+  static int throttleFireSpread = 6;         // fire spread attempt interval
+  static int throttleFireSmoke = 10;         // smoke spawning interval
+  static int throttleIceRegel = 8;           // regelation check interval
+  static int throttleDirtMoistLoss = 15;     // dirt moisture evaporation interval
+  static int throttleDirtErosion = 12;       // dirt erosion interval
+  static int throttlePlantHydration = 5;     // plant water check interval
+  static int throttlePlantGrow = 6;          // plant growth check interval
+  static int throttlePlantPhotosynthesis = 15; // O2/CO2 exchange interval
+  static int throttlePlantSeed = 30;         // seed production check interval
+  static int throttleLavaCool = 10;          // lava cooling check interval
+  static int throttleMetalHeat = 3;          // metal heat absorption interval
+  static int throttleStoneCrack = 8;         // stone cracking check interval
+  static int throttleFungusGrow = 20;        // fungus spread interval
+  static int throttleAlgaeGrow = 30;         // algae spread interval
+  static int throttleCompostDry = 10;        // compost drying interval
+
+  // ===================================================================
+  // THRESHOLDS — trigger points for state changes
+  // ===================================================================
+  static int thresholdPressureHigh = 6;      // pressure considered "high" for flow
+  static int thresholdPressureErupt = 16;    // pressure for fountain eruption
+  static int thresholdColumnHeavy = 6;       // liquid column depth for downward push
+  static int thresholdWaterDeep = 4;         // water depth for visual/behavior change
+  static int thresholdPlantWilt = 30;        // life below this = wilting
+  static int thresholdPlantMature = 8;       // min size for maturity
+  static int thresholdPlantSeedAge = 150;    // cellAge for seed production
+  static int thresholdPHAcidDamage = 80;     // pH below this damages plants
+  static int thresholdPHOptimalLo = 100;     // optimal pH range low
+  static int thresholdPHOptimalHi = 140;     // optimal pH range high
+  static int thresholdLightPhotosynthesis = 50; // min luminance for photosynthesis
+  static int thresholdLightFungusMax = 30;   // max luminance fungus tolerates
+  static int thresholdTempHot = 200;         // "hot" for incandescence/reactions
+  static int thresholdTempWarm = 150;        // "warm" for enhanced reactions
+  static int thresholdMoistureWet = 50;      // moisture considered "wet"
+  static int thresholdAgingOld = 200;        // cellAge considered "old" for effects
+  static int thresholdAgingDecay = 250;      // cellAge for accelerated decay
+  static int thresholdStressFailure = 2;     // stress > bondEnergy * this = collapse
+  static int thresholdVibrationBreak = 200;  // vibration level that breaks weak cells
+  static int thresholdAlgaeBloom = 12;       // nearby algae for bloom die-off
+
+  // ===================================================================
+  // DISTANCES — sensing and interaction ranges
+  // ===================================================================
+  static int distAntScan = 8;               // ant horizontal scan distance
+  static int distForagerScan = 12;           // forager scan distance
+  static int distLightRadius = 8;           // luminance flood fill radius
+  static int distWindShelter = 3;           // terrain wind sheltering distance
+  static int distVibrationSpread = 1;       // vibration propagation per tick
+
+  /// Load tuning from JSON (Optuna results).
+  static void loadFromJson(Map<String, dynamic> json) {
+    json.forEach((key, value) {
+      if (value is int) {
+        _setParam(key, value);
+      }
+    });
+  }
+
+  static void _setParam(String key, int value) {
+    switch (key) {
+      // Sand
+      case 'sandToMudRate': sandToMudRate = value;
+      case 'sandToMudSubmergedRate': sandToMudSubmergedRate = value;
+      // Water
+      case 'waterTntDissolve': waterTntDissolve = value;
+      case 'waterSmokeDissolve': waterSmokeDissolve = value;
+      case 'waterRainbowSpread': waterRainbowSpread = value;
+      case 'waterPlantDamage': waterPlantDamage = value;
+      case 'waterAcidPlantDamage': waterAcidPlantDamage = value;
+      case 'waterBubbleRate': waterBubbleRate = value;
+      case 'waterPressurePush': waterPressurePush = value;
+      case 'waterMomentumReset': waterMomentumReset = value;
+      case 'waterDirtErosion': waterDirtErosion = value;
+      case 'waterSandErosion': waterSandErosion = value;
+      case 'waterSedimentDeposit': waterSedimentDeposit = value;
+      case 'waterSeepageRate': waterSeepageRate = value;
+      case 'waterHydraulicRate': waterHydraulicRate = value;
+      case 'waterStoneExit': waterStoneExit = value;
+      // Fire
+      case 'fireOxygenConsume': fireOxygenConsume = value;
+      case 'fireOilLifetimeBase': fireOilLifetimeBase = value;
+      case 'fireOilLifetimeVar': fireOilLifetimeVar = value;
+      case 'fireLifetimeBase': fireLifetimeBase = value;
+      case 'fireLifetimeVar': fireLifetimeVar = value;
+      case 'fireBurnoutSmoke': fireBurnoutSmoke = value;
+      case 'firePlantIgnite': firePlantIgnite = value;
+      case 'fireOilChainIgnite': fireOilChainIgnite = value;
+      case 'fireWoodPyrolysis': fireWoodPyrolysis = value;
+      case 'fireFlicker': fireFlicker = value;
+      case 'fireLateralShimmy': fireLateralShimmy = value;
+      // Ice
+      case 'iceRegelation': iceRegelation = value;
+      case 'iceAmbientMeltDay': iceAmbientMeltDay = value;
+      case 'iceAmbientMeltNight': iceAmbientMeltNight = value;
+      // Lightning
+      case 'lightningElectrolysis': lightningElectrolysis = value;
+      case 'lightningOilChain': lightningOilChain = value;
+      // Dirt
+      case 'dirtAshAbsorb': dirtAshAbsorb = value;
+      case 'dirtWaterErosionBase': dirtWaterErosionBase = value;
+      case 'dirtFlowingErosion': dirtFlowingErosion = value;
+      // Plant
+      case 'plantAcidDamage': plantAcidDamage = value;
+      case 'plantDecomposeRate': plantDecomposeRate = value;
+      case 'plantO2Produce': plantO2Produce = value;
+      case 'plantSeedRateYoung': plantSeedRateYoung = value;
+      case 'plantSeedRateOld': plantSeedRateOld = value;
+      case 'plantGrassSpread': plantGrassSpread = value;
+      case 'plantMushroomSpread': plantMushroomSpread = value;
+      case 'plantTreeBranch': plantTreeBranch = value;
+      case 'plantTreeRootGrow': plantTreeRootGrow = value;
+      case 'plantTreeBranchSkip': plantTreeBranchSkip = value;
+      // Lava
+      case 'lavaCoolingBase': lavaCoolingBase = value;
+      case 'lavaCoolingVar': lavaCoolingVar = value;
+      case 'lavaCoolIsolated': lavaCoolIsolated = value;
+      case 'lavaCoolIsolatedVar': lavaCoolIsolatedVar = value;
+      case 'lavaCoolPartial': lavaCoolPartial = value;
+      case 'lavaCoolPartialVar': lavaCoolPartialVar = value;
+      case 'lavaSmokeEmit': lavaSmokeEmit = value;
+      case 'lavaSteamEmit': lavaSteamEmit = value;
+      case 'lavaEruptionOpen': lavaEruptionOpen = value;
+      case 'lavaEruptionPressured': lavaEruptionPressured = value;
+      case 'lavaEruptThreshLow': lavaEruptThreshLow = value;
+      case 'lavaEruptThreshHigh': lavaEruptThreshHigh = value;
+      case 'lavaSpatter': lavaSpatter = value;
+      case 'lavaIgniteFlammable': lavaIgniteFlammable = value;
+      case 'lavaSandToGlass': lavaSandToGlass = value;
+      case 'lavaMeltMetal': lavaMeltMetal = value;
+      case 'lavaDryMud': lavaDryMud = value;
+      // Snow
+      case 'snowMeltRateDay': snowMeltRateDay = value;
+      case 'snowMeltRateNight': snowMeltRateNight = value;
+      case 'snowFreezeWater': snowFreezeWater = value;
+      case 'snowAvalanche': snowAvalanche = value;
+      case 'snowWindDrift': snowWindDrift = value;
+      // Wood
+      case 'woodFireSpread': woodFireSpread = value;
+      case 'woodBurnoutBase': woodBurnoutBase = value;
+      case 'woodBurnoutVar': woodBurnoutVar = value;
+      case 'woodCharcoalChance': woodCharcoalChance = value;
+      case 'woodAnoxicPyrolysis': woodAnoxicPyrolysis = value;
+      case 'woodWaterAbsorb': woodWaterAbsorb = value;
+      case 'woodWetBurn': woodWetBurn = value;
+      case 'woodPetrify': woodPetrify = value;
+      // Metal
+      case 'metalFallResist': metalFallResist = value;
+      case 'metalRustRate': metalRustRate = value;
+      case 'metalSaltRustRate': metalSaltRustRate = value;
+      case 'metalSaltRustAlkaline': metalSaltRustAlkaline = value;
+      case 'metalHotIgniteRate': metalHotIgniteRate = value;
+      case 'metalHotWoodChar': metalHotWoodChar = value;
+      case 'metalCondensation': metalCondensation = value;
+      // Smoke
+      case 'smokeLateralDrift': smokeLateralDrift = value;
+      // Bubble
+      case 'bubbleWobble': bubbleWobble = value;
+      // Ash
+      case 'ashLateralDrift': ashLateralDrift = value;
+      case 'ashAvalanche': ashAvalanche = value;
+      // Mud
+      case 'mudContactDry': mudContactDry = value;
+      case 'mudProximityDry': mudProximityDry = value;
+      // Steam
+      case 'steamAltitudeRain': steamAltitudeRain = value;
+      case 'steamDeposition': steamDeposition = value;
+      case 'steamIceCondense': steamIceCondense = value;
+      case 'steamTrappedSeep': steamTrappedSeep = value;
+      // Acid
+      case 'acidLifetimeBase': acidLifetimeBase = value;
+      case 'acidLifetimeVar': acidLifetimeVar = value;
+      case 'acidWaterDilute': acidWaterDilute = value;
+      case 'acidIceMelt': acidIceMelt = value;
+      case 'acidSnowMelt': acidSnowMelt = value;
+      case 'acidLavaReact': acidLavaReact = value;
+      case 'acidWaterBubble': acidWaterBubble = value;
+      // Stone
+      case 'stoneThinSupport': stoneThinSupport = value;
+      case 'stoneNoLateralFall': stoneNoLateralFall = value;
+      case 'stoneWeatherWater': stoneWeatherWater = value;
+      case 'stoneWeatherCrumble': stoneWeatherCrumble = value;
+      case 'stoneFrostWeather': stoneFrostWeather = value;
+      case 'stoneFrostCrumble': stoneFrostCrumble = value;
+      case 'stoneLavaCrack': stoneLavaCrack = value;
+      // Glass
+      case 'glassLavaMeltBase': glassLavaMeltBase = value;
+      case 'glassLavaMeltVar': glassLavaMeltVar = value;
+      case 'glassThermalShatter': glassThermalShatter = value;
+      // Avalanche
+      case 'avalancheStandard': avalancheStandard = value;
+      case 'avalancheExtended': avalancheExtended = value;
+      // Fungus
+      case 'fungusDeathToCompost': fungusDeathToCompost = value;
+      case 'fungusAshDecompose': fungusAshDecompose = value;
+      case 'fungusWoodRot': fungusWoodRot = value;
+      case 'fungusDirtSpread': fungusDirtSpread = value;
+      case 'fungusSporulate': fungusSporulate = value;
+      case 'fungusMethane': fungusMethane = value;
+      // Spore
+      case 'sporeFallRate': sporeFallRate = value;
+      case 'sporeDriftRate': sporeDriftRate = value;
+      // Compost
+      case 'compostDryToDirt': compostDryToDirt = value;
+      case 'compostNutrient': compostNutrient = value;
+      case 'compostMethane': compostMethane = value;
+      // Rust
+      case 'rustCrumble': rustCrumble = value;
+      // Methane
+      case 'methaneLateralDrift': methaneLateralDrift = value;
+      // Salt
+      case 'saltDissolveRate': saltDissolveRate = value;
+      case 'saltDeiceRate': saltDeiceRate = value;
+      case 'saltPlantKill': saltPlantKill = value;
+      // Algae
+      case 'algaeGrowRate': algaeGrowRate = value;
+      case 'algaeO2Rate': algaeO2Rate = value;
+      case 'algaeCO2Absorb': algaeCO2Absorb = value;
+      case 'algaeBloomDieoff': algaeBloomDieoff = value;
+      case 'algaeBloomThreshold': algaeBloomThreshold = value;
+      // Seaweed
+      case 'seaweedO2Rate': seaweedO2Rate = value;
+      case 'seaweedCO2Absorb': seaweedCO2Absorb = value;
+      case 'seaweedBloomDieoff': seaweedBloomDieoff = value;
+      case 'seaweedBloomThreshold': seaweedBloomThreshold = value;
+      // Moss
+      case 'mossO2Rate': mossO2Rate = value;
+      case 'mossCO2Absorb': mossCO2Absorb = value;
+      // Vine
+      case 'vineAcidDamage': vineAcidDamage = value;
+      case 'vineO2Rate': vineO2Rate = value;
+      // Flower
+      case 'flowerAcidDamage': flowerAcidDamage = value;
+      case 'flowerO2Rate': flowerO2Rate = value;
+      // Honey
+      case 'honeyCrystallize': honeyCrystallize = value;
+      case 'honeyCrystallizeLife': honeyCrystallizeLife = value;
+      // Hydrogen
+      case 'hydrogenDrift': hydrogenDrift = value;
+      // Sulfur
+      case 'sulfurTarnishRate': sulfurTarnishRate = value;
+      // Copper
+      case 'copperPatinaBase': copperPatinaBase = value;
+      case 'copperAcidRate': copperAcidRate = value;
+      // Web
+      case 'webWaterDissolve': webWaterDissolve = value;
+      case 'webDecayLife': webDecayLife = value;
+      // Thorn
+      case 'thornDamage': thornDamage = value;
+      // Ant
+      case 'antExplorerWander': antExplorerWander = value;
+      case 'antBlobDisperse': antBlobDisperse = value;
+      case 'colonyMigrationThreshold': colonyMigrationThreshold = value;
+      case 'colonyMigrationInterval': colonyMigrationInterval = value;
+      // Queen
+      case 'queenEggRate': queenEggRate = value;
+      case 'queenMaxAge': queenMaxAge = value;
+      case 'queenFoodPerEgg': queenFoodPerEgg = value;
+      case 'queenMoveSpeed': queenMoveSpeed = value;
+      case 'orphanDecayRate': orphanDecayRate = value;
+      // Castes
+      case 'casteWorkerRatio': casteWorkerRatio = value;
+      case 'casteSoldierRatio': casteSoldierRatio = value;
+      case 'casteNurseRatio': casteNurseRatio = value;
+      case 'casteScoutRatio': casteScoutRatio = value;
+      // Brood
+      case 'eggHatchTicks': eggHatchTicks = value;
+      case 'larvaGrowTicks': larvaGrowTicks = value;
+      case 'larvaFoodPerGrow': larvaFoodPerGrow = value;
+      // Nest Building
+      case 'digSuccessRate': digSuccessRate = value;
+      case 'dirtCarryDrop': dirtCarryDrop = value;
+      case 'soldierPatrolRadius': soldierPatrolRadius = value;
+      case 'alarmMobilizeRadius': alarmMobilizeRadius = value;
+      // Species-Specific
+      case 'spiderWebRate': spiderWebRate = value;
+      case 'beePollinateRate': beePollinateRate = value;
+      case 'wormAerateRate': wormAerateRate = value;
+      case 'beetleDecomposeRate': beetleDecomposeRate = value;
+      case 'fishEatRate': fishEatRate = value;
+      case 'fishMaxPop': fishMaxPop = value;
+      case 'beeMaxPop': beeMaxPop = value;
+      case 'wormMaxPop': wormMaxPop = value;
+      // Throttles
+      case 'throttleSandAbsorb': throttleSandAbsorb = value;
+      case 'throttleWaterMomentum': throttleWaterMomentum = value;
+      case 'throttleWaterSeep': throttleWaterSeep = value;
+      case 'throttleWaterPressure': throttleWaterPressure = value;
+      case 'throttleWaterFountain': throttleWaterFountain = value;
+      case 'throttleFireSpread': throttleFireSpread = value;
+      case 'throttleFireSmoke': throttleFireSmoke = value;
+      case 'throttleIceRegel': throttleIceRegel = value;
+      case 'throttleDirtMoistLoss': throttleDirtMoistLoss = value;
+      case 'throttleDirtErosion': throttleDirtErosion = value;
+      case 'throttlePlantHydration': throttlePlantHydration = value;
+      case 'throttlePlantGrow': throttlePlantGrow = value;
+      case 'throttlePlantPhotosynthesis': throttlePlantPhotosynthesis = value;
+      case 'throttlePlantSeed': throttlePlantSeed = value;
+      case 'throttleLavaCool': throttleLavaCool = value;
+      case 'throttleMetalHeat': throttleMetalHeat = value;
+      case 'throttleStoneCrack': throttleStoneCrack = value;
+      case 'throttleFungusGrow': throttleFungusGrow = value;
+      case 'throttleAlgaeGrow': throttleAlgaeGrow = value;
+      case 'throttleCompostDry': throttleCompostDry = value;
+      // Thresholds
+      case 'thresholdPressureHigh': thresholdPressureHigh = value;
+      case 'thresholdPressureErupt': thresholdPressureErupt = value;
+      case 'thresholdColumnHeavy': thresholdColumnHeavy = value;
+      case 'thresholdWaterDeep': thresholdWaterDeep = value;
+      case 'thresholdPlantWilt': thresholdPlantWilt = value;
+      case 'thresholdPlantMature': thresholdPlantMature = value;
+      case 'thresholdPlantSeedAge': thresholdPlantSeedAge = value;
+      case 'thresholdPHAcidDamage': thresholdPHAcidDamage = value;
+      case 'thresholdPHOptimalLo': thresholdPHOptimalLo = value;
+      case 'thresholdPHOptimalHi': thresholdPHOptimalHi = value;
+      case 'thresholdLightPhotosynthesis': thresholdLightPhotosynthesis = value;
+      case 'thresholdLightFungusMax': thresholdLightFungusMax = value;
+      case 'thresholdTempHot': thresholdTempHot = value;
+      case 'thresholdTempWarm': thresholdTempWarm = value;
+      case 'thresholdMoistureWet': thresholdMoistureWet = value;
+      case 'thresholdAgingOld': thresholdAgingOld = value;
+      case 'thresholdAgingDecay': thresholdAgingDecay = value;
+      case 'thresholdStressFailure': thresholdStressFailure = value;
+      case 'thresholdVibrationBreak': thresholdVibrationBreak = value;
+      case 'thresholdAlgaeBloom': thresholdAlgaeBloom = value;
+      // Distances
+      case 'distAntScan': distAntScan = value;
+      case 'distForagerScan': distForagerScan = value;
+      case 'distLightRadius': distLightRadius = value;
+      case 'distWindShelter': distWindShelter = value;
+      case 'distVibrationSpread': distVibrationSpread = value;
+    }
+  }
+
+  /// Export all params to JSON for Optuna.
+  static Map<String, int> toJson() => {
+    'sandToMudRate': sandToMudRate,
+    'sandToMudSubmergedRate': sandToMudSubmergedRate,
+    'waterTntDissolve': waterTntDissolve,
+    'waterSmokeDissolve': waterSmokeDissolve,
+    'waterRainbowSpread': waterRainbowSpread,
+    'waterPlantDamage': waterPlantDamage,
+    'waterAcidPlantDamage': waterAcidPlantDamage,
+    'waterBubbleRate': waterBubbleRate,
+    'waterPressurePush': waterPressurePush,
+    'waterMomentumReset': waterMomentumReset,
+    'waterDirtErosion': waterDirtErosion,
+    'waterSandErosion': waterSandErosion,
+    'waterSedimentDeposit': waterSedimentDeposit,
+    'waterSeepageRate': waterSeepageRate,
+    'waterHydraulicRate': waterHydraulicRate,
+    'waterStoneExit': waterStoneExit,
+    'fireOxygenConsume': fireOxygenConsume,
+    'fireOilLifetimeBase': fireOilLifetimeBase,
+    'fireOilLifetimeVar': fireOilLifetimeVar,
+    'fireLifetimeBase': fireLifetimeBase,
+    'fireLifetimeVar': fireLifetimeVar,
+    'fireBurnoutSmoke': fireBurnoutSmoke,
+    'firePlantIgnite': firePlantIgnite,
+    'fireOilChainIgnite': fireOilChainIgnite,
+    'fireWoodPyrolysis': fireWoodPyrolysis,
+    'fireFlicker': fireFlicker,
+    'fireLateralShimmy': fireLateralShimmy,
+    'iceRegelation': iceRegelation,
+    'iceAmbientMeltDay': iceAmbientMeltDay,
+    'iceAmbientMeltNight': iceAmbientMeltNight,
+    'lightningElectrolysis': lightningElectrolysis,
+    'lightningOilChain': lightningOilChain,
+    'dirtAshAbsorb': dirtAshAbsorb,
+    'dirtWaterErosionBase': dirtWaterErosionBase,
+    'dirtFlowingErosion': dirtFlowingErosion,
+    'plantAcidDamage': plantAcidDamage,
+    'plantDecomposeRate': plantDecomposeRate,
+    'plantO2Produce': plantO2Produce,
+    'plantSeedRateYoung': plantSeedRateYoung,
+    'plantSeedRateOld': plantSeedRateOld,
+    'plantGrassSpread': plantGrassSpread,
+    'plantMushroomSpread': plantMushroomSpread,
+    'plantTreeBranch': plantTreeBranch,
+    'plantTreeRootGrow': plantTreeRootGrow,
+    'plantTreeBranchSkip': plantTreeBranchSkip,
+    'lavaCoolingBase': lavaCoolingBase,
+    'lavaCoolingVar': lavaCoolingVar,
+    'lavaCoolIsolated': lavaCoolIsolated,
+    'lavaCoolIsolatedVar': lavaCoolIsolatedVar,
+    'lavaCoolPartial': lavaCoolPartial,
+    'lavaCoolPartialVar': lavaCoolPartialVar,
+    'lavaSmokeEmit': lavaSmokeEmit,
+    'lavaSteamEmit': lavaSteamEmit,
+    'lavaEruptionOpen': lavaEruptionOpen,
+    'lavaEruptionPressured': lavaEruptionPressured,
+    'lavaEruptThreshLow': lavaEruptThreshLow,
+    'lavaEruptThreshHigh': lavaEruptThreshHigh,
+    'lavaSpatter': lavaSpatter,
+    'lavaIgniteFlammable': lavaIgniteFlammable,
+    'lavaSandToGlass': lavaSandToGlass,
+    'lavaMeltMetal': lavaMeltMetal,
+    'lavaDryMud': lavaDryMud,
+    'snowMeltRateDay': snowMeltRateDay,
+    'snowMeltRateNight': snowMeltRateNight,
+    'snowFreezeWater': snowFreezeWater,
+    'snowAvalanche': snowAvalanche,
+    'snowWindDrift': snowWindDrift,
+    'woodFireSpread': woodFireSpread,
+    'woodBurnoutBase': woodBurnoutBase,
+    'woodBurnoutVar': woodBurnoutVar,
+    'woodCharcoalChance': woodCharcoalChance,
+    'woodAnoxicPyrolysis': woodAnoxicPyrolysis,
+    'woodWaterAbsorb': woodWaterAbsorb,
+    'woodWetBurn': woodWetBurn,
+    'woodPetrify': woodPetrify,
+    'metalFallResist': metalFallResist,
+    'metalRustRate': metalRustRate,
+    'metalSaltRustRate': metalSaltRustRate,
+    'metalSaltRustAlkaline': metalSaltRustAlkaline,
+    'metalHotIgniteRate': metalHotIgniteRate,
+    'metalHotWoodChar': metalHotWoodChar,
+    'metalCondensation': metalCondensation,
+    'smokeLateralDrift': smokeLateralDrift,
+    'bubbleWobble': bubbleWobble,
+    'ashLateralDrift': ashLateralDrift,
+    'ashAvalanche': ashAvalanche,
+    'mudContactDry': mudContactDry,
+    'mudProximityDry': mudProximityDry,
+    'steamAltitudeRain': steamAltitudeRain,
+    'steamDeposition': steamDeposition,
+    'steamIceCondense': steamIceCondense,
+    'steamTrappedSeep': steamTrappedSeep,
+    'acidLifetimeBase': acidLifetimeBase,
+    'acidLifetimeVar': acidLifetimeVar,
+    'acidWaterDilute': acidWaterDilute,
+    'acidIceMelt': acidIceMelt,
+    'acidSnowMelt': acidSnowMelt,
+    'acidLavaReact': acidLavaReact,
+    'acidWaterBubble': acidWaterBubble,
+    'stoneThinSupport': stoneThinSupport,
+    'stoneNoLateralFall': stoneNoLateralFall,
+    'stoneWeatherWater': stoneWeatherWater,
+    'stoneWeatherCrumble': stoneWeatherCrumble,
+    'stoneFrostWeather': stoneFrostWeather,
+    'stoneFrostCrumble': stoneFrostCrumble,
+    'stoneLavaCrack': stoneLavaCrack,
+    'glassLavaMeltBase': glassLavaMeltBase,
+    'glassLavaMeltVar': glassLavaMeltVar,
+    'glassThermalShatter': glassThermalShatter,
+    'avalancheStandard': avalancheStandard,
+    'avalancheExtended': avalancheExtended,
+    'fungusDeathToCompost': fungusDeathToCompost,
+    'fungusAshDecompose': fungusAshDecompose,
+    'fungusWoodRot': fungusWoodRot,
+    'fungusDirtSpread': fungusDirtSpread,
+    'fungusSporulate': fungusSporulate,
+    'fungusMethane': fungusMethane,
+    'sporeFallRate': sporeFallRate,
+    'sporeDriftRate': sporeDriftRate,
+    'compostDryToDirt': compostDryToDirt,
+    'compostNutrient': compostNutrient,
+    'compostMethane': compostMethane,
+    'rustCrumble': rustCrumble,
+    'methaneLateralDrift': methaneLateralDrift,
+    'saltDissolveRate': saltDissolveRate,
+    'saltDeiceRate': saltDeiceRate,
+    'saltPlantKill': saltPlantKill,
+    'algaeGrowRate': algaeGrowRate,
+    'algaeO2Rate': algaeO2Rate,
+    'algaeCO2Absorb': algaeCO2Absorb,
+    'algaeBloomDieoff': algaeBloomDieoff,
+    'algaeBloomThreshold': algaeBloomThreshold,
+    'seaweedO2Rate': seaweedO2Rate,
+    'seaweedCO2Absorb': seaweedCO2Absorb,
+    'seaweedBloomDieoff': seaweedBloomDieoff,
+    'seaweedBloomThreshold': seaweedBloomThreshold,
+    'mossO2Rate': mossO2Rate,
+    'mossCO2Absorb': mossCO2Absorb,
+    'vineAcidDamage': vineAcidDamage,
+    'vineO2Rate': vineO2Rate,
+    'flowerAcidDamage': flowerAcidDamage,
+    'flowerO2Rate': flowerO2Rate,
+    'honeyCrystallize': honeyCrystallize,
+    'honeyCrystallizeLife': honeyCrystallizeLife,
+    'hydrogenDrift': hydrogenDrift,
+    'sulfurTarnishRate': sulfurTarnishRate,
+    'copperPatinaBase': copperPatinaBase,
+    'copperAcidRate': copperAcidRate,
+    'webWaterDissolve': webWaterDissolve,
+    'webDecayLife': webDecayLife,
+    'thornDamage': thornDamage,
+    'antExplorerWander': antExplorerWander,
+    'antBlobDisperse': antBlobDisperse,
+    'colonyMigrationThreshold': colonyMigrationThreshold,
+    'colonyMigrationInterval': colonyMigrationInterval,
+    // Queen
+    'queenEggRate': queenEggRate,
+    'queenMaxAge': queenMaxAge,
+    'queenFoodPerEgg': queenFoodPerEgg,
+    'queenMoveSpeed': queenMoveSpeed,
+    'orphanDecayRate': orphanDecayRate,
+    // Castes
+    'casteWorkerRatio': casteWorkerRatio,
+    'casteSoldierRatio': casteSoldierRatio,
+    'casteNurseRatio': casteNurseRatio,
+    'casteScoutRatio': casteScoutRatio,
+    // Brood
+    'eggHatchTicks': eggHatchTicks,
+    'larvaGrowTicks': larvaGrowTicks,
+    'larvaFoodPerGrow': larvaFoodPerGrow,
+    // Nest Building
+    'digSuccessRate': digSuccessRate,
+    'dirtCarryDrop': dirtCarryDrop,
+    'soldierPatrolRadius': soldierPatrolRadius,
+    'alarmMobilizeRadius': alarmMobilizeRadius,
+    // Species-Specific
+    'spiderWebRate': spiderWebRate,
+    'beePollinateRate': beePollinateRate,
+    'wormAerateRate': wormAerateRate,
+    'beetleDecomposeRate': beetleDecomposeRate,
+    'fishEatRate': fishEatRate,
+    'fishMaxPop': fishMaxPop,
+    'beeMaxPop': beeMaxPop,
+    'wormMaxPop': wormMaxPop,
+    // Throttles
+    'throttleSandAbsorb': throttleSandAbsorb,
+    'throttleWaterMomentum': throttleWaterMomentum,
+    'throttleWaterSeep': throttleWaterSeep,
+    'throttleWaterPressure': throttleWaterPressure,
+    'throttleWaterFountain': throttleWaterFountain,
+    'throttleFireSpread': throttleFireSpread,
+    'throttleFireSmoke': throttleFireSmoke,
+    'throttleIceRegel': throttleIceRegel,
+    'throttleDirtMoistLoss': throttleDirtMoistLoss,
+    'throttleDirtErosion': throttleDirtErosion,
+    'throttlePlantHydration': throttlePlantHydration,
+    'throttlePlantGrow': throttlePlantGrow,
+    'throttlePlantPhotosynthesis': throttlePlantPhotosynthesis,
+    'throttlePlantSeed': throttlePlantSeed,
+    'throttleLavaCool': throttleLavaCool,
+    'throttleMetalHeat': throttleMetalHeat,
+    'throttleStoneCrack': throttleStoneCrack,
+    'throttleFungusGrow': throttleFungusGrow,
+    'throttleAlgaeGrow': throttleAlgaeGrow,
+    'throttleCompostDry': throttleCompostDry,
+    // Thresholds
+    'thresholdPressureHigh': thresholdPressureHigh,
+    'thresholdPressureErupt': thresholdPressureErupt,
+    'thresholdColumnHeavy': thresholdColumnHeavy,
+    'thresholdWaterDeep': thresholdWaterDeep,
+    'thresholdPlantWilt': thresholdPlantWilt,
+    'thresholdPlantMature': thresholdPlantMature,
+    'thresholdPlantSeedAge': thresholdPlantSeedAge,
+    'thresholdPHAcidDamage': thresholdPHAcidDamage,
+    'thresholdPHOptimalLo': thresholdPHOptimalLo,
+    'thresholdPHOptimalHi': thresholdPHOptimalHi,
+    'thresholdLightPhotosynthesis': thresholdLightPhotosynthesis,
+    'thresholdLightFungusMax': thresholdLightFungusMax,
+    'thresholdTempHot': thresholdTempHot,
+    'thresholdTempWarm': thresholdTempWarm,
+    'thresholdMoistureWet': thresholdMoistureWet,
+    'thresholdAgingOld': thresholdAgingOld,
+    'thresholdAgingDecay': thresholdAgingDecay,
+    'thresholdStressFailure': thresholdStressFailure,
+    'thresholdVibrationBreak': thresholdVibrationBreak,
+    'thresholdAlgaeBloom': thresholdAlgaeBloom,
+    // Distances
+    'distAntScan': distAntScan,
+    'distForagerScan': distForagerScan,
+    'distLightRadius': distLightRadius,
+    'distWindShelter': distWindShelter,
+    'distVibrationSpread': distVibrationSpread,
+  };
 }

@@ -1,3 +1,4 @@
+// ignore_for_file: avoid_print
 /// Chaos scenario exporter for fuzz/stress testing.
 ///
 /// Reads a scenario from research/chaos_scenario.json, places elements
@@ -22,9 +23,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import '../lib/simulation/simulation_engine.dart';
-import '../lib/simulation/element_registry.dart';
-import '../lib/simulation/element_behaviors.dart';
+import 'package:the_particle_engine/simulation/simulation_engine.dart';
+import 'package:the_particle_engine/simulation/element_registry.dart';
+import 'package:the_particle_engine/simulation/element_behaviors.dart';
 
 void main(List<String> args) {
   ElementRegistry.init();

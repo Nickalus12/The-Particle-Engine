@@ -1,0 +1,4 @@
+name: projects/erp-website-487301/policies/iam.managed.disableServiceAccountApiKeyCreation
+spec:
+  rules:
+  - enforce: false

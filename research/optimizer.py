@@ -118,6 +118,52 @@ def suggest_params(trial) -> dict[str, Any]:
         "fire_spread_prob", 0.05, 0.40, step=0.05
     )
     params["erosion_rate"] = trial.suggest_int("erosion_rate", 50, 500)
+    
+    # New SimTuning additions
+    params["water_pressure_push"] = trial.suggest_int("water_pressure_push", 4, 16)
+    params["water_hydraulic_rate"] = trial.suggest_int("water_hydraulic_rate", 1, 8)
+    params["fire_oxygen_consume"] = trial.suggest_int("fire_oxygen_consume", 1, 10)
+    params["dirt_water_erosion"] = trial.suggest_int("dirt_water_erosion", 5, 25)
+    params["plant_acid_damage"] = trial.suggest_int("plant_acid_damage", 1, 10)
+    
+    # Advanced Phase 1-3 Tuning
+    params["threshold_pressure_erupt"] = trial.suggest_int("threshold_pressure_erupt", 10, 40)
+    params["moisture_wicking_rate"] = trial.suggest_float("moisture_wicking_rate", 0.1, 0.9)
+    params["latent_heat_absorption"] = trial.suggest_int("latent_heat_absorption", 5, 25)
+    params["chunk_collapse_chance"] = trial.suggest_float("chunk_collapse_chance", 0.01, 0.1)
+
+    # -- Periodic Table: Key element properties --
+
+    # Alkali metal reactivity (controls explosion scale with water)
+    params["sodium_reactivity"] = trial.suggest_int("sodium_reactivity", 160, 255)
+    params["potassium_reactivity"] = trial.suggest_int("potassium_reactivity", 180, 255)
+
+    # Mercury properties (liquid metal)
+    params["mercury_density"] = trial.suggest_int("mercury_density", 190, 240)
+    params["mercury_viscosity"] = trial.suggest_int("mercury_viscosity", 1, 4)
+
+    # Gold properties
+    params["gold_density"] = trial.suggest_int("gold_density", 220, 255)
+    params["gold_melt_point"] = trial.suggest_int("gold_melt_point", 150, 200)
+
+    # Halogen reactivity
+    params["fluorine_reactivity"] = trial.suggest_int("fluorine_reactivity", 200, 255)
+    params["chlorine_reactivity"] = trial.suggest_int("chlorine_reactivity", 160, 230)
+
+    # Nuclear properties
+    params["uranium_heat_rate"] = trial.suggest_int("uranium_heat_rate", 1, 5)
+    params["plutonium_heat_rate"] = trial.suggest_int("plutonium_heat_rate", 2, 8)
+    params["thorium_heat_rate"] = trial.suggest_int("thorium_heat_rate", 1, 4)
+
+    # Phosphorus auto-ignition
+    params["phosphorus_ignition_chance"] = trial.suggest_int(
+        "phosphorus_ignition_chance", 20, 80
+    )
+
+    # World generation: ore richness
+    params["ore_richness_mult"] = trial.suggest_float(
+        "ore_richness_mult", 0.5, 2.0, step=0.1
+    )
 
     return params
 
@@ -157,11 +203,29 @@ def write_trial_config(params: dict[str, Any]) -> Path:
                 "viscosity": params["lava_viscosity"],
             },
             "mud": {"viscosity": params["mud_viscosity"]},
+            # Periodic table elements
+            "sodium": {"reactivity": params["sodium_reactivity"]},
+            "potassium": {"reactivity": params["potassium_reactivity"]},
+            "mercury": {
+                "density": params["mercury_density"],
+                "viscosity": params["mercury_viscosity"],
+            },
+            "gold": {
+                "density": params["gold_density"],
+                "meltPoint": params["gold_melt_point"],
+            },
+            "fluorine": {"reactivity": params["fluorine_reactivity"]},
+            "chlorine": {"reactivity": params["chlorine_reactivity"]},
+            "uranium": {"heatRate": params["uranium_heat_rate"]},
+            "plutonium": {"heatRate": params["plutonium_heat_rate"]},
+            "thorium": {"heatRate": params["thorium_heat_rate"]},
+            "phosphorus": {"ignitionChance": params["phosphorus_ignition_chance"]},
         },
         "behavior": {
             "evaporation_rate": params["evaporation_rate"],
             "fire_spread_prob": params["fire_spread_prob"],
             "erosion_rate": params["erosion_rate"],
+            "ore_richness_mult": params["ore_richness_mult"],
         },
     }
     with open(TRIAL_CONFIG, "w", encoding="utf-8") as f:

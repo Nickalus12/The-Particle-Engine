@@ -1,0 +1,23 @@
+{
+  "species": "beetle",
+  "total_niches": 400,
+  "filled_niches": 367,
+  "coverage": 0.9175,
+  "best_fitness": 132.19000244140625,
+  "mean_fitness": 70.24803924560547,
+  "behavior_labels": [
+    "risk_tolerance",
+    "foraging_efficiency"
+  ],
+  "behavior_bounds": [
+    [
+      0.0,
+      1.0
+    ],
+    [
+      0.0,
+      1.0
+    ]
+  ],
+  "n_params": 158
+}

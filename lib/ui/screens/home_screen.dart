@@ -1,9 +1,13 @@
 import 'dart:math';
-import 'dart:ui';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
 import '../../services/save_service.dart';
+import '../../simulation/element_behaviors.dart';
+import '../../simulation/element_registry.dart';
+import '../../simulation/pixel_renderer.dart';
+import '../../simulation/simulation_engine.dart';
 import '../theme/colors.dart';
 import '../theme/particle_theme.dart';
 import '../theme/typography.dart';
@@ -12,9 +16,14 @@ import 'sandbox_screen.dart';
 import 'settings_screen.dart';
 import 'world_create_screen.dart';
 
-/// Premium cinematic main menu with staggered entrance animations,
-/// glassmorphism buttons, animated title glow, and floating particle
-/// background.
+/// Premium main menu with a LIVE simulation running as the background.
+///
+/// A real [SimulationEngine] generates a meadow world and ticks it each frame.
+/// Sand falls, water flows, fire burns -- the world is alive behind the menu.
+/// Three large frosted-glass buttons float over the living world.
+///
+/// When transitioning to sandbox, the menu UI fades away revealing the
+/// simulation beneath, creating a seamless "dive in" feeling.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -24,157 +33,171 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with TickerProviderStateMixin {
-  // -- Staggered entrance animation ------------------------------------------
+  // -- Live simulation background --
+  SimulationEngine? _sim;
+  PixelRenderer? _renderer;
+  ui.Image? _simImage;
+  bool _simReady = false;
+  bool _decoding = false;
+
+  // -- Animation controllers --
+  late final AnimationController _simTicker;
   late final AnimationController _entranceController;
+  late final AnimationController _glowController;
+  late final AnimationController _menuFadeController;
+
+  // -- Entrance animations --
   late final Animation<double> _titleOpacity;
   late final Animation<double> _titleSlide;
-  late final Animation<double> _subtitleOpacity;
-  final List<Animation<double>> _buttonOpacities = [];
-  final List<Animation<double>> _buttonSlides = [];
-  late final Animation<double> _versionOpacity;
+  late final List<Animation<double>> _btnOpacities;
+  late final List<Animation<double>> _btnSlides;
+  late final Animation<double> _glowAnim;
 
-  // -- Title glow pulse ------------------------------------------------------
-  late final AnimationController _glowController;
-  late final Animation<double> _glowAnimation;
-
-  // -- Save state ------------------------------------------------------------
+  // -- Save state --
   final SaveService _saveService = SaveService();
   bool _hasAutoSave = false;
   bool _checkingAutoSave = true;
 
-  // -- Menu items (built after auto-save check) ------------------------------
-  List<_MenuItemData> get _menuItems => [
-        _MenuItemData(
-          label: 'New World',
-          icon: Icons.add_rounded,
-          isPrimary: true,
-          onTap: () => _navigateTo(const WorldCreateScreen()),
-        ),
-        if (!_checkingAutoSave && _hasAutoSave)
-          _MenuItemData(
-            label: 'Continue',
-            icon: Icons.play_arrow_rounded,
-            onTap: _continueGame,
-          ),
-        _MenuItemData(
-          label: 'Load World',
-          icon: Icons.folder_open_rounded,
-          onTap: () => _navigateTo(const LoadScreen()),
-        ),
-        _MenuItemData(
-          label: 'Settings',
-          icon: Icons.tune_rounded,
-          onTap: () => _navigateTo(const SettingsScreen()),
-        ),
-      ];
+  // Accumulated time for fixed-rate sim stepping
+  double _simAccumulator = 0.0;
+  static const double _simInterval = 1.0 / 30.0;
 
-  static const int _maxButtons = 4;
-
-  static const Duration _entranceDuration = Duration(milliseconds: 1800);
-  static const Duration _initialDelay = Duration(milliseconds: 200);
-  static const Duration _titleDuration = Duration(milliseconds: 400);
-  static const Duration _subtitleDelay = Duration(milliseconds: 150);
-  static const Duration _buttonStagger = Duration(milliseconds: 120);
-  static const Duration _buttonSlideTime = Duration(milliseconds: 350);
+  // Demo world grid (half resolution for performance on menu)
+  static const int _demoW = 160;
+  static const int _demoH = 90;
 
   @override
   void initState() {
     super.initState();
 
-    // -- Entrance controller --------------------------------------------------
+    // -- Initialize live simulation background --
+    ElementRegistry.init();
+    final sim = SimulationEngine(gridW: _demoW, gridH: _demoH, seed: 42);
+    _sim = sim;
+    final renderer = PixelRenderer(sim);
+    _renderer = renderer;
+    renderer.init();
+    renderer.generateStars();
+
+    // Simple demo scene: ground + falling elements + fire
+    final rng = Random(77);
+    for (var x = 0; x < _demoW; x++) {
+      for (var y = _demoH - 15; y < _demoH; y++) {
+        final idx = y * _demoW + x;
+        sim.grid[idx] = y > _demoH - 5 ? El.stone : El.dirt;
+        sim.markDirty(x, y);
+      }
+    }
+    for (var i = 0; i < 80; i++) {
+      final x = rng.nextInt(_demoW);
+      final y = rng.nextInt(30) + 5;
+      final idx = y * _demoW + x;
+      if (sim.grid[idx] == El.empty) {
+        sim.grid[idx] = i < 40 ? El.sand : El.water;
+        sim.markDirty(x, y);
+      }
+    }
+    for (var i = 0; i < 6; i++) {
+      final x = 20 + rng.nextInt(_demoW - 40);
+      final y = _demoH - 16;
+      final idx = y * _demoW + x;
+      if (sim.grid[idx] == El.empty) {
+        sim.grid[idx] = El.fire;
+        sim.temperature[idx] = 220;
+        sim.markDirty(x, y);
+      }
+    }
+    _simReady = true;
+
+    // -- Sim ticker (runs every frame) --
+    _simTicker = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 1),
+    )..repeat();
+    _simTicker.addListener(_tickSimulation);
+
+    // -- Entrance animations --
     _entranceController = AnimationController(
       vsync: this,
-      duration: _entranceDuration,
+      duration: const Duration(milliseconds: 1600),
     );
 
-    final totalMs = _entranceDuration.inMilliseconds.toDouble();
-
-    // Title fade + slide
-    final titleStart = _initialDelay.inMilliseconds / totalMs;
-    final titleEnd =
-        (_initialDelay.inMilliseconds + _titleDuration.inMilliseconds) /
-            totalMs;
     _titleOpacity = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(
         parent: _entranceController,
-        curve: Interval(titleStart, titleEnd, curve: Curves.easeOut),
+        curve: const Interval(0.0, 0.35, curve: Curves.easeOut),
       ),
     );
-    _titleSlide = Tween<double>(begin: 30, end: 0).animate(
+    _titleSlide = Tween<double>(begin: -30, end: 0).animate(
       CurvedAnimation(
         parent: _entranceController,
-        curve: Interval(titleStart, titleEnd, curve: Curves.easeOut),
+        curve: const Interval(0.0, 0.35, curve: Curves.easeOutCubic),
       ),
     );
 
-    // Subtitle
-    final subtitleStart =
-        (titleEnd * totalMs + _subtitleDelay.inMilliseconds) / totalMs;
-    final subtitleEnd = (subtitleStart * totalMs + 300) / totalMs;
-    _subtitleOpacity = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(
-        parent: _entranceController,
-        curve: Interval(
-          subtitleStart.clamp(0, 1),
-          subtitleEnd.clamp(0, 1),
-          curve: Curves.easeOut,
-        ),
-      ),
-    );
-
-    // Buttons (staggered)
-    final buttonsBaseMs = subtitleEnd * totalMs + 100;
-    for (var i = 0; i < _maxButtons; i++) {
-      final start =
-          (buttonsBaseMs + _buttonStagger.inMilliseconds * i) / totalMs;
-      final end =
-          (start * totalMs + _buttonSlideTime.inMilliseconds) / totalMs;
-      _buttonOpacities.add(
+    _btnOpacities = [];
+    _btnSlides = [];
+    for (var i = 0; i < 3; i++) {
+      final start = 0.25 + i * 0.1;
+      final end = (start + 0.25).clamp(0.0, 1.0);
+      _btnOpacities.add(
         Tween<double>(begin: 0, end: 1).animate(
           CurvedAnimation(
             parent: _entranceController,
-            curve: Interval(
-              start.clamp(0, 1),
-              end.clamp(0, 1),
-              curve: Curves.easeOut,
-            ),
+            curve: Interval(start, end, curve: Curves.easeOut),
           ),
         ),
       );
-      _buttonSlides.add(
-        Tween<double>(begin: 40, end: 0).animate(
+      _btnSlides.add(
+        Tween<double>(begin: 50, end: 0).animate(
           CurvedAnimation(
             parent: _entranceController,
-            curve: Interval(
-              start.clamp(0, 1),
-              end.clamp(0, 1),
-              curve: Curves.easeOut,
-            ),
+            curve: Interval(start, end, curve: Curves.easeOutCubic),
           ),
         ),
       );
     }
 
-    // Version badge
-    _versionOpacity = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(
-        parent: _entranceController,
-        curve: const Interval(0.7, 1.0, curve: Curves.easeOut),
-      ),
-    );
-
     _entranceController.forward();
 
-    // -- Glow controller (continuous pulse) -----------------------------------
+    // -- Title glow --
     _glowController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 3000),
     )..repeat(reverse: true);
-    _glowAnimation = Tween<double>(begin: 0.4, end: 1.0).animate(
+    _glowAnim = Tween<double>(begin: 0.3, end: 1.0).animate(
       CurvedAnimation(parent: _glowController, curve: Curves.easeInOut),
     );
 
+    // -- Menu fade (for seamless transition) --
+    _menuFadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+
     _checkAutoSave();
+  }
+
+  void _tickSimulation() {
+    if (!_simReady || _sim == null || _renderer == null) return;
+    // Fixed-rate stepping at 30fps
+    _simAccumulator += 1.0 / 60.0; // assume 60fps render
+    while (_simAccumulator >= _simInterval) {
+      _simAccumulator -= _simInterval;
+      _sim!.step(simulateElement);
+    }
+
+    // Render pixels and build image
+    _renderer!.renderPixels();
+    if (!_decoding) {
+      _decoding = true;
+      _renderer!.buildImage().then((image) {
+        _simImage?.dispose();
+        _simImage = image as ui.Image;
+        _decoding = false;
+        if (mounted) setState(() {});
+      });
+    }
   }
 
   Future<void> _checkAutoSave() async {
@@ -189,8 +212,11 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   void dispose() {
+    _simTicker.dispose();
     _entranceController.dispose();
     _glowController.dispose();
+    _menuFadeController.dispose();
+    _simImage?.dispose();
     super.dispose();
   }
 
@@ -198,8 +224,12 @@ class _HomeScreenState extends State<HomeScreen>
     Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (context, _, _) => screen,
-        transitionsBuilder: (context, anim, _, child) =>
-            FadeTransition(opacity: anim, child: child),
+        transitionsBuilder: (context, anim, _, child) {
+          return FadeTransition(
+            opacity: anim,
+            child: child,
+          );
+        },
         transitionDuration: ParticleTheme.normalDuration,
       ),
     );
@@ -212,58 +242,23 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Build
-  // ---------------------------------------------------------------------------
-
   @override
   Widget build(BuildContext context) {
-    final items = _menuItems;
-
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
         children: [
-          // Animated particle background
-          const Positioned.fill(child: _ParticleBackground()),
+          // LIVE SIMULATION BACKGROUND
+          Positioned.fill(
+            child: _simImage != null
+                ? CustomPaint(
+                    painter: _SimImagePainter(_simImage!),
+                    size: Size.infinite,
+                  )
+                : const ColoredBox(color: AppColors.background),
+          ),
 
-          // Layered radial gradient overlays for cinematic depth
-          Positioned.fill(
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    center: const Alignment(-0.5, -0.3),
-                    radius: 1.4,
-                    colors: [
-                      AppColors.primary.withValues(alpha: 0.05),
-                      Colors.transparent,
-                      AppColors.accent.withValues(alpha: 0.03),
-                    ],
-                    stops: const [0.0, 0.45, 1.0],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          // Secondary warm glow near bottom-right
-          Positioned.fill(
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: RadialGradient(
-                    center: const Alignment(0.6, 0.5),
-                    radius: 0.8,
-                    colors: [
-                      AppColors.primary.withValues(alpha: 0.025),
-                      Colors.transparent,
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          // Vignette edges for cinematic framing
+          // Vignette overlay to focus attention on center UI
           Positioned.fill(
             child: IgnorePointer(
               child: DecoratedBox(
@@ -272,33 +267,78 @@ class _HomeScreenState extends State<HomeScreen>
                     center: Alignment.center,
                     radius: 1.0,
                     colors: [
-                      Colors.transparent,
-                      AppColors.background.withValues(alpha: 0.5),
+                      AppColors.background.withValues(alpha: 0.35),
+                      AppColors.background.withValues(alpha: 0.8),
                     ],
-                    stops: const [0.5, 1.0],
+                    stops: const [0.3, 1.0],
                   ),
                 ),
               ),
             ),
           ),
 
-          // Main content
-          SafeArea(
-            child: Center(
+          // Menu UI (fades out for seamless transition)
+          AnimatedBuilder(
+            animation: _menuFadeController,
+            builder: (context, child) {
+              return Opacity(
+                opacity: 1.0 - _menuFadeController.value,
+                child: child,
+              );
+            },
+            child: SafeArea(
               child: AnimatedBuilder(
                 animation: _entranceController,
                 builder: (context, _) {
-                  return ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 900),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 32),
-                      child: Row(
+                  return Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 420),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          // Left: branding
-                          Expanded(child: _buildBranding()),
-                          const SizedBox(width: 48),
-                          // Right: menu buttons
-                          Expanded(child: _buildMenu(items)),
+                          // Title
+                          Opacity(
+                            opacity: _titleOpacity.value,
+                            child: Transform.translate(
+                              offset: Offset(0, _titleSlide.value),
+                              child: _buildTitle(),
+                            ),
+                          ),
+
+                          const SizedBox(height: 48),
+
+                          // 3 large buttons
+                          _buildButton(
+                            index: 0,
+                            label: 'CREATE',
+                            icon: Icons.add_rounded,
+                            color: AppColors.primary,
+                            onTap: () =>
+                                _navigateTo(const WorldCreateScreen()),
+                          ),
+                          const SizedBox(height: 16),
+                          _buildButton(
+                            index: 1,
+                            label: (!_checkingAutoSave && _hasAutoSave)
+                                ? 'CONTINUE'
+                                : 'LOAD WORLD',
+                            icon: (!_checkingAutoSave && _hasAutoSave)
+                                ? Icons.play_arrow_rounded
+                                : Icons.folder_open_rounded,
+                            color: AppColors.accent,
+                            onTap: (!_checkingAutoSave && _hasAutoSave)
+                                ? _continueGame
+                                : () => _navigateTo(const LoadScreen()),
+                          ),
+                          const SizedBox(height: 16),
+                          _buildButton(
+                            index: 2,
+                            label: 'SETTINGS',
+                            icon: Icons.tune_rounded,
+                            color: AppColors.textDim,
+                            onTap: () =>
+                                _navigateTo(const SettingsScreen()),
+                          ),
                         ],
                       ),
                     ),
@@ -312,13 +352,10 @@ class _HomeScreenState extends State<HomeScreen>
           Positioned(
             bottom: 8,
             right: 12,
-            child: FadeTransition(
-              opacity: _versionOpacity,
-              child: Text(
-                'v0.1.0',
-                style: AppTypography.caption.copyWith(
-                  color: AppColors.textDim.withValues(alpha: 0.4),
-                ),
+            child: Text(
+              'v0.1.0',
+              style: AppTypography.caption.copyWith(
+                color: AppColors.textDim.withValues(alpha: 0.3),
               ),
             ),
           ),
@@ -327,175 +364,172 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildBranding() {
-    return Opacity(
-      opacity: _titleOpacity.value,
-      child: Transform.translate(
-        offset: Offset(0, _titleSlide.value),
-        child: Column(
+  Widget _buildTitle() {
+    return AnimatedBuilder(
+      animation: _glowAnim,
+      builder: (context, _) {
+        return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // "THE" label
             Text(
               'THE',
               style: AppTypography.label.copyWith(
                 fontSize: 14,
-                letterSpacing: 8.0,
+                letterSpacing: 10.0,
                 color: AppColors.textDim,
               ),
             ),
-            const SizedBox(height: 6),
-            // Title with animated glow
-            AnimatedBuilder(
-              animation: _glowAnimation,
-              builder: (context, child) {
-                return ShaderMask(
-                  shaderCallback: (bounds) => LinearGradient(
-                    colors: [
-                      AppColors.primary,
-                      Color.lerp(
-                        AppColors.accent,
-                        AppColors.primary,
-                        _glowAnimation.value * 0.3,
-                      )!,
-                    ],
-                  ).createShader(bounds),
-                  child: Text(
-                    'PARTICLE\nENGINE',
-                    textAlign: TextAlign.center,
-                    style: AppTypography.title.copyWith(
-                      fontSize: 42,
-                      color: Colors.white,
-                      height: 1.0,
-                      shadows: [
-                        Shadow(
-                          color: AppColors.primary
-                              .withValues(alpha: 0.6 * _glowAnimation.value),
-                          blurRadius: 20 * _glowAnimation.value,
-                        ),
-                        Shadow(
-                          color: AppColors.accent
-                              .withValues(alpha: 0.3 * _glowAnimation.value),
-                          blurRadius: 40 * _glowAnimation.value,
-                        ),
-                      ],
+            const SizedBox(height: 4),
+            ShaderMask(
+              shaderCallback: (bounds) => LinearGradient(
+                colors: [
+                  AppColors.primary,
+                  Color.lerp(
+                    AppColors.accent,
+                    AppColors.primary,
+                    _glowAnim.value * 0.3,
+                  )!,
+                ],
+              ).createShader(bounds),
+              child: Text(
+                'PARTICLE\nENGINE',
+                textAlign: TextAlign.center,
+                style: AppTypography.title.copyWith(
+                  fontSize: 52,
+                  color: Colors.white,
+                  height: 0.95,
+                  letterSpacing: 3.0,
+                  shadows: [
+                    Shadow(
+                      color: AppColors.primary
+                          .withValues(alpha: 0.5 * _glowAnim.value),
+                      blurRadius: 20 * _glowAnim.value,
                     ),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 18),
-            // Decorative accent line
-            Opacity(
-              opacity: _subtitleOpacity.value,
-              child: Container(
-                width: 60,
-                height: 1.5,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(1),
-                  gradient: LinearGradient(
-                    colors: [
-                      AppColors.primary.withValues(alpha: 0.0),
-                      AppColors.primary.withValues(alpha: 0.6),
-                      AppColors.accent.withValues(alpha: 0.6),
-                      AppColors.accent.withValues(alpha: 0.0),
-                    ],
-                  ),
+                    Shadow(
+                      color: AppColors.accent
+                          .withValues(alpha: 0.25 * _glowAnim.value),
+                      blurRadius: 40 * _glowAnim.value,
+                    ),
+                  ],
                 ),
               ),
             ),
-            const SizedBox(height: 14),
-            // Subtitle
-            Opacity(
-              opacity: _subtitleOpacity.value,
-              child: Text(
-                'Elements, creatures & ecosystems',
-                style: AppTypography.body.copyWith(
-                  color: AppColors.textSecondary,
-                  fontSize: 13,
-                  letterSpacing: 1.5,
+            const SizedBox(height: 12),
+            Container(
+              width: 80,
+              height: 2,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(1),
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.primary.withValues(alpha: 0.0),
+                    AppColors.primary.withValues(alpha: 0.7),
+                    AppColors.accent.withValues(alpha: 0.7),
+                    AppColors.accent.withValues(alpha: 0.0),
+                  ],
                 ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Elements, creatures & ecosystems',
+              style: AppTypography.body.copyWith(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                letterSpacing: 1.5,
               ),
             ),
           ],
+        );
+      },
+    );
+  }
+
+  Widget _buildButton({
+    required int index,
+    required String label,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    final opacity =
+        index < _btnOpacities.length ? _btnOpacities[index].value : 1.0;
+    final slide =
+        index < _btnSlides.length ? _btnSlides[index].value : 0.0;
+
+    return Opacity(
+      opacity: opacity,
+      child: Transform.translate(
+        offset: Offset(0, slide),
+        child: _LargeMenuButton(
+          label: label,
+          icon: icon,
+          accentColor: color,
+          onTap: onTap,
         ),
       ),
     );
   }
-
-  Widget _buildMenu(List<_MenuItemData> items) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (var i = 0; i < items.length; i++) ...[
-          if (i > 0) const SizedBox(height: 14),
-          Opacity(
-            opacity:
-                i < _buttonOpacities.length ? _buttonOpacities[i].value : 1.0,
-            child: Transform.translate(
-              offset: Offset(
-                0,
-                i < _buttonSlides.length ? _buttonSlides[i].value : 0,
-              ),
-              child: _MenuButton(
-                label: items[i].label,
-                icon: items[i].icon,
-                isPrimary: items[i].isPrimary,
-                onTap: items[i].onTap,
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
 }
 
 // =============================================================================
-// Menu item data
+// Painter that draws the simulation's ui.Image scaled to fill the widget
 // =============================================================================
 
-class _MenuItemData {
-  const _MenuItemData({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-    this.isPrimary = false,
-  });
+class _SimImagePainter extends CustomPainter {
+  _SimImagePainter(this.image);
+  final ui.Image image;
 
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-  final bool isPrimary;
-}
-
-// =============================================================================
-// Menu button with glassmorphism, press scale, and hover brightness
-// =============================================================================
-
-class _MenuButton extends StatefulWidget {
-  const _MenuButton({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-    this.isPrimary = false,
-  });
-
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-  final bool isPrimary;
+  static final _paint = ui.Paint()
+    ..filterQuality = ui.FilterQuality.none; // Pixel-perfect, no smoothing
 
   @override
-  State<_MenuButton> createState() => _MenuButtonState();
+  void paint(ui.Canvas canvas, ui.Size size) {
+    // Scale the small sim image (160x90) to fill the screen
+    final scaleX = size.width / image.width;
+    final scaleY = size.height / image.height;
+    final scale = scaleX > scaleY ? scaleX : scaleY; // cover
+    final dx = (size.width - image.width * scale) / 2;
+    final dy = (size.height - image.height * scale) / 2;
+
+    canvas.save();
+    canvas.translate(dx, dy);
+    canvas.scale(scale, scale);
+    canvas.drawImage(image, ui.Offset.zero, _paint);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _SimImagePainter old) =>
+      !identical(old.image, image);
 }
 
-class _MenuButtonState extends State<_MenuButton>
+// =============================================================================
+// Large frosted-glass menu button
+// =============================================================================
+
+class _LargeMenuButton extends StatefulWidget {
+  const _LargeMenuButton({
+    required this.label,
+    required this.icon,
+    required this.accentColor,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color accentColor;
+  final VoidCallback onTap;
+
+  @override
+  State<_LargeMenuButton> createState() => _LargeMenuButtonState();
+}
+
+class _LargeMenuButtonState extends State<_LargeMenuButton>
     with SingleTickerProviderStateMixin {
   bool _hovered = false;
-
   late final AnimationController _pressController;
-  late final Animation<double> _scaleAnimation;
+  late final Animation<double> _scaleAnim;
 
   @override
   void initState() {
@@ -504,7 +538,7 @@ class _MenuButtonState extends State<_MenuButton>
       vsync: this,
       duration: ParticleTheme.fastDuration,
     );
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
+    _scaleAnim = Tween<double>(begin: 1.0, end: 0.96).animate(
       CurvedAnimation(parent: _pressController, curve: Curves.easeInOut),
     );
   }
@@ -515,140 +549,104 @@ class _MenuButtonState extends State<_MenuButton>
     super.dispose();
   }
 
-  void _onTapDown(TapDownDetails _) {
-    _pressController.forward();
-  }
-
-  void _onTapUp(TapUpDetails _) {
-    _pressController.reverse();
-    widget.onTap();
-  }
-
-  void _onTapCancel() {
-    _pressController.reverse();
-  }
-
   @override
   Widget build(BuildContext context) {
-    final accentColor =
-        widget.isPrimary ? AppColors.primary : AppColors.accent;
-    final borderColor = widget.isPrimary
-        ? AppColors.primary.withValues(alpha: _hovered ? 0.6 : 0.35)
-        : AppColors.glassBorder.withValues(alpha: _hovered ? 0.5 : 0.2);
-    final bgColor = widget.isPrimary
-        ? AppColors.primary.withValues(alpha: _hovered ? 0.2 : 0.12)
-        : AppColors.glass.withValues(alpha: _hovered ? 0.18 : 0.1);
+    final color = widget.accentColor;
+    final isPrimary = color == AppColors.primary;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
-        onTapDown: _onTapDown,
-        onTapUp: _onTapUp,
-        onTapCancel: _onTapCancel,
+        onTapDown: (_) => _pressController.forward(),
+        onTapUp: (_) {
+          _pressController.reverse();
+          widget.onTap();
+        },
+        onTapCancel: () => _pressController.reverse(),
         child: AnimatedBuilder(
-          animation: _scaleAnimation,
+          animation: _scaleAnim,
           builder: (context, child) {
             return Transform.scale(
-              scale: _scaleAnimation.value,
+              scale: _scaleAnim.value,
               child: child,
             );
           },
           child: ClipRRect(
-            borderRadius:
-                BorderRadius.circular(ParticleTheme.radiusMedium),
+            borderRadius: BorderRadius.circular(ParticleTheme.radiusLarge),
             child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+              filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
               child: AnimatedContainer(
                 duration: ParticleTheme.fastDuration,
-                width: 280,
-                height: 58,
+                width: double.infinity,
+                height: 64,
                 decoration: BoxDecoration(
-                  color: bgColor,
+                  color: isPrimary
+                      ? color.withValues(alpha: _hovered ? 0.2 : 0.12)
+                      : AppColors.glass
+                          .withValues(alpha: _hovered ? 0.25 : 0.15),
                   borderRadius:
-                      BorderRadius.circular(ParticleTheme.radiusMedium),
-                  border: Border.all(color: borderColor, width: 0.5),
-                  boxShadow: widget.isPrimary
+                      BorderRadius.circular(ParticleTheme.radiusLarge),
+                  border: Border.all(
+                    color: isPrimary
+                        ? color.withValues(alpha: _hovered ? 0.6 : 0.35)
+                        : color.withValues(alpha: _hovered ? 0.4 : 0.15),
+                    width: isPrimary ? 1.0 : 0.5,
+                  ),
+                  boxShadow: _hovered
                       ? [
                           BoxShadow(
-                            color: accentColor.withValues(
-                                alpha: _hovered ? 0.25 : 0.12),
-                            blurRadius: _hovered ? 30 : 20,
+                            color: color.withValues(
+                                alpha: isPrimary ? 0.25 : 0.08),
+                            blurRadius: 30,
                           ),
                         ]
-                      : _hovered
-                          ? [
-                              BoxShadow(
-                                color:
-                                    AppColors.accent.withValues(alpha: 0.08),
-                                blurRadius: 16,
-                              ),
-                            ]
-                          : null,
+                      : null,
                 ),
                 child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Left accent stripe for primary button
-                    if (widget.isPrimary)
+                    if (isPrimary)
                       Container(
                         width: 3,
                         height: 28,
-                        margin: const EdgeInsets.only(left: 2),
+                        margin: const EdgeInsets.only(right: 16),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(2),
                           gradient: LinearGradient(
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
                             colors: [
-                              AppColors.primary.withValues(alpha: _hovered ? 0.9 : 0.6),
-                              AppColors.accent.withValues(alpha: _hovered ? 0.7 : 0.4),
+                              color.withValues(
+                                  alpha: _hovered ? 1.0 : 0.7),
+                              AppColors.accent.withValues(
+                                  alpha: _hovered ? 0.8 : 0.4),
                             ],
                           ),
                         ),
                       ),
-                    Expanded(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            widget.icon,
-                            size: 20,
-                            color: widget.isPrimary
-                                ? AppColors.primary
-                                : _hovered
-                                    ? AppColors.textPrimary
-                                    : AppColors.textSecondary,
-                          ),
-                          const SizedBox(width: 12),
-                          Text(
-                            widget.label,
-                            style: AppTypography.button.copyWith(
-                              fontSize: 15,
-                              letterSpacing: widget.isPrimary ? 0.8 : 0.3,
-                              color: widget.isPrimary
-                                  ? AppColors.primary
-                                  : _hovered
-                                      ? AppColors.textPrimary
-                                      : AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
+                    Icon(
+                      widget.icon,
+                      size: 22,
+                      color: isPrimary
+                          ? color
+                          : _hovered
+                              ? AppColors.textPrimary
+                              : AppColors.textSecondary,
                     ),
-                    // Right arrow hint on hover
-                    AnimatedOpacity(
-                      duration: ParticleTheme.fastDuration,
-                      opacity: _hovered ? 0.5 : 0.0,
-                      child: Padding(
-                        padding: const EdgeInsets.only(right: 16),
-                        child: Icon(
-                          Icons.arrow_forward_ios_rounded,
-                          size: 12,
-                          color: widget.isPrimary
-                              ? AppColors.primary
-                              : AppColors.textDim,
-                        ),
+                    const SizedBox(width: 14),
+                    Text(
+                      widget.label,
+                      style: AppTypography.button.copyWith(
+                        fontSize: 16,
+                        letterSpacing: 2.0,
+                        fontWeight: FontWeight.w700,
+                        color: isPrimary
+                            ? color
+                            : _hovered
+                                ? AppColors.textPrimary
+                                : AppColors.textSecondary,
                       ),
                     ),
                   ],
@@ -660,138 +658,4 @@ class _MenuButtonState extends State<_MenuButton>
       ),
     );
   }
-}
-
-// =============================================================================
-// Animated particle background
-// =============================================================================
-
-class _ParticleBackground extends StatefulWidget {
-  const _ParticleBackground();
-
-  @override
-  State<_ParticleBackground> createState() => _ParticleBackgroundState();
-}
-
-class _ParticleBackgroundState extends State<_ParticleBackground>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final List<_Particle> _particles;
-
-  @override
-  void initState() {
-    super.initState();
-    final rng = Random(42);
-    _particles = List.generate(
-      80,
-      (_) {
-        final depth = rng.nextDouble(); // 0 = far, 1 = near
-        return _Particle(
-          x: rng.nextDouble(),
-          y: rng.nextDouble(),
-          vx: (rng.nextDouble() - 0.5) * 0.008 * (0.3 + depth * 0.7),
-          vy: (rng.nextDouble() - 0.5) * 0.008 * (0.3 + depth * 0.7),
-          size: 0.8 + depth * 3.0,
-          alpha: 0.03 + depth * 0.2,
-          color: _pickColor(rng),
-          pulsePhase: rng.nextDouble() * 2 * pi,
-          pulseSpeed: 0.5 + rng.nextDouble() * 1.5,
-        );
-      },
-    );
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 60),
-    )..repeat();
-    _controller.addListener(_updateParticles);
-  }
-
-  static Color _pickColor(Random rng) {
-    // Element-inspired colors for a thematic particle field
-    final colors = [
-      AppColors.primary,              // Engine red
-      AppColors.accent,               // Purple accent
-      const Color(0xFFD9C390),        // Sand gold
-      const Color(0xFF2E9AFF),        // Water blue
-      const Color(0xFFFF5010),        // Lava orange
-      const Color(0xFF28B040),        // Plant green
-      AppColors.textDim,              // Neutral motes
-    ];
-    return colors[rng.nextInt(colors.length)];
-  }
-
-  void _updateParticles() {
-    for (final p in _particles) {
-      p.x += p.vx;
-      p.y += p.vy;
-      if (p.x < 0) p.x = 1.0;
-      if (p.x > 1) p.x = 0.0;
-      if (p.y < 0) p.y = 1.0;
-      if (p.y > 1) p.y = 0.0;
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return CustomPaint(
-          painter: _ParticlePainter(_particles, _controller.value),
-          size: Size.infinite,
-        );
-      },
-    );
-  }
-}
-
-class _Particle {
-  _Particle({
-    required this.x,
-    required this.y,
-    required this.vx,
-    required this.vy,
-    required this.size,
-    required this.alpha,
-    required this.color,
-    required this.pulsePhase,
-    required this.pulseSpeed,
-  });
-
-  double x, y, vx, vy, size, alpha;
-  Color color;
-  double pulsePhase;
-  double pulseSpeed;
-}
-
-class _ParticlePainter extends CustomPainter {
-  _ParticlePainter(this.particles, this.time);
-  final List<_Particle> particles;
-  final double time;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final elapsed = time * 60; // seconds
-    for (final p in particles) {
-      final pulse =
-          0.7 + 0.3 * sin(elapsed * p.pulseSpeed + p.pulsePhase);
-      final paint = Paint()
-        ..color = p.color.withValues(alpha: p.alpha * pulse)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, p.size * 1.5);
-      canvas.drawCircle(
-        Offset(p.x * size.width, p.y * size.height),
-        p.size,
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _ParticlePainter old) => true;
 }

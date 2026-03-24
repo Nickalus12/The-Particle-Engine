@@ -58,6 +58,28 @@ class NeatPopulation {
   /// Innovation counter (exposed for genome creation outside the population).
   InnovationCounter get innovations => _innovations;
 
+  /// Index of the genome that was most recently replaced by rtReplace.
+  int lastReplacedIndex = -1;
+
+  /// Find the index of the genome with the lowest adjusted fitness that's
+  /// old enough to be replaced.
+  int get worstGenomeIndex {
+    if (genomes.length < 3) return -1;
+    
+    int worstIdx = -1;
+    double worstFitness = double.infinity;
+
+    for (var i = 0; i < genomes.length; i++) {
+      final genome = genomes[i];
+      if (genome.age >= config.rtMinLifetime &&
+          genome.adjustedFitness < worstFitness) {
+        worstFitness = genome.adjustedFitness;
+        worstIdx = i;
+      }
+    }
+    return worstIdx;
+  }
+
   // ---------------------------------------------------------------------------
   // Initialization
   // ---------------------------------------------------------------------------
@@ -197,6 +219,7 @@ class NeatPopulation {
     final idx = genomes.indexOf(worst);
     if (idx >= 0) {
       genomes[idx] = child;
+      lastReplacedIndex = idx;
     }
 
     _updateChampion();

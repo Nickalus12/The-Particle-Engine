@@ -38,8 +38,12 @@ class AppColors {
   static const Color danger = Color(0xFFEF4444);
 
   // -- Glass / overlay --------------------------------------------------------
-  static const Color glass = Color(0x55101020);
-  static const Color glassBorder = Color(0x55FFFFFF);
-  static const Color glassHeavy = Color(0x66000000);
+  static const Color glass = Color(0x28101020);
+  static const Color glassBorder = Color(0x33FFFFFF);
+  static const Color glassHeavy = Color(0x40000000);
   static const Color scrim = Color(0x99000000);
+
+  // -- Dark translucent panels (better contrast than grey glass) -------------
+  static const Color panelDark = Color(0xCC0A0A14);
+  static const Color panelBorder = Color(0x14FFFFFF);
 }

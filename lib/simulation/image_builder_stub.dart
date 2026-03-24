@@ -1,5 +1,5 @@
-/// Stub for headless environments where dart:ui is unavailable.
-/// Returns a Future that throws UnsupportedError.
+// Stub for headless environments where dart:ui is unavailable.
+// Returns a Future that throws UnsupportedError.
 import 'dart:typed_data';
 
 Future<Object> buildImageFromPixels(

@@ -199,32 +199,61 @@ class _ColonyInspectorState extends State<ColonyInspector>
 
                         const SizedBox(height: 12),
 
+                        // Queen & Brood
+                        _SectionLabel('QUEEN & BROOD'),
+                        const SizedBox(height: 6),
+                        _StatRow(
+                          icon: Icons.stars_rounded,
+                          label: 'Queen',
+                          value: colony.hasQueen
+                              ? 'Alive'
+                              : (colony.isOrphaned ? 'Dead (Orphaned)' : 'None'),
+                        ),
+                        _StatRow(
+                          icon: Icons.egg_rounded,
+                          label: 'Eggs',
+                          value: '${colony.eggsCount}',
+                        ),
+                        _StatRow(
+                          icon: Icons.bug_report_rounded,
+                          label: 'Larvae',
+                          value: '${colony.larvaeCount}',
+                        ),
+
+                        const SizedBox(height: 12),
+
                         // Role distribution
-                        _SectionLabel('ROLE DISTRIBUTION'),
+                        _SectionLabel('CASTES'),
                         const SizedBox(height: 8),
                         _RoleBar(
-                          role: 'Explorer',
-                          count: roles[AntRole.explorer] ?? 0,
+                          role: 'Queen',
+                          count: roles[AntRole.queen] ?? 0,
                           total: colony.population,
-                          color: AppColors.categoryLiquids,
+                          color: AppColors.categoryEnergy,
                         ),
                         _RoleBar(
-                          role: 'Forager',
-                          count: roles[AntRole.forager] ?? 0,
+                          role: 'Worker',
+                          count: roles[AntRole.worker] ?? 0,
                           total: colony.population,
                           color: AppColors.categoryLife,
                         ),
                         _RoleBar(
-                          role: 'Builder',
-                          count: roles[AntRole.builder] ?? 0,
-                          total: colony.population,
-                          color: AppColors.categorySolids,
-                        ),
-                        _RoleBar(
-                          role: 'Defender',
-                          count: roles[AntRole.defender] ?? 0,
+                          role: 'Soldier',
+                          count: roles[AntRole.soldier] ?? 0,
                           total: colony.population,
                           color: AppColors.categoryEnergy,
+                        ),
+                        _RoleBar(
+                          role: 'Nurse',
+                          count: roles[AntRole.nurse] ?? 0,
+                          total: colony.population,
+                          color: AppColors.categoryLiquids,
+                        ),
+                        _RoleBar(
+                          role: 'Scout',
+                          count: roles[AntRole.scout] ?? 0,
+                          total: colony.population,
+                          color: AppColors.categorySolids,
                         ),
 
                         const SizedBox(height: 12),

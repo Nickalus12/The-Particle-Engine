@@ -1,0 +1,23 @@
+{
+  "species": "firefly",
+  "total_niches": 225,
+  "filled_niches": 215,
+  "coverage": 0.9555555555555556,
+  "best_fitness": 158.99000549316406,
+  "mean_fitness": 46.61418914794922,
+  "behavior_labels": [
+    "flash_freq",
+    "social_distance"
+  ],
+  "behavior_bounds": [
+    [
+      0.0,
+      1.0
+    ],
+    [
+      0.0,
+      1.0
+    ]
+  ],
+  "n_params": 124
+}

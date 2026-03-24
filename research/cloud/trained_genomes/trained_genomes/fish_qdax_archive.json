@@ -1,0 +1,34 @@
+{
+  "species": "fish",
+  "total_niches": 1296,
+  "filled_niches": 48,
+  "coverage": 0.037037037037037035,
+  "best_fitness": 284.5,
+  "mean_fitness": 225.5,
+  "behavior_labels": [
+    "env_modification",
+    "social_interaction",
+    "temporal_strategy",
+    "resource_management"
+  ],
+  "behavior_bounds": [
+    [
+      0.0,
+      1.0
+    ],
+    [
+      0.0,
+      1.0
+    ],
+    [
+      0.0,
+      1.0
+    ],
+    [
+      0.0,
+      1.0
+    ]
+  ],
+  "behavior_dims": 4,
+  "n_params": 149
+}

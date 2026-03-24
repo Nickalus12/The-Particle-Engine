@@ -2,6 +2,7 @@ import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../simulation/world_gen/world_config.dart';
 import '../theme/colors.dart';
@@ -9,13 +10,8 @@ import '../theme/particle_theme.dart';
 import '../theme/typography.dart';
 import 'sandbox_screen.dart';
 
-/// World creation screen: choose Blank Canvas or Procedural with presets.
-///
-/// Landscape layout with two columns:
-/// - Left: world type selector (Blank / Procedural)
-/// - Right: preset cards (for Procedural) or blank canvas description
-///
-/// "Create" button generates the world and navigates to SandboxScreen.
+/// World creation: swipeable full-width terrain preview cards, seed input,
+/// and a single large "CREATE WORLD" button.
 class WorldCreateScreen extends StatefulWidget {
   const WorldCreateScreen({super.key});
 
@@ -27,11 +23,13 @@ class _WorldCreateScreenState extends State<WorldCreateScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _fadeController;
   late final Animation<double> _contentFade;
+  late final PageController _pageController;
 
-  bool _isProcedural = true;
-  _WorldPreset _selectedPreset = _WorldPreset.meadow;
-  final TextEditingController _nameController = TextEditingController();
+  int _currentPage = 0;
+  final TextEditingController _seedController = TextEditingController();
   bool _creating = false;
+
+  static const _presets = _WorldPreset.values;
 
   @override
   void initState() {
@@ -44,22 +42,37 @@ class _WorldCreateScreenState extends State<WorldCreateScreen>
       parent: _fadeController,
       curve: ParticleTheme.defaultCurve,
     );
-    _nameController.text = 'My World';
+    _pageController = PageController(viewportFraction: 0.85);
+    _seedController.text = Random().nextInt(1 << 30).toString();
   }
 
   @override
   void dispose() {
     _fadeController.dispose();
-    _nameController.dispose();
+    _pageController.dispose();
+    _seedController.dispose();
     super.dispose();
   }
 
+  int get _currentSeed {
+    final text = _seedController.text.trim();
+    if (text.isEmpty) return Random().nextInt(1 << 30);
+    return int.tryParse(text) ?? text.hashCode.abs();
+  }
+
+  void _randomizeSeed() {
+    setState(() {
+      _seedController.text = Random().nextInt(1 << 30).toString();
+    });
+  }
+
+  _WorldPreset get _selectedPreset => _presets[_currentPage];
+
   WorldConfig _buildConfig() {
-    final seed = Random().nextInt(1 << 30);
-    if (!_isProcedural) {
-      return WorldConfig(seed: seed);
-    }
+    final seed = _currentSeed;
     switch (_selectedPreset) {
+      case _WorldPreset.blank:
+        return WorldConfig(seed: seed);
       case _WorldPreset.meadow:
         return WorldConfig.meadow(seed: seed);
       case _WorldPreset.canyon:
@@ -78,31 +91,36 @@ class _WorldCreateScreenState extends State<WorldCreateScreen>
     setState(() => _creating = true);
 
     final config = _buildConfig();
-    final name = _nameController.text.trim().isEmpty
-        ? 'Untitled World'
-        : _nameController.text.trim();
 
     await Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (context, _, _) => SandboxScreen(
           worldConfig: config,
-          worldName: name,
-          isBlankCanvas: !_isProcedural,
+          worldName: _selectedPreset.label,
+          isBlankCanvas: _selectedPreset == _WorldPreset.blank,
         ),
-        transitionsBuilder: (context, anim, _, child) =>
-            FadeTransition(opacity: anim, child: child),
+        transitionsBuilder: (context, anim, _, child) {
+          return FadeTransition(
+            opacity: anim,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.96, end: 1.0).animate(
+                CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
+              ),
+              child: child,
+            ),
+          );
+        },
         transitionDuration: ParticleTheme.normalDuration,
       ),
     );
 
-    // Reset creating state when returning from sandbox.
-    if (mounted) {
-      setState(() => _creating = false);
-    }
+    if (mounted) setState(() => _creating = false);
   }
 
   @override
   Widget build(BuildContext context) {
+    final preset = _selectedPreset;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -110,141 +128,144 @@ class _WorldCreateScreenState extends State<WorldCreateScreen>
           opacity: _contentFade,
           child: Column(
             children: [
-              // Header
+              // Top bar with back button
               Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 child: Row(
                   children: [
                     _BackButton(
-                        onTap: () => Navigator.of(context).maybePop()),
+                      onTap: () => Navigator.of(context).maybePop(),
+                    ),
                     const SizedBox(width: 16),
                     Text('New World', style: AppTypography.heading),
                     const Spacer(),
-                    _CreateButton(
-                      onTap: _createWorld,
-                      creating: _creating,
+                    // Page indicator dots
+                    Row(
+                      children: List.generate(_presets.length, (i) {
+                        final isActive = i == _currentPage;
+                        return AnimatedContainer(
+                          duration: ParticleTheme.fastDuration,
+                          width: isActive ? 20 : 6,
+                          height: 6,
+                          margin: const EdgeInsets.symmetric(horizontal: 3),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(3),
+                            color: isActive
+                                ? preset.color
+                                : AppColors.textDim.withValues(alpha: 0.3),
+                          ),
+                        );
+                      }),
                     ),
                   ],
                 ),
               ),
 
-              // Body
+              // Big terrain preview cards -- horizontal swipe
               Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Left column: type selector + name input
-                      SizedBox(
-                        width: 220,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            // World name input
-                            _GlassPanel(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 8),
-                                child: TextField(
-                                  controller: _nameController,
-                                  style: AppTypography.body.copyWith(
-                                    color: AppColors.textPrimary,
-                                  ),
-                                  decoration: InputDecoration(
-                                    hintText: 'World name...',
-                                    hintStyle: AppTypography.body.copyWith(
-                                      color: AppColors.textDim,
-                                    ),
-                                    border: InputBorder.none,
-                                    isDense: true,
-                                    icon: const Icon(
-                                      Icons.edit_rounded,
-                                      size: 16,
-                                      color: AppColors.textDim,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-
-                            // Type selector
-                            _TypeToggle(
-                              isProcedural: _isProcedural,
-                              onChanged: (v) =>
-                                  setState(() => _isProcedural = v),
-                            ),
-                            const SizedBox(height: 16),
-
-                            // Description
-                            if (!_isProcedural)
-                              Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 4),
-                                child: Text(
-                                  'An empty world with stone boundaries. '
-                                  'Place elements freely to build your own landscape.',
-                                  style: AppTypography.body.copyWith(
-                                    color: AppColors.textDim,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
+                child: PageView.builder(
+                  controller: _pageController,
+                  itemCount: _presets.length,
+                  onPageChanged: (i) => setState(() => _currentPage = i),
+                  itemBuilder: (context, index) {
+                    return AnimatedBuilder(
+                      animation: _pageController,
+                      builder: (context, child) {
+                        double scale = 1.0;
+                        if (_pageController.position.haveDimensions) {
+                          final page = _pageController.page ?? 0.0;
+                          scale = (1 - (page - index).abs() * 0.1)
+                              .clamp(0.85, 1.0);
+                        }
+                        return Transform.scale(
+                          scale: scale,
+                          child: child,
+                        );
+                      },
+                      child: _PresetCard(
+                        preset: _presets[index],
+                        seed: _currentSeed,
+                        isActive: index == _currentPage,
                       ),
-                      const SizedBox(width: 16),
-
-                      // Right column: presets grid (procedural only)
-                      if (_isProcedural)
-                        Expanded(
-                          child: _PresetGrid(
-                            selected: _selectedPreset,
-                            onSelected: (p) =>
-                                setState(() => _selectedPreset = p),
-                          ),
-                        ),
-
-                      // Blank canvas illustration
-                      if (!_isProcedural)
-                        Expanded(
-                          child: Center(
-                            child: _GlassPanel(
-                              child: Padding(
-                                padding: const EdgeInsets.all(32),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.landscape_rounded,
-                                      size: 64,
-                                      color: AppColors.textDim
-                                          .withValues(alpha: 0.3),
-                                    ),
-                                    const SizedBox(height: 16),
-                                    Text(
-                                      'Blank Canvas',
-                                      style: AppTypography.subheading,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Your imagination is the terrain.',
-                                      style: AppTypography.body.copyWith(
-                                        color: AppColors.textDim,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
               ),
-              const SizedBox(height: 8),
+
+              // Bottom controls: seed input + create button
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
+                child: Row(
+                  children: [
+                    // Seed input
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius:
+                            BorderRadius.circular(ParticleTheme.radiusMedium),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                          child: Container(
+                            height: 48,
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 14),
+                            decoration: BoxDecoration(
+                              color: AppColors.glass,
+                              borderRadius: BorderRadius.circular(
+                                  ParticleTheme.radiusMedium),
+                              border: Border.all(
+                                color: AppColors.glassBorder,
+                                width: 0.5,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.tag_rounded,
+                                    size: 16, color: AppColors.textDim),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: TextField(
+                                    controller: _seedController,
+                                    style: AppTypography.body.copyWith(
+                                      color: AppColors.textPrimary,
+                                      fontFamily: 'monospace',
+                                      fontSize: 12,
+                                    ),
+                                    keyboardType: TextInputType.number,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                    ],
+                                    decoration: InputDecoration(
+                                      hintText: 'World seed...',
+                                      hintStyle: AppTypography.body.copyWith(
+                                        color: AppColors.textDim,
+                                      ),
+                                      border: InputBorder.none,
+                                      isDense: true,
+                                    ),
+                                    onChanged: (_) => setState(() {}),
+                                  ),
+                                ),
+                                _SmallIconButton(
+                                  icon: Icons.casino_rounded,
+                                  onTap: _randomizeSeed,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    // Large create button
+                    _CreateWorldButton(
+                      onTap: _createWorld,
+                      creating: _creating,
+                      color: preset.color,
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -253,77 +274,478 @@ class _WorldCreateScreenState extends State<WorldCreateScreen>
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Presets
-// ═══════════════════════════════════════════════════════════════════════════
+// =============================================================================
+// Preset card with large terrain preview
+// =============================================================================
+
+class _PresetCard extends StatelessWidget {
+  const _PresetCard({
+    required this.preset,
+    required this.seed,
+    required this.isActive,
+  });
+
+  final _WorldPreset preset;
+  final int seed;
+  final bool isActive;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(ParticleTheme.radiusLarge),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: AnimatedContainer(
+            duration: ParticleTheme.fastDuration,
+            decoration: BoxDecoration(
+              color: isActive
+                  ? preset.color.withValues(alpha: 0.06)
+                  : AppColors.glass,
+              borderRadius:
+                  BorderRadius.circular(ParticleTheme.radiusLarge),
+              border: Border.all(
+                color: isActive
+                    ? preset.color.withValues(alpha: 0.4)
+                    : AppColors.glassBorder,
+                width: isActive ? 1.0 : 0.5,
+              ),
+              boxShadow: isActive
+                  ? [
+                      BoxShadow(
+                        color: preset.color.withValues(alpha: 0.15),
+                        blurRadius: 30,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Terrain preview area (takes most of the card)
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(19),
+                    ),
+                    child: CustomPaint(
+                      painter: _TerrainPreviewPainter(preset, seed),
+                      size: Size.infinite,
+                    ),
+                  ),
+                ),
+
+                // Label area at bottom
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
+                  child: Row(
+                    children: [
+                      // Icon
+                      AnimatedContainer(
+                        duration: ParticleTheme.fastDuration,
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: isActive
+                              ? preset.color.withValues(alpha: 0.15)
+                              : AppColors.surfaceLight,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isActive
+                                ? preset.color.withValues(alpha: 0.3)
+                                : Colors.white.withValues(alpha: 0.06),
+                            width: 0.5,
+                          ),
+                        ),
+                        child: Icon(
+                          preset.icon,
+                          size: 22,
+                          color: isActive
+                              ? preset.color
+                              : AppColors.textDim,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              preset.label,
+                              style: AppTypography.subheading.copyWith(
+                                fontSize: 16,
+                                color: isActive
+                                    ? AppColors.textPrimary
+                                    : AppColors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              preset.description,
+                              style: AppTypography.caption.copyWith(
+                                color: isActive
+                                    ? AppColors.textSecondary
+                                    : AppColors.textDim,
+                                fontSize: 11,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// =============================================================================
+// Terrain preview painter
+// =============================================================================
+
+class _TerrainPreviewPainter extends CustomPainter {
+  _TerrainPreviewPainter(this.preset, this.seed);
+  final _WorldPreset preset;
+  final int seed;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+
+    // Sky gradient
+    final skyPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          preset.skyColor.withValues(alpha: 0.5),
+          preset.skyColor.withValues(alpha: 0.1),
+        ],
+      ).createShader(Rect.fromLTWH(0, 0, w, h));
+    canvas.drawRect(Rect.fromLTWH(0, 0, w, h), skyPaint);
+
+    if (preset == _WorldPreset.blank) {
+      // Blank canvas: just a subtle grid
+      final gridPaint = Paint()
+        ..color = AppColors.textDim.withValues(alpha: 0.05)
+        ..strokeWidth = 0.5;
+      for (var x = 0.0; x < w; x += 20) {
+        canvas.drawLine(Offset(x, 0), Offset(x, h), gridPaint);
+      }
+      for (var y = 0.0; y < h; y += 20) {
+        canvas.drawLine(Offset(0, y), Offset(w, y), gridPaint);
+      }
+      return;
+    }
+
+    // Generate multi-octave noise heightmap
+    final segments = 60;
+    final points = <double>[];
+    for (var i = 0; i <= segments; i++) {
+      points.add(_noise(i / segments));
+    }
+
+    // Background layer (distant hills)
+    final bgPath = Path()..moveTo(0, h);
+    for (var i = 0; i <= segments; i++) {
+      final x = (i / segments) * w;
+      final baseY = (preset.baseHeight + 0.1) * h;
+      final terrainY = baseY + points[i] * preset.amplitude * h * 0.4;
+      bgPath.lineTo(x, terrainY);
+    }
+    bgPath.lineTo(w, h);
+    bgPath.close();
+    canvas.drawPath(
+      bgPath,
+      Paint()..color = preset.color.withValues(alpha: 0.08),
+    );
+
+    // Main terrain
+    final terrainPath = Path()..moveTo(0, h);
+    for (var i = 0; i <= segments; i++) {
+      final x = (i / segments) * w;
+      final baseY = preset.baseHeight * h;
+      final terrainY = baseY + points[i] * preset.amplitude * h;
+      terrainPath.lineTo(x, terrainY);
+    }
+    terrainPath.lineTo(w, h);
+    terrainPath.close();
+
+    final terrainPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          preset.color.withValues(alpha: 0.35),
+          preset.color.withValues(alpha: 0.12),
+        ],
+      ).createShader(Rect.fromLTWH(0, 0, w, h));
+    canvas.drawPath(terrainPath, terrainPaint);
+
+    // Terrain outline
+    final linePath = Path();
+    for (var i = 0; i <= segments; i++) {
+      final x = (i / segments) * w;
+      final baseY = preset.baseHeight * h;
+      final terrainY = baseY + points[i] * preset.amplitude * h;
+      if (i == 0) {
+        linePath.moveTo(x, terrainY);
+      } else {
+        linePath.lineTo(x, terrainY);
+      }
+    }
+    canvas.drawPath(
+      linePath,
+      Paint()
+        ..color = preset.color.withValues(alpha: 0.6)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+
+    // Scatter some element-colored dots to represent placed elements
+    final rng = Random(seed + preset.index);
+    for (var i = 0; i < 40; i++) {
+      final fx = rng.nextDouble();
+      final ix = (fx * segments).floor().clamp(0, segments - 1);
+      final baseY = preset.baseHeight * h;
+      final surfaceY = baseY + points[ix] * preset.amplitude * h;
+      final dotX = fx * w;
+      final dotY = surfaceY + rng.nextDouble() * (h - surfaceY) * 0.6;
+      final dotSize = 2.0 + rng.nextDouble() * 3.0;
+      final dotAlpha = 0.15 + rng.nextDouble() * 0.25;
+
+      canvas.drawRect(
+        Rect.fromCenter(
+          center: Offset(dotX, dotY),
+          width: dotSize,
+          height: dotSize,
+        ),
+        Paint()..color = preset.color.withValues(alpha: dotAlpha),
+      );
+    }
+  }
+
+  double _noise(double x) {
+    final s = seed;
+    double val = 0;
+    // 3 octaves for richer terrain
+    for (var octave = 0; octave < 3; octave++) {
+      final freq = 20.0 * (1 << octave);
+      final amp = 1.0 / (1 << octave);
+      final ix = (x * freq).floor();
+      final r1 = Random(s + ix * 7 + octave * 1000).nextDouble() - 0.5;
+      final r2 = Random(s + (ix + 1) * 7 + octave * 1000).nextDouble() - 0.5;
+      final t = (x * freq) - ix;
+      val += (r1 + (r2 - r1) * t) * amp;
+    }
+    return val;
+  }
+
+  @override
+  bool shouldRepaint(covariant _TerrainPreviewPainter old) =>
+      old.preset != preset || old.seed != seed;
+}
+
+// =============================================================================
+// Presets (now includes Blank Canvas as first option)
+// =============================================================================
 
 enum _WorldPreset {
-  meadow('Meadow', 'Gentle hills, ponds, lush vegetation', Icons.park_rounded,
-      AppColors.categoryLife),
-  canyon('Canyon', 'Dramatic cliffs, rivers, deep caves',
-      Icons.terrain_rounded, AppColors.categorySolids),
-  island('Island', 'Water surrounding a central landmass',
-      Icons.water_rounded, AppColors.categoryLiquids),
-  underground('Underground', 'Caves, lava pockets, ore deposits',
-      Icons.dark_mode_rounded, AppColors.categoryEnergy),
-  random('Random', 'Unique randomized parameters', Icons.casino_rounded,
-      AppColors.categoryTools);
+  blank(
+    'Blank Canvas',
+    'Empty world, build from scratch',
+    Icons.crop_square_rounded,
+    AppColors.textDim,
+    skyColor: Color(0xFF1A1A2E),
+    baseHeight: 0.85,
+    amplitude: 0.0,
+  ),
+  meadow(
+    'Meadow',
+    'Gentle hills, ponds, lush vegetation',
+    Icons.park_rounded,
+    AppColors.categoryLife,
+    skyColor: Color(0xFF4488CC),
+    baseHeight: 0.55,
+    amplitude: 0.15,
+  ),
+  canyon(
+    'Canyon',
+    'Dramatic cliffs, rivers, deep caves',
+    Icons.terrain_rounded,
+    AppColors.categorySolids,
+    skyColor: Color(0xFFCC8844),
+    baseHeight: 0.4,
+    amplitude: 0.35,
+  ),
+  island(
+    'Island',
+    'Water surrounding a central landmass',
+    Icons.water_rounded,
+    AppColors.categoryLiquids,
+    skyColor: Color(0xFF4477BB),
+    baseHeight: 0.6,
+    amplitude: 0.2,
+  ),
+  underground(
+    'Underground',
+    'Caves, lava pockets, ore deposits',
+    Icons.dark_mode_rounded,
+    AppColors.categoryEnergy,
+    skyColor: Color(0xFF332222),
+    baseHeight: 0.3,
+    amplitude: 0.1,
+  ),
+  random(
+    'Random',
+    'Unique randomized parameters',
+    Icons.casino_rounded,
+    AppColors.categoryTools,
+    skyColor: Color(0xFF664488),
+    baseHeight: 0.5,
+    amplitude: 0.25,
+  );
 
-  const _WorldPreset(this.label, this.description, this.icon, this.color);
+  const _WorldPreset(
+    this.label,
+    this.description,
+    this.icon,
+    this.color, {
+    required this.skyColor,
+    required this.baseHeight,
+    required this.amplitude,
+  });
 
   final String label;
   final String description;
   final IconData icon;
   final Color color;
+  final Color skyColor;
+  final double baseHeight;
+  final double amplitude;
 }
 
-class _PresetGrid extends StatelessWidget {
-  const _PresetGrid({required this.selected, required this.onSelected});
+// =============================================================================
+// Shared widgets
+// =============================================================================
 
-  final _WorldPreset selected;
-  final ValueChanged<_WorldPreset> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: _WorldPreset.values.map((preset) {
-        final isActive = preset == selected;
-        return _PresetCard(
-          preset: preset,
-          isActive: isActive,
-          onTap: () => onSelected(preset),
-        );
-      }).toList(),
-    );
-  }
-}
-
-class _PresetCard extends StatefulWidget {
-  const _PresetCard({
-    required this.preset,
-    required this.isActive,
+class _CreateWorldButton extends StatefulWidget {
+  const _CreateWorldButton({
     required this.onTap,
+    required this.creating,
+    required this.color,
   });
-
-  final _WorldPreset preset;
-  final bool isActive;
   final VoidCallback onTap;
+  final bool creating;
+  final Color color;
 
   @override
-  State<_PresetCard> createState() => _PresetCardState();
+  State<_CreateWorldButton> createState() => _CreateWorldButtonState();
 }
 
-class _PresetCardState extends State<_PresetCard> {
+class _CreateWorldButtonState extends State<_CreateWorldButton> {
+  bool _pressed = false;
   bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
-    final preset = widget.preset;
-    final isActive = widget.isActive;
-    final isHighlighted = isActive || _hovered;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) {
+          setState(() => _pressed = false);
+          widget.onTap();
+        },
+        onTapCancel: () => setState(() => _pressed = false),
+        child: AnimatedScale(
+          scale: _pressed ? 0.95 : 1.0,
+          duration: ParticleTheme.fastDuration,
+          child: AnimatedContainer(
+            duration: ParticleTheme.fastDuration,
+            height: 48,
+            padding: const EdgeInsets.symmetric(horizontal: 28),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  widget.color.withValues(alpha: _hovered ? 0.3 : 0.2),
+                  AppColors.accent.withValues(alpha: _hovered ? 0.2 : 0.12),
+                ],
+              ),
+              borderRadius:
+                  BorderRadius.circular(ParticleTheme.radiusMedium),
+              border: Border.all(
+                color: widget.color.withValues(alpha: _hovered ? 0.6 : 0.4),
+                width: 1.0,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: widget.color.withValues(alpha: _hovered ? 0.2 : 0.1),
+                  blurRadius: _hovered ? 24 : 12,
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (widget.creating)
+                  SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: widget.color,
+                    ),
+                  )
+                else
+                  Icon(
+                    Icons.rocket_launch_rounded,
+                    size: 18,
+                    color: widget.color,
+                  ),
+                const SizedBox(width: 10),
+                Text(
+                  widget.creating ? 'CREATING...' : 'CREATE WORLD',
+                  style: AppTypography.button.copyWith(
+                    color: widget.color,
+                    letterSpacing: 1.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
+class _SmallIconButton extends StatefulWidget {
+  const _SmallIconButton({required this.icon, required this.onTap});
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  State<_SmallIconButton> createState() => _SmallIconButtonState();
+}
+
+class _SmallIconButtonState extends State<_SmallIconButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -332,198 +754,18 @@ class _PresetCardState extends State<_PresetCard> {
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: ParticleTheme.fastDuration,
-          curve: ParticleTheme.defaultCurve,
-          width: 155,
-          padding: const EdgeInsets.all(14),
+          width: 32,
+          height: 32,
           decoration: BoxDecoration(
-            color: isActive
-                ? preset.color.withValues(alpha: 0.10)
-                : _hovered
-                    ? AppColors.glass.withValues(alpha: 0.18)
-                    : AppColors.glass,
-            borderRadius:
-                BorderRadius.circular(ParticleTheme.radiusMedium),
-            border: Border.all(
-              color: isActive
-                  ? preset.color.withValues(alpha: 0.5)
-                  : _hovered
-                      ? AppColors.glassBorder.withValues(alpha: 0.4)
-                      : AppColors.glassBorder,
-              width: isActive ? 1.0 : 0.5,
-            ),
-            boxShadow: isActive
-                ? [
-                    BoxShadow(
-                      color: preset.color.withValues(alpha: 0.18),
-                      blurRadius: 20,
-                      spreadRadius: -2,
-                    ),
-                  ]
-                : null,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Icon with colored background pill
-              AnimatedContainer(
-                duration: ParticleTheme.fastDuration,
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: isHighlighted
-                      ? preset.color.withValues(alpha: 0.15)
-                      : AppColors.surfaceLight.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: isHighlighted
-                        ? preset.color.withValues(alpha: 0.3)
-                        : Colors.white.withValues(alpha: 0.06),
-                    width: 0.5,
-                  ),
-                ),
-                child: Icon(
-                  preset.icon,
-                  size: 20,
-                  color: isHighlighted ? preset.color : AppColors.textDim,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                preset.label,
-                style: AppTypography.subheading.copyWith(
-                  fontSize: 14,
-                  color: isHighlighted
-                      ? AppColors.textPrimary
-                      : AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                preset.description,
-                style: AppTypography.caption.copyWith(
-                  color: isHighlighted
-                      ? AppColors.textSecondary
-                      : AppColors.textDim,
-                  height: 1.3,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              // Active indicator accent line
-              if (isActive) ...[
-                const SizedBox(height: 8),
-                Container(
-                  width: 24,
-                  height: 2,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(1),
-                    color: preset.color.withValues(alpha: 0.6),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Shared widgets
-// ═══════════════════════════════════════════════════════════════════════════
-
-class _TypeToggle extends StatelessWidget {
-  const _TypeToggle({
-    required this.isProcedural,
-    required this.onChanged,
-  });
-
-  final bool isProcedural;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return _GlassPanel(
-      child: Padding(
-        padding: const EdgeInsets.all(6),
-        child: Row(
-          children: [
-            _ToggleOption(
-              label: 'Blank',
-              icon: Icons.crop_square_rounded,
-              isActive: !isProcedural,
-              onTap: () => onChanged(false),
-            ),
-            const SizedBox(width: 6),
-            _ToggleOption(
-              label: 'Procedural',
-              icon: Icons.auto_awesome_rounded,
-              isActive: isProcedural,
-              onTap: () => onChanged(true),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ToggleOption extends StatelessWidget {
-  const _ToggleOption({
-    required this.label,
-    required this.icon,
-    required this.isActive,
-    required this.onTap,
-  });
-
-  final String label;
-  final IconData icon;
-  final bool isActive;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: ParticleTheme.fastDuration,
-          height: 40,
-          decoration: BoxDecoration(
-            color: isActive
+            color: _hovered
                 ? AppColors.primary.withValues(alpha: 0.15)
                 : Colors.transparent,
-            borderRadius:
-                BorderRadius.circular(ParticleTheme.radiusSmall),
-            border: Border.all(
-              color: isActive
-                  ? AppColors.primary.withValues(alpha: 0.4)
-                  : Colors.transparent,
-              width: 0.5,
-            ),
+            borderRadius: BorderRadius.circular(8),
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 14,
-                color: isActive
-                    ? AppColors.primary
-                    : AppColors.textDim,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: AppTypography.label.copyWith(
-                  color: isActive
-                      ? AppColors.primary
-                      : AppColors.textDim,
-                  fontSize: 11,
-                ),
-              ),
-            ],
+          child: Icon(
+            widget.icon,
+            size: 16,
+            color: _hovered ? AppColors.primary : AppColors.textDim,
           ),
         ),
       ),
@@ -571,102 +813,6 @@ class _BackButtonState extends State<_BackButton> {
             size: 18,
             color: _hovered ? AppColors.textPrimary : AppColors.textSecondary,
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CreateButton extends StatefulWidget {
-  const _CreateButton({required this.onTap, required this.creating});
-  final VoidCallback onTap;
-  final bool creating;
-
-  @override
-  State<_CreateButton> createState() => _CreateButtonState();
-}
-
-class _CreateButtonState extends State<_CreateButton> {
-  bool _pressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapUp: (_) {
-        setState(() => _pressed = false);
-        widget.onTap();
-      },
-      onTapCancel: () => setState(() => _pressed = false),
-      child: AnimatedScale(
-        scale: _pressed ? 0.95 : 1.0,
-        duration: ParticleTheme.fastDuration,
-        child: Container(
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          decoration: BoxDecoration(
-            color: AppColors.primary.withValues(alpha: 0.15),
-            borderRadius:
-                BorderRadius.circular(ParticleTheme.radiusMedium),
-            border: Border.all(
-              color: AppColors.primary.withValues(alpha: 0.4),
-              width: 0.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.primary.withValues(alpha: 0.1),
-                blurRadius: 16,
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (widget.creating)
-                const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.primary,
-                  ),
-                )
-              else
-                const Icon(
-                  Icons.rocket_launch_rounded,
-                  size: 18,
-                  color: AppColors.primary,
-                ),
-              const SizedBox(width: 8),
-              Text(
-                widget.creating ? 'Creating...' : 'Create',
-                style: AppTypography.button.copyWith(
-                  color: AppColors.primary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _GlassPanel extends StatelessWidget {
-  const _GlassPanel({required this.child});
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(ParticleTheme.radiusMedium),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          decoration: ParticleTheme.glassDecoration(
-            borderRadius: ParticleTheme.radiusMedium,
-          ),
-          child: child,
         ),
       ),
     );

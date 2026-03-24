@@ -1,0 +1,23 @@
+{
+  "species": "bee",
+  "total_niches": 225,
+  "filled_niches": 215,
+  "coverage": 0.9555555555555556,
+  "best_fitness": 260.7900085449219,
+  "mean_fitness": 100.23789978027344,
+  "behavior_labels": [
+    "hive_range",
+    "pollination_focus"
+  ],
+  "behavior_bounds": [
+    [
+      0.0,
+      1.0
+    ],
+    [
+      0.0,
+      1.0
+    ]
+  ],
+  "n_params": 183
+}

@@ -1,0 +1,34 @@
+{
+  "species": "worm",
+  "total_niches": 4096,
+  "filled_niches": 80,
+  "coverage": 0.01953125,
+  "best_fitness": 963.0,
+  "mean_fitness": 337.3949890136719,
+  "behavior_labels": [
+    "env_modification",
+    "social_interaction",
+    "temporal_strategy",
+    "resource_management"
+  ],
+  "behavior_bounds": [
+    [
+      0.0,
+      1.0
+    ],
+    [
+      0.0,
+      1.0
+    ],
+    [
+      0.0,
+      1.0
+    ],
+    [
+      0.0,
+      1.0
+    ]
+  ],
+  "behavior_dims": 4,
+  "n_params": 124
+}

@@ -1,0 +1,23 @@
+{
+  "mega_score": 80.16,
+  "scores": {
+    "physics": 92.85,
+    "chemistry": 79.52,
+    "creatures": 67.81,
+    "worldgen": 76.11,
+    "visual": 100,
+    "performance": 44.54,
+    "integration": 100
+  },
+  "timings": {
+    "physics": 0.0,
+    "chemistry": 7.09,
+    "creatures": 0.16,
+    "worldgen": 0.85,
+    "visual": 0.01,
+    "performance": 0.01,
+    "integration": 0.05
+  },
+  "total_time": 8.17,
+  "mode": "quick"
+}

@@ -1,0 +1,23 @@
+{
+  "species": "worm",
+  "total_niches": 400,
+  "filled_niches": 384,
+  "coverage": 0.96,
+  "best_fitness": 254.99000549316406,
+  "mean_fitness": 101.63947296142578,
+  "behavior_labels": [
+    "avg_depth",
+    "exploration_range"
+  ],
+  "behavior_bounds": [
+    [
+      0.0,
+      1.0
+    ],
+    [
+      0.0,
+      1.0
+    ]
+  ],
+  "n_params": 124
+}

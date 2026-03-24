@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'element_registry.dart';
+import 'plant_colony.dart';
 import 'reactions/reaction_registry.dart';
 import 'simulation_engine.dart';
 
@@ -36,28 +37,17 @@ extension ElementBehaviors on SimulationEngine {
     if (grid[idx] == El.sand) {
       _avalancheGranular(x, y, idx);
     }
-    // Sand absorbs water to form mud (surface wetting / mechanical mixing).
-    // Submerged sand (water above) resists conversion — settled grains in a
-    // water column maintain structural integrity. Only surface contact
-    // (sand at water's edge, not buried under water) promotes rapid wetting.
-    if (grid[idx] == El.sand && checkAdjacent(x, y, El.water)) {
+    
+    // Sand absorbs moisture. If highly saturated, it turns into mud.
+    final currentMoisture = moisture[idx];
+    if (currentMoisture > 180) {
       final waterAbove = inBoundsY(y - gravityDir) &&
           grid[(y - gravityDir) * gridW + x] == El.water;
-      final mudRate = waterAbove ? 80 : 10;
+      final mudRate = waterAbove ? SimTuning.sandToMudSubmergedRate : SimTuning.sandToMudRate;
       if (rng.nextInt(mudRate) == 0) {
         grid[idx] = El.mud;
-        removeOneAdjacent(x, y, El.water);
         markProcessed(idx);
         return;
-      }
-    }
-    // Porosity-based moisture absorption: sand near water darkens slightly
-    if (grid[idx] == El.sand) {
-      final sandPorosity = elementPorosity[El.sand];
-      if (sandPorosity > 0 && checkAdjacent(x, y, El.water)) {
-        if (rng.nextInt(255) < sandPorosity ~/ 4) {
-          life[idx] = (life[idx] + 1).clamp(0, 3);
-        }
       }
     }
   }
@@ -73,6 +63,23 @@ extension ElementBehaviors on SimulationEngine {
     final g = gravityDir;
     final by = y + g;
     final uy = y - g;
+
+    // Thermal convection: hot water rises through cold water
+    // Real physics: buoyancy force proportional to temperature difference
+    if (frameCount % 4 == 0) {
+      final myTemp = temperature[idx];
+      if (inBoundsY(uy)) {
+        final aboveIdx = uy * gridW + x;
+        if (grid[aboveIdx] == El.water) {
+          final aboveTemp = temperature[aboveIdx];
+          // Hot water below cold water → swap (convection)
+          if (myTemp > aboveTemp + 5 && rng.nextInt(4) == 0) {
+            swap(idx, aboveIdx);
+            return;
+          }
+        }
+      }
+    }
 
     final lifeVal = life[idx];
     final bool isSpecialState = lifeVal >= 140;
@@ -135,8 +142,23 @@ extension ElementBehaviors on SimulationEngine {
           evapRate = isNight ? 5000 : 3000; // Neutral: very rare ambient evaporation
         }
         if (rng.nextInt(evapRate) == 0) {
+          // Deposit dissolved substance when water evaporates
+          final dissolved = dissolvedType[idx];
+          final conc = concentration[idx];
+          if (dissolved != 0 && conc > 30) {
+            // Leave behind solid deposit (salt crystals, etc.)
+            grid[idx] = dissolved;
+            life[idx] = 0;
+            dissolvedType[idx] = 0;
+            concentration[idx] = 0;
+            pH[idx] = 128;
+            markProcessed(idx);
+            return;
+          }
           grid[idx] = El.steam;
           life[idx] = 0;
+          dissolvedType[idx] = 0;
+          concentration[idx] = 0;
           // Evaporative cooling: the latent heat of vaporization
           // (2260 kJ/kg for water) is absorbed from surrounding cells,
           // cooling them. This is why sweating cools the body and why
@@ -196,17 +218,17 @@ extension ElementBehaviors on SimulationEngine {
         if (!inBoundsY(ny)) continue;
         final ni = ny * gridW + nx;
         final neighbor = grid[ni];
-        if (neighbor == El.tnt && rng.nextInt(10) == 0) {
+        if (neighbor == El.tnt && rng.nextInt(SimTuning.waterTntDissolve) == 0) {
           grid[ni] = El.sand;
           life[ni] = 0;
           markProcessed(ni);
         }
-        if (neighbor == El.smoke && rng.nextInt(10) == 0) {
+        if (neighbor == El.smoke && rng.nextInt(SimTuning.waterSmokeDissolve) == 0) {
           grid[ni] = El.empty;
           life[ni] = 0;
           markProcessed(ni);
         }
-        if (neighbor == El.rainbow && rng.nextInt(40) == 0) {
+        if (neighbor == El.rainbow && rng.nextInt(SimTuning.waterRainbowSpread) == 0) {
           final rx = wrapX(x + rng.nextInt(3) - 1);
           final ry = uy;
           if (inBoundsY(ry) && grid[ry * gridW + rx] == El.empty) {
@@ -215,8 +237,15 @@ extension ElementBehaviors on SimulationEngine {
             markProcessed(ry * gridW + rx);
           }
         }
-        if (neighbor == El.plant && rng.nextInt(20) == 0) {
+        if (neighbor == El.plant && rng.nextInt(SimTuning.waterPlantDamage) == 0) {
           if (life[ni] > 2) life[ni] -= 2;
+        }
+        // Acidic water (low pH from dissolved CO2 or acid contact) damages plants
+        if (neighbor == El.plant && pH[idx] < 80 && rng.nextInt(SimTuning.waterAcidPlantDamage) == 0) {
+          final acidDmg = (80 - pH[idx]) >> 4; // stronger acid = more damage
+          final plantLife = life[ni];
+          life[ni] = plantLife > acidDmg ? plantLife - acidDmg : 0;
+          markDirty(nx, ny);
         }
       }
     }
@@ -246,7 +275,7 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     // Bubble generation
-    if (mass > 130 && rng.nextInt(500) == 0) {
+    if (mass > 130 && rng.nextInt(SimTuning.waterBubbleRate) == 0) {
       final bubbleY = y - g;
       if (inBoundsY(bubbleY)) {
         final bubbleIdx = bubbleY * gridW + x;
@@ -258,9 +287,38 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
+    // Pressure-driven momentum: deep water flows faster laterally
+    // Real physics: flow velocity ~ sqrt(pressure * 2 / density)
+    if (!isSpecialState && cellPressure > 3) {
+      // Build momentum proportional to pressure
+      final targetMomentum = (cellPressure >> 1).clamp(0, 5);
+      if (momentum[idx] < targetMomentum) {
+        momentum[idx] = (momentum[idx] + 1).clamp(0, 255);
+      }
+      // Momentum enables multi-cell lateral flow (skip cells when moving)
+      final flowDist = (momentum[idx] >> 1).clamp(1, 3);
+      if (velX[idx] != 0 && flowDist > 1) {
+        final flowDir = velX[idx] > 0 ? 1 : -1;
+        for (int d = 1; d <= flowDist; d++) {
+          final fx = wrapX(x + flowDir * d);
+          final fi = y * gridW + fx;
+          if (grid[fi] == El.empty) {
+            swap(idx, fi);
+            markProcessed(fi);
+            break;
+          } else if (grid[fi] != El.water) {
+            break;
+          }
+        }
+      }
+    } else if (momentum[idx] > 0) {
+      // Friction: momentum decays in shallow water
+      momentum[idx] = (momentum[idx] - 1).clamp(0, 255);
+    }
+
     // High pressure pushes sand/dirt sideways
-    if (colAbove >= 4 && rng.nextInt(8) == 0) {
-      for (final dir in [1, -1]) {
+    if (colAbove >= SimTuning.thresholdColumnHeavy && rng.nextInt(SimTuning.waterPressurePush) == 0) {
+      for (int dirI = 0; dirI < 2; dirI++) { final dir = dirI == 0 ? 1 : -1;
         final nx = wrapX(x + dir);
         final ni = y * gridW + nx;
         final neighbor = grid[ni];
@@ -370,10 +428,10 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
-    // Momentum-based lateral flow
-    final momentum = velX[idx];
+    // Momentum-based lateral flow (velX encodes flow direction)
+    final flowMomentum = velX[idx];
     final frameBias = rng.nextBool();
-    final dl = momentum != 0 ? (momentum > 0) : frameBias;
+    final dl = flowMomentum != 0 ? (flowMomentum > 0) : frameBias;
     final x1 = wrapX(dl ? x + 1 : x - 1);
     final x2 = wrapX(dl ? x - 1 : x + 1);
 
@@ -449,7 +507,7 @@ extension ElementBehaviors on SimulationEngine {
     // confined fluid transmits equally. High-pressure water pushes water
     // through a filled channel to a lower-pressure column, pumping water
     // from the tall column's surface to the short column's surface.
-    if (cellPressure > 8 && rng.nextInt(3) == 0) {
+    if (cellPressure > 8 && rng.nextInt(SimTuning.waterHydraulicRate) == 0) {
       for (final dir in dl ? [1, -1] : [-1, 1]) {
         for (int d = 1; d <= 20; d++) {
           final sx = wrapX(x + dir * d);
@@ -500,93 +558,47 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
-    // Surface leveling
+    // Fast surface leveling (Scan-line Leveling)
+    // Enhanced: increased scan distance (12 cells) and multi-step flow
     final aboveEl = inBoundsY(uy) ? grid[uy * gridW + x] : -1;
     if (aboveEl == El.empty || aboveEl == -1) {
-      for (final dir in [1, -1]) {
-        final nx = wrapX(x + dir);
-        final nIdx = y * gridW + nx;
-        if (grid[nIdx] != El.empty) continue;
-        final belowNx = y + g;
-        if (!inBoundsY(belowNx)) continue;
-        final belowCell = grid[belowNx * gridW + nx];
-        if (belowCell == El.empty) continue;
-        int adjCol = 0;
-        for (int cy = y + g; inBoundsY(cy) && adjCol < 12; cy += g) {
-          if (grid[cy * gridW + nx] == El.water) {
-            adjCol++;
-          } else {
-            break;
-          }
-        }
-        if (totalCol > adjCol + 1) {
-          velX[idx] = dir;
-          swap(idx, nIdx);
-          return;
-        }
-      }
-      // Extended surface leveling
-      for (final dir in [1, -1]) {
-        for (int d = 2; d <= 4; d++) {
+      for (int dirI = 0; dirI < 2; dirI++) { 
+        final dir = dirI == 0 ? (dl ? 1 : -1) : (dl ? -1 : 1);
+        // Deep scan for nearby "holes" or lower columns
+        for (int d = 1; d <= 12; d++) {
           final nx = wrapX(x + dir * d);
-          bool pathClear = true;
-          for (int pd = 1; pd < d; pd++) {
-            final px = wrapX(x + dir * pd);
-            if (grid[y * gridW + px] != El.empty) {
-              pathClear = false;
-              break;
+          final ni = y * gridW + nx;
+          if (grid[ni] != El.empty) {
+            // Hit a wall or water body — if it's water, check its height
+            if (grid[ni] == El.water) {
+              // Surface height check: find distance to surface in neighbor column
+              int neighborDepth = 0;
+              for (int cy = y - g; inBoundsY(cy) && neighborDepth < 15; cy -= g) {
+                if (grid[cy * gridW + nx] == El.water) neighborDepth++;
+                else break;
+              }
+              // If neighbor column surface is lower, flow there rapidly
+              if (neighborDepth < 0) { // relative height comparison
+                 velX[idx] = dir;
+                 swap(idx, y * gridW + wrapX(x + dir));
+                 return;
+              }
             }
+            break; 
           }
-          if (!pathClear) continue;
-          if (grid[y * gridW + nx] != El.empty) continue;
+          
           final belowNx = y + g;
-          if (!inBoundsY(belowNx)) continue;
-          if (grid[belowNx * gridW + nx] == El.empty) continue;
-
-          int targetCol = 0;
-          for (int cy = y + g; inBoundsY(cy) && targetCol < 12; cy += g) {
-            if (grid[cy * gridW + nx] == El.water) {
-              targetCol++;
-            } else {
-              break;
-            }
-          }
-          if (totalCol > targetCol + 1) {
+          if (inBoundsY(belowNx) && grid[belowNx * gridW + nx] == El.empty) {
+            // Found a step-down! Move towards it with high momentum
             velX[idx] = dir;
-            swap(idx, y * gridW + nx);
+            swap(idx, y * gridW + wrapX(x + dir));
             return;
-          }
-        }
-      }
-
-      // Mass-based surface leveling
-      if (!isSpecialState) {
-        for (final dir in [1, -1]) {
-          for (int d = 1; d <= 4; d++) {
-            final nx = wrapX(x + dir * d);
-            final ni = y * gridW + nx;
-            if (grid[ni] != El.water) break;
-            final naboveY = y - g;
-            if (!inBoundsY(naboveY)) continue;
-            if (grid[naboveY * gridW + nx] != El.empty) continue;
-            final nlife = life[ni];
-            if (nlife >= 140) continue;
-            final nMass = nlife < 20 ? 100 : nlife;
-            final mDiff = mass - nMass;
-            if (mDiff.abs() > 3) {
-              final transfer = (mDiff ~/ 3).clamp(-5, 5);
-              final newMass = (mass - transfer).clamp(20, 139);
-              final newNMass = (nMass + transfer).clamp(20, 139);
-              life[idx] = newMass;
-              life[ni] = newNMass;
-              mass = newMass;
-            }
           }
         }
       }
     }
 
-    if (rng.nextInt(4) == 0) velX[idx] = 0;
+    if (rng.nextInt(SimTuning.waterMomentumReset) == 0) velX[idx] = 0;
 
     // Convection: hot water rises through cold water above (every frame).
     // Rayleigh-Bénard convection: hot fluid expands, becomes less dense,
@@ -605,13 +617,15 @@ extension ElementBehaviors on SimulationEngine {
       final downY = y + gravityDir;
       if (inBoundsY(downY)) {
         // Erode material in the direction of flow, below the water
-        for (final edy in [0, 1]) {
+        for (int edyI = 0; edyI < 2; edyI++) { final edy = edyI == 0 ? 0 : 1;
           final ey = downY + edy * gravityDir;
           if (!inBoundsY(ey)) continue;
           final ex = wrapX(x + erosionDir);
           final ei = ey * gridW + ex;
           final eEl = grid[ei];
-          if (eEl == El.dirt && rng.nextInt(20) == 0) {
+          // Erosion scales with momentum: flowing water erodes faster
+          final erosionBoost = (momentum[idx] >> 2) + 1; // 1-4x
+          if (eEl == El.dirt && rng.nextInt(SimTuning.waterDirtErosion ~/ erosionBoost) == 0) {
             grid[ei] = El.empty;
             life[ei] = 0;
             markProcessed(ei);
@@ -619,7 +633,7 @@ extension ElementBehaviors on SimulationEngine {
             life[idx] = 145; // carrying dirt
             markDirty(x, y);
             break;
-          } else if (eEl == El.sand && rng.nextInt(30) == 0) {
+          } else if (eEl == El.sand && rng.nextInt(SimTuning.waterSandErosion ~/ erosionBoost) == 0) {
             grid[ei] = El.empty;
             life[ei] = 0;
             markProcessed(ei);
@@ -635,7 +649,7 @@ extension ElementBehaviors on SimulationEngine {
     if (isSpecialState && lifeVal >= 140 && lifeVal < 200) {
       final carryingDirt = lifeVal < 160;
       // Deposit when velocity is zero (water stopped flowing) or randomly
-      if (velX[idx] == 0 || rng.nextInt(40) == 0) {
+      if (velX[idx] == 0 || rng.nextInt(SimTuning.waterSedimentDeposit) == 0) {
         final depY = y + gravityDir;
         if (inBoundsY(depY)) {
           final depI = depY * gridW + x;
@@ -647,7 +661,7 @@ extension ElementBehaviors on SimulationEngine {
             markDirty(x, y);
           } else if (grid[depI] != El.water) {
             // Can't deposit below — try sides
-            for (final sideDir in [1, -1]) {
+            for (int sideDirI = 0; sideDirI < 2; sideDirI++) { final sideDir = sideDirI == 0 ? 1 : -1;
               final sx = wrapX(x + sideDir);
               final si = depY * gridW + sx;
               if (grid[si] == El.empty) {
@@ -665,7 +679,7 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     // Underground water seepage: water slowly percolates through dirt
-    if (!isSpecialState && frameCount % 8 == 0 && rng.nextInt(12) == 0) {
+    if (!isSpecialState && frameCount % 8 == 0 && rng.nextInt(SimTuning.waterSeepageRate) == 0) {
       final by2 = y + gravityDir;
       if (inBoundsY(by2)) {
         final belowI = by2 * gridW + x;
@@ -689,9 +703,20 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
+    // Fountain effect: highly pressurized water erupts upward.
+    // If pressure > 16, it has a significant chance to swap with empty above.
+    if (!isSpecialState && cellPressure >= SimTuning.thresholdPressureErupt && 
+        frameCount % SimTuning.throttleWaterFountain == 0) {
+      if (inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
+        swap(idx, uy * gridW + x);
+        velY[uy * gridW + x] = -1; // give it slight upward momentum
+        return;
+      }
+    }
+
     // Pressure equalization: highly pressurized water pushes upward against gravity
-    if (!isSpecialState && cellPressure >= 6 && frameCount % 3 == 0) {
-      for (final dir in [1, -1]) {
+    if (!isSpecialState && cellPressure >= SimTuning.thresholdPressureHigh && frameCount % SimTuning.throttleWaterPressure == 0) {
+      for (int dirI = 0; dirI < 2; dirI++) { final dir = dirI == 0 ? 1 : -1;
         for (int d = 1; d <= pressureFlowRadius(idx); d++) {
           final nx = wrapX(x + dir * d);
           final pe = grid[y * gridW + nx];
@@ -707,7 +732,7 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     // Underground pressure: water surrounded by stone pushes harder to find exits
-    if (!isSpecialState && colAbove >= 6 && frameCount % 4 == 0) {
+    if (!isSpecialState && colAbove >= SimTuning.thresholdColumnHeavy && frameCount % SimTuning.throttleWaterFountain == 0) {
       // Count surrounding stone to detect underground pressure
       int stoneCount = 0;
       for (int dy = -1; dy <= 1; dy++) {
@@ -720,9 +745,9 @@ extension ElementBehaviors on SimulationEngine {
         }
       }
       // Under pressure (surrounded by stone) — try harder to find exits
-      if (stoneCount >= 4 && rng.nextInt(6) == 0) {
+      if (stoneCount >= 4 && rng.nextInt(SimTuning.waterStoneExit) == 0) {
         for (int r = 2; r <= 8; r++) {
-          for (final dir in [1, -1]) {
+          for (int dirI = 0; dirI < 2; dirI++) { final dir = dirI == 0 ? 1 : -1;
             final nx = wrapX(x + dir * r);
             if (grid[y * gridW + nx] == El.empty) {
               // Check path — allow pushing through water
@@ -753,13 +778,29 @@ extension ElementBehaviors on SimulationEngine {
     // Fire enclosed by solids/liquids with no empty cells lacks oxygen
     // and suffocates rapidly. Real fires need O₂ concentration > ~16%.
     int airNeighbors = 0;
+    bool hasOxygen = false;
     for (int dy = -1; dy <= 1; dy++) {
       for (int dx = -1; dx <= 1; dx++) {
         if (dx == 0 && dy == 0) continue;
         final ax = wrapX(x + dx);
         final ay = y + dy;
         if (!inBoundsY(ay)) continue;
-        if (grid[ay * gridW + ax] == El.empty) airNeighbors++;
+        final ne = grid[ay * gridW + ax];
+        if (ne == El.empty) airNeighbors++;
+        if (ne == El.oxygen) { airNeighbors += 2; hasOxygen = true; }
+      }
+    }
+    // Consume oxygen and produce CO2
+    if (hasOxygen && rng.nextInt(SimTuning.fireOxygenConsume) == 0) {
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          final ax = wrapX(x + dx); final ay = y + dy;
+          if (!inBoundsY(ay)) continue;
+          final ni = ay * gridW + ax;
+          if (grid[ni] == El.oxygen) {
+            grid[ni] = El.co2; markDirty(ax, ay); break;
+          }
+        }
       }
     }
 
@@ -775,14 +816,14 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     final nearOil = checkAdjacent(x, y, El.oil);
-    int burnoutLife = nearOil ? 70 + rng.nextInt(50) : 40 + rng.nextInt(40);
+    int burnoutLife = nearOil ? SimTuning.fireOilLifetimeBase + rng.nextInt(SimTuning.fireOilLifetimeVar) : SimTuning.fireLifetimeBase + rng.nextInt(SimTuning.fireLifetimeVar);
     // Reduced air accelerates burnout (oxygen-limited combustion)
     if (airNeighbors == 1) burnoutLife = burnoutLife ~/ 2;
 
     if (life[idx] > burnoutLife) {
       // Fire burns out — always produce smoke, sometimes ash
       final uy = y - gravityDir;
-      if (rng.nextInt(3) > 0) {
+      if (rng.nextInt(SimTuning.fireBurnoutSmoke) > 0) {
         // 2/3 chance: become smoke directly (fire rises into smoke naturally)
         grid[idx] = El.smoke;
         life[idx] = 0;
@@ -848,6 +889,25 @@ extension ElementBehaviors on SimulationEngine {
         if (!inBoundsY(ny)) continue;
         final ni = ny * gridW + nx;
         final neighbor = grid[ni];
+        
+        // Moisture interaction: fire expends energy evaporating moisture
+        final neighborMoist = moisture[ni];
+        if (neighborMoist > 50) {
+           moisture[ni] = (neighborMoist - 10).clamp(0, 255);
+           // Generate steam occasionally from evaporating moisture
+           if (rng.nextInt(10) == 0 && inBoundsY(ny - gravityDir) && grid[(ny - gravityDir) * gridW + nx] == El.empty) {
+               grid[(ny - gravityDir) * gridW + nx] = El.steam;
+               life[(ny - gravityDir) * gridW + nx] = 0;
+           }
+           // Fire gets weak when fighting moisture
+           if (rng.nextInt(3) == 0) {
+              grid[idx] = El.smoke;
+              life[idx] = 0;
+              markProcessed(idx);
+              return;
+           }
+        }
+
         if (neighbor == El.water) {
           grid[ni] = El.steam;
           life[ni] = 0;
@@ -857,7 +917,7 @@ extension ElementBehaviors on SimulationEngine {
           queueReactionFlash(nx, ny, 200, 200, 240, 3);
           return;
         }
-        if ((neighbor == El.plant || neighbor == El.seed) && rng.nextInt(2) == 0) {
+        if ((neighbor == El.plant || neighbor == El.seed) && rng.nextInt(SimTuning.firePlantIgnite) == 0) {
           grid[ni] = El.fire;
           life[ni] = 0;
           markProcessed(ni);
@@ -870,7 +930,7 @@ extension ElementBehaviors on SimulationEngine {
             grid[ni] = El.fire;
             life[ni] = 0;
             markProcessed(ni);
-          } else if (life[ni] == 0 && rng.nextInt(3) == 0) {
+          } else if (life[ni] == 0 && rng.nextInt(SimTuning.fireWoodPyrolysis) == 0) {
             // Contact pyrolysis: flame touching wood surface starts
             // internal charring, igniting the wood from within
             life[ni] = 1;
@@ -888,7 +948,7 @@ extension ElementBehaviors on SimulationEngine {
               final oy = ny + dy2;
               if (!inBoundsY(oy)) continue;
               final oi = oy * gridW + ox;
-              if (grid[oi] == El.oil && rng.nextInt(3) == 0) {
+              if (grid[oi] == El.oil && rng.nextInt(SimTuning.fireOilChainIgnite) == 0) {
                 grid[oi] = El.fire;
                 life[oi] = 0;
                 markProcessed(oi);
@@ -939,18 +999,22 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     // Movement: fire rises with horizontal flickering for a dancing flame effect
+    // Wind biases fire drift direction
+    final localWind = windX2[idx];
     final uy = y - gravityDir;
     // Flicker: mostly rise straight, occasionally drift for flame dance
-    final flicker = rng.nextInt(6); // 0-3 = straight up, 4 = drift left, 5 = drift right
-    if (flicker <= 3) {
-      // Rise straight up
+    final flicker = rng.nextInt(SimTuning.fireFlicker); // 0-3 = straight up, 4 = drift left, 5 = drift right
+    if (flicker <= 3 && localWind == 0) {
+      // Rise straight up (only when no wind)
       if (inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
         swap(idx, uy * gridW + x);
         return;
       }
     }
-    // Drift diagonally upward
-    final drift = flicker == 4 ? -1 : (flicker == 5 ? 1 : (rng.nextBool() ? -1 : 1));
+    // Drift diagonally upward — wind biases direction
+    final windBias = localWind != 0 ? (localWind > 0 ? 1 : -1) : 0;
+    final drift = windBias != 0 ? windBias
+        : (flicker == 4 ? -1 : (flicker == 5 ? 1 : (rng.nextBool() ? -1 : 1)));
     final driftX = wrapX(x + drift);
     if (inBoundsY(uy) && grid[uy * gridW + driftX] == El.empty) {
       swap(idx, uy * gridW + driftX);
@@ -962,8 +1026,8 @@ extension ElementBehaviors on SimulationEngine {
       return;
     }
     // Occasional lateral shimmy when trapped (fire dances sideways)
-    if (rng.nextInt(5) == 0) {
-      final sideX = wrapX(x + (rng.nextBool() ? 1 : -1));
+    if (rng.nextInt(SimTuning.fireLateralShimmy) == 0) {
+      final sideX = wrapX(x + (windBias != 0 ? windBias : (rng.nextBool() ? 1 : -1)));
       if (grid[y * gridW + sideX] == El.empty) {
         swap(idx, y * gridW + sideX);
       }
@@ -990,7 +1054,7 @@ extension ElementBehaviors on SimulationEngine {
         // Normal freeze point is ~128 - 30/2 = 113. Regelation lowers it.
         // At pressure 8: melt at 120, pressure 16: melt at 115
         final regelationThreshold = 120 - (p >> 2);
-        if (t > regelationThreshold && rng.nextInt(4) == 0) {
+        if (t > regelationThreshold && rng.nextInt(SimTuning.iceRegelation) == 0) {
           grid[idx] = El.water;
           life[idx] = 100;
           markProcessed(idx);
@@ -1004,13 +1068,13 @@ extension ElementBehaviors on SimulationEngine {
     // won't sink through water due to density check in fallSolid)
     if (fallSolid(x, y, idx, El.ice)) return;
 
-    if (checkAdjacent(x, y, El.fire) || checkAdjacent(x, y, El.lava)) {
+    if (checkAdjacentAny2(x, y, El.fire, El.lava)) {
       grid[idx] = El.water;
       life[idx] = 150;
       markProcessed(idx);
       return;
     }
-    final ambientMeltChance = isNight ? 60 : 20;
+    final ambientMeltChance = isNight ? SimTuning.iceAmbientMeltNight : SimTuning.iceAmbientMeltDay;
     if (rng.nextInt(ambientMeltChance) == 0) {
       int waterCount = 0;
       for (int dy = -1; dy <= 1; dy++) {
@@ -1045,6 +1109,9 @@ extension ElementBehaviors on SimulationEngine {
 
     lightningFlashFrames = 3;
 
+    // Lightning sets charge to max on this cell and neighbors
+    charge[idx] = 127;
+
     for (int dy = -1; dy <= 1; dy++) {
       for (int dx = -1; dx <= 1; dx++) {
         if (dx == 0 && dy == 0) continue;
@@ -1052,6 +1119,8 @@ extension ElementBehaviors on SimulationEngine {
         final ny = y + dy;
         if (!inBoundsY(ny)) continue;
         final ni = ny * gridW + nx;
+        // Lightning sets neighbor charge to max
+        charge[ni] = 127;
         final neighbor = grid[ni];
         if (neighbor == El.tnt) {
           pendingExplosions.add(Explosion(nx, ny, calculateTNTRadius(nx, ny)));
@@ -1073,7 +1142,7 @@ extension ElementBehaviors on SimulationEngine {
         }
         // Electrolysis: lightning through water produces gas bubbles
         // (H₂O → H₂ + O₂). Real electrolysis requires 1.23V minimum.
-        if (neighbor == El.water && rng.nextInt(3) == 0) {
+        if (neighbor == El.water && rng.nextInt(SimTuning.lightningElectrolysis) == 0) {
           grid[ni] = El.bubble;
           life[ni] = 0;
           markProcessed(ni);
@@ -1094,7 +1163,7 @@ extension ElementBehaviors on SimulationEngine {
               final oy = ny + ody;
               if (!inBoundsY(oy)) continue;
               final oi = oy * gridW + ox;
-              if (grid[oi] == El.oil && rng.nextInt(3) == 0) {
+              if (grid[oi] == El.oil && rng.nextInt(SimTuning.lightningOilChain) == 0) {
                 grid[oi] = El.fire; life[oi] = 0; markProcessed(oi);
               }
             }
@@ -1127,28 +1196,76 @@ extension ElementBehaviors on SimulationEngine {
   // =========================================================================
 
   void simSeed(int x, int y, int idx) {
-    final sType = velX[idx].clamp(1, 5);
+    final sType = velX[idx].clamp(1, 11);
     life[idx]++;
-    if (checkAdjacent(x, y, El.fire) || checkAdjacent(x, y, El.lava)) {
+    if (checkAdjacentAny2(x, y, El.fire, El.lava)) {
       grid[idx] = El.ash; life[idx] = 0; velX[idx] = 0; markProcessed(idx); return;
     }
     if (checkAdjacent(x, y, El.acid)) {
       grid[idx] = El.empty; life[idx] = 0; velX[idx] = 0; return;
     }
+
+    // Seaweed seeds sprout in water, not on dirt
+    if (sType == kPlantSeaweed) {
+      if (checkAdjacent(x, y, El.water) && life[idx] > 20) {
+        grid[idx] = El.seaweed; life[idx] = 50;
+        velY[idx] = 1; markProcessed(idx);
+        // Create or join a colony
+        final registry = plantColonies;
+        if (registry != null) {
+          registry.spawn(idx);
+        }
+        return;
+      }
+      if (life[idx] > 80) {
+        grid[idx] = El.empty; life[idx] = 0; velX[idx] = 0; return;
+      }
+      fallGranular(x, y, idx, El.seed);
+      return;
+    }
+
     final by = y + gravityDir;
     bool onDirt = inBoundsY(by) && grid[by * gridW + x] == El.dirt;
     if (onDirt) {
       final soilM = life[by * gridW + x];
-      if (soilM >= plantMinMoist[sType]) {
+      final clampedType = sType.clamp(1, plantMinMoist.length - 1);
+      if (soilM >= plantMinMoist[clampedType]) {
         if (life[idx] > 30) {
-          grid[idx] = El.plant; life[idx] = 50;
-          setPlantData(idx, sType, kStSprout); velY[idx] = 1; markProcessed(idx); return;
+          // Map seed type to element type for new plant variants
+          final elType = _seedTypeToElement(sType);
+          grid[idx] = elType; life[idx] = 50;
+          if (elType == El.plant) {
+            setPlantData(idx, sType, kStSprout);
+          }
+          velY[idx] = 1; markProcessed(idx);
+          // Register neural plant colony for new variant types
+          if (sType >= kPlantSeaweed) {
+            final registry = plantColonies;
+            if (registry != null) {
+              registry.spawn(idx);
+            }
+          }
+          return;
         }
         return;
       } else if (life[idx] > 60) {
         grid[idx] = El.empty; life[idx] = 0; velX[idx] = 0; return;
       }
     } else {
+      // Moss seeds can sprout on stone
+      if (sType == kPlantMoss && inBoundsY(by)) {
+        final belowEl = grid[by * gridW + x];
+        if (belowEl == El.stone || belowEl == El.clay || belowEl == El.wood) {
+          if (life[idx] > 25) {
+            grid[idx] = El.moss; life[idx] = 50;
+            velY[idx] = 1; markProcessed(idx);
+            final registry = plantColonies;
+            if (registry != null) registry.spawn(idx);
+            return;
+          }
+          return;
+        }
+      }
       bool onSolid = inBoundsY(by) && grid[by * gridW + x] != El.empty;
       if (onSolid) {
         if (life[idx] > 60) { grid[idx] = El.empty; life[idx] = 0; velX[idx] = 0; return; }
@@ -1158,72 +1275,41 @@ extension ElementBehaviors on SimulationEngine {
     fallGranular(x, y, idx, El.seed);
   }
 
+  /// Map plant seed type constant to the element type it sprouts into.
+  @pragma('vm:prefer-inline')
+  int _seedTypeToElement(int sType) {
+    switch (sType) {
+      case kPlantSeaweed: return El.seaweed;
+      case kPlantMoss: return El.moss;
+      case kPlantNeuralVine: return El.vine;
+      case kPlantNeuralFlower: return El.flower;
+      case kPlantRoot: return El.root;
+      case kPlantThorn: return El.thorn;
+      default: return El.plant; // original plant types 1-5
+    }
+  }
+
   // =========================================================================
   // Dirt
   // =========================================================================
 
   void simDirt(int x, int y, int idx) {
-    // Porosity-driven moisture absorption from adjacent water
-    // Absorption rate = porosity * 0.1 per frame (replaces hardcoded frameCount % 5)
-    final dirtPorosity = elementPorosity[El.dirt];
-    if (dirtPorosity > 0 && life[idx] < 5 && checkAdjacent(x, y, El.water)) {
-      // Higher porosity = more frequent absorption (porosity 153/255 ~= 0.6 -> ~6% per frame)
-      if (rng.nextInt(255) < dirtPorosity ~/ 4) {
-        life[idx]++;
-      }
-    }
-
-    // Moisture propagation
-    if (frameCount % 10 == 0 && life[idx] < 4) {
-      for (int dy2 = -1; dy2 <= 1; dy2++) {
-        for (int dx2 = -1; dx2 <= 1; dx2++) {
-          if (dx2 == 0 && dy2 == 0) continue;
-          final nx = wrapX(x + dx2);
-          final ny = y + dy2;
-          if (!inBoundsY(ny)) continue;
-          final ni = ny * gridW + nx;
-          if (grid[ni] == El.dirt && life[ni] > life[idx] + 1) {
-            life[idx]++;
-            break;
-          }
-        }
-      }
-    }
-
-    // Moisture loss
-    if (frameCount % 15 == 0 && life[idx] > 0 && !checkAdjacent(x, y, El.water)) {
-      bool nearWetDirt = false;
-      for (int dy2 = -1; dy2 <= 1; dy2++) {
-        for (int dx2 = -1; dx2 <= 1; dx2++) {
-          if (dx2 == 0 && dy2 == 0) continue;
-          final nx = wrapX(x + dx2);
-          final ny = y + dy2;
-          if (inBoundsY(ny) && grid[ny * gridW + nx] == El.dirt &&
-              life[ny * gridW + nx] > life[idx]) {
-            nearWetDirt = true;
-            break;
-          }
-        }
-        if (nearWetDirt) break;
-      }
-      if (!nearWetDirt) life[idx]--;
-    }
-
-    // Saturated + lots of water -> mud
-    if (life[idx] >= 5) {
+    // Saturated dirt + lots of water -> mud
+    // The higher the moisture, the fewer water neighbors needed to turn to mud
+    if (moisture[idx] > 150) {
       int wc = 0;
       for (int dy2 = -1; dy2 <= 1; dy2++) {
         for (int dx2 = -1; dx2 <= 1; dx2++) {
           if (dx2 == 0 && dy2 == 0) continue;
           final wnx = wrapX(x + dx2);
           final wny = y + dy2;
-          if (inBoundsY(wny) &&
-              grid[wny * gridW + wnx] == El.water) {
+          if (inBoundsY(wny) && grid[wny * gridW + wnx] == El.water) {
             wc++;
           }
         }
       }
-      if (wc >= 3) {
+      final neededWater = moisture[idx] > 220 ? 1 : 3;
+      if (wc >= neededWater) {
         grid[idx] = El.mud;
         life[idx] = 0;
         markProcessed(idx);
@@ -1233,7 +1319,7 @@ extension ElementBehaviors on SimulationEngine {
 
     // Ash fertilizer: dirt absorbs adjacent ash, gaining +2 moisture.
     // This completes the cycle: plant dies → ash → dirt absorbs → moisture → new plant.
-    if (rng.nextInt(10) == 0) {
+    if (rng.nextInt(SimTuning.dirtAshAbsorb) == 0) {
       for (int dy2 = -1; dy2 <= 1; dy2++) {
         for (int dx2 = -1; dx2 <= 1; dx2++) {
           if (dx2 == 0 && dy2 == 0) continue;
@@ -1317,7 +1403,7 @@ extension ElementBehaviors on SimulationEngine {
 
     // Water erosion: dirt with water flowing over it erodes
     // Enhanced: checks for flowing water (with momentum) for stronger erosion
-    if (frameCount % 12 == 0 && rng.nextInt(10) == 0) {
+    if (frameCount % 12 == 0 && rng.nextInt(SimTuning.dirtWaterErosionBase) == 0) {
       int waterFlowCount = 0;
       bool hasFlowingWater = false;
       for (int dx2 = -1; dx2 <= 1; dx2++) {
@@ -1333,7 +1419,7 @@ extension ElementBehaviors on SimulationEngine {
         }
       }
       if (velY[idx] < 3) {
-        if (hasFlowingWater && rng.nextInt(8) == 0) {
+        if (hasFlowingWater && rng.nextInt(SimTuning.dirtFlowingErosion) == 0) {
           // Flowing water erodes more aggressively — dirt becomes empty
           // and the water picks it up as sediment
           grid[idx] = El.empty;
@@ -1437,49 +1523,100 @@ extension ElementBehaviors on SimulationEngine {
     final pStage = plantStage(idx);
     final hydration = life[idx];
 
-    if (checkAdjacent(x, y, El.fire) || checkAdjacent(x, y, El.lava)) {
+    if (checkAdjacentAny2(x, y, El.fire, El.lava)) {
       grid[idx] = El.fire; life[idx] = 0; velX[idx] = 0; velY[idx] = 0;
       markProcessed(idx); return;
     }
-    if (checkAdjacent(x, y, El.acid) && rng.nextInt(3) == 0) {
+    if (checkAdjacent(x, y, El.acid) && rng.nextInt(SimTuning.plantAcidDamage) == 0) {
       grid[idx] = El.empty; life[idx] = 0; velX[idx] = 0; velY[idx] = 0;
       markProcessed(idx); return;
     }
 
     if (pStage == kStDead) {
+      // Fungus decomposes dead plants into compost
+      if (checkAdjacent(x, y, El.fungus) && rng.nextInt(SimTuning.plantDecomposeRate) == 0) {
+        grid[idx] = El.compost; life[idx] = 50; velX[idx] = 0; velY[idx] = 0;
+        markProcessed(idx); return;
+      }
       velY[idx] = (velY[idx] + 1).clamp(0, 127).toInt();
       if (velY[idx] > 120) {
-        // Dead plants become ash (fertilization loop) instead of dirt.
         grid[idx] = El.ash; life[idx] = 0; velX[idx] = 0; velY[idx] = 0;
         markProcessed(idx);
       }
       return;
     }
 
-    // Hydration
-    if (frameCount % 5 == 0) {
-      bool hasMoisture = false;
+    // Hydration: plants consume moisture from their local environment.
+    // The moisture system (SimulationEngine.updateMoisture) handles 
+    // capillary wicking through dirt/compost.
+    if (frameCount % SimTuning.throttlePlantHydration == 0) {
+      final localMoisture = moisture[idx];
+      // Sample neighbors for root-like absorption
+      int ambientMoist = localMoisture;
       for (int dy2 = -1; dy2 <= 1; dy2++) {
         for (int dx2 = -1; dx2 <= 1; dx2++) {
+          if (dx2 == 0 && dy2 == 0) continue;
           final nx = wrapX(x + dx2); final ny = y + dy2;
-          if (!inBoundsY(ny)) continue;
-          final ni = ny * gridW + nx;
-          if (grid[ni] == El.dirt && life[ni] >= plantMinMoist[pType.clamp(1, 5)]) {
-            hasMoisture = true; break;
+          if (inBoundsY(ny)) {
+            final nm = moisture[ny * gridW + nx];
+            if (nm > ambientMoist) ambientMoist = nm;
           }
-          if (grid[ni] == El.water) { hasMoisture = true; break; }
         }
-        if (hasMoisture) break;
       }
-      if (hasMoisture) {
+
+      final minNeeded = plantMinMoist[pType.clamp(1, 5)];
+      if (ambientMoist >= minNeeded) {
+        // Hydrated: gain health
         life[idx] = (hydration + 2).clamp(0, 100);
+        // Slowly consume the moisture we just absorbed
+        if (localMoisture > 0) moisture[idx] = localMoisture - 1;
       } else {
+        // Dehydrating: lose health
         life[idx] = (hydration - 1).clamp(0, 100);
       }
     }
 
+    // pH effects on plant health
+    {
+      final cellPH = pH[idx];
+      // Acid rain damage: pH < 80 damages plants (acid environment)
+      if (cellPH < SimTuning.thresholdPHAcidDamage && frameCount % SimTuning.throttlePlantGrow == 0) {
+        final damage = (80 - cellPH) >> 4; // pH 20 -> 3 damage, pH 60 -> 1
+        life[idx] = (life[idx] - damage - 1).clamp(0, 100);
+      }
+      // Optimal pH range (100-140) boosts growth
+      if (cellPH >= SimTuning.thresholdPHOptimalLo && cellPH <= SimTuning.thresholdPHOptimalHi && frameCount % 10 == 0) {
+        life[idx] = (life[idx] + 1).clamp(0, 100);
+      }
+    }
+
+    // Photosynthesis: absorb CO2, produce oxygen (living plants only)
+    // Requires luminance > 50 for non-mushroom plants to photosynthesize
+    final lum = luminance[idx];
+    if (pStage >= kStGrowing && pStage <= kStMature && frameCount % 15 == 0) {
+      final canPhotosynthesize = pType == kPlantMushroom || lum > 50;
+      if (canPhotosynthesize) {
+        // Absorb CO2 if nearby
+        if (checkAdjacent(x, y, El.co2)) {
+          removeOneAdjacent(x, y, El.co2);
+        }
+        // Produce oxygen into empty neighbor
+        if (rng.nextInt(SimTuning.plantO2Produce) == 0) {
+          final uy = y - gravityDir;
+          if (inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
+            grid[uy * gridW + x] = El.oxygen; markDirty(x, uy);
+          }
+        }
+      }
+    }
+
+    // Low light accelerates wilting for non-mushroom plants
+    if (pType != kPlantMushroom && lum < SimTuning.thresholdLightPhotosynthesis && frameCount % SimTuning.throttlePlantGrow == 0) {
+      life[idx] = (life[idx] - 1).clamp(0, 100);
+    }
+
     // Wilting / recovery
-    if (life[idx] < 30 && pStage < kStWilting) {
+    if (life[idx] < SimTuning.thresholdPlantWilt && pStage < kStWilting) {
       setPlantData(idx, pType, kStWilting);
     } else if (life[idx] >= 30 && pStage == kStWilting) {
       setPlantData(idx, pType, velY[idx] >= plantMaxH[pType.clamp(1, 5)] ? kStMature : kStGrowing);
@@ -1490,6 +1627,11 @@ extension ElementBehaviors on SimulationEngine {
       return;
     }
 
+    // Gravity: plants fall if unsupported by solid ground or other plants
+    if (fallSolid(x, y, idx, El.plant)) {
+      return; // Fell this frame, skip growing
+    }
+
     if (pStage > kStMature) return;
 
     final maxH = plantMaxH[pType.clamp(1, 5)];
@@ -1497,8 +1639,11 @@ extension ElementBehaviors on SimulationEngine {
     if (curSize >= maxH) {
       if (pStage != kStMature) setPlantData(idx, pType, kStMature);
 
-      // Mature plants drop seeds (1 in 500 chance per frame).
-      if (rng.nextInt(500) == 0) {
+      // Mature plants drop seeds — rate increases with age (maturity).
+      // Young mature plants: 1/500, aged plants (cellAge>150): 1/200
+      final plantAge = cellAge[idx];
+      final seedRate = plantAge > SimTuning.thresholdPlantSeedAge ? SimTuning.plantSeedRateOld : SimTuning.plantSeedRateYoung;
+      if (rng.nextInt(seedRate) == 0) {
         _plantDropSeed(x, y, idx);
       }
 
@@ -1507,7 +1652,17 @@ extension ElementBehaviors on SimulationEngine {
 
     bool fertilized = checkAdjacent(x, y, El.ash);
     int growRate = plantGrowRate[pType.clamp(1, 5)];
-    if (isNight && pType != kPlantMushroom) growRate = (growRate * 5);
+    // Low luminance slows non-mushroom plants; mushrooms thrive in dark
+    if (pType != kPlantMushroom) {
+      if (lum < SimTuning.thresholdLightPhotosynthesis) {
+        growRate = (growRate * 5); // near-dark: very slow
+      } else if (lum < 100) {
+        growRate = (growRate * 2); // dim: slower
+      }
+    } else {
+      // Mushrooms grow faster in darkness, slower in bright light
+      if (lum > 30) growRate = (growRate * 3);
+    }
     if (fertilized) growRate = (growRate * 2) ~/ 3;
 
     if (frameCount % growRate != 0) return;
@@ -1534,7 +1689,7 @@ extension ElementBehaviors on SimulationEngine {
         velY[idx] = (curSize + 1);
       }
     }
-    if (rng.nextInt(40) == 0) {
+    if (rng.nextInt(SimTuning.plantGrassSpread) == 0) {
       final side = wrapX(rng.nextBool() ? x - 1 : x + 1);
       final by = y + gravityDir;
       if (grid[y * gridW + side] == El.empty &&
@@ -1576,9 +1731,9 @@ extension ElementBehaviors on SimulationEngine {
         velY[idx] = newSize;
       }
       if (curSize >= 6) {
-        for (final side in [wrapX(x - 1), wrapX(x + 1)]) {
-          if (rng.nextInt(2) == 0) continue;
-          for (final sy in [y, y - gravityDir]) {
+        for (int sideI = 0; sideI < 2; sideI++) { final side = sideI == 0 ? wrapX(x - 1) : wrapX(x + 1);
+          if (rng.nextInt(SimTuning.plantTreeBranchSkip) == 0) continue;
+          for (int syI = 0; syI < 2; syI++) { final sy = syI == 0 ? y : y - gravityDir;
             if (inBoundsY(sy) && grid[sy * gridW + side] == El.empty) {
               final ni = sy * gridW + side;
               grid[ni] = El.plant; life[ni] = life[idx];
@@ -1588,8 +1743,8 @@ extension ElementBehaviors on SimulationEngine {
             }
           }
         }
-        if (curSize >= 10 && rng.nextInt(3) == 0) {
-          for (final side in [wrapX(x - 2), wrapX(x + 2)]) {
+        if (curSize >= 10 && rng.nextInt(SimTuning.plantTreeBranch) == 0) {
+          for (int sideI = 0; sideI < 2; sideI++) { final side = sideI == 0 ? wrapX(x - 2) : wrapX(x + 2);
             if (grid[y * gridW + side] == El.empty) {
               final ni = y * gridW + side;
               grid[ni] = El.plant; life[ni] = life[idx];
@@ -1602,7 +1757,7 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     // Root system: mature trees grow roots downward through dirt
-    if (curSize >= 8 && rng.nextInt(50) == 0) {
+    if (curSize >= 8 && rng.nextInt(SimTuning.plantTreeRootGrow) == 0) {
       _growTreeRoots(x, y, idx);
     }
   }
@@ -1677,7 +1832,7 @@ extension ElementBehaviors on SimulationEngine {
         velY[idx] = newSize;
       }
     }
-    if (rng.nextInt(80) == 0) {
+    if (rng.nextInt(SimTuning.plantMushroomSpread) == 0) {
       for (int r = 1; r <= 3; r++) {
         final sx = wrapX(x + (rng.nextBool() ? r : -r));
         final by = y + gravityDir;
@@ -1697,8 +1852,10 @@ extension ElementBehaviors on SimulationEngine {
   void _growVine(int x, int y, int idx, int curSize) {
     if (curSize < 12) {
       final directions = <List<int>>[];
-      for (final d in [[-1, -gravityDir], [1, -gravityDir], [-1, 0], [1, 0], [0, -gravityDir]]) {
-        final nx = wrapX(x + d[0]); final ny = y + d[1];
+      for (int i = 0; i < 5; i++) {
+        final d0 = i == 0 ? -1 : i == 1 ? 1 : i == 2 ? -1 : i == 3 ? 1 : 0;
+        final d1 = (i == 0 || i == 1 || i == 4) ? -gravityDir : 0;
+        final nx = wrapX(x + d0); final ny = y + d1;
         if (!inBoundsY(ny)) continue;
         if (grid[ny * gridW + nx] != El.empty) continue;
         bool nearSolid = false;
@@ -1713,7 +1870,7 @@ extension ElementBehaviors on SimulationEngine {
           }
           if (nearSolid) break;
         }
-        if (nearSolid) directions.add(d);
+        if (nearSolid) directions.add([d0, d1]);
       }
       if (directions.isNotEmpty) {
         final d = directions[rng.nextInt(directions.length)];
@@ -1768,7 +1925,7 @@ extension ElementBehaviors on SimulationEngine {
     final g = gravityDir;
 
     // Base cooling timeout
-    int coolingThreshold = 200 + rng.nextInt(50);
+    int coolingThreshold = SimTuning.lavaCoolingBase + rng.nextInt(SimTuning.lavaCoolingVar);
 
     // Isolated lava cools faster (fewer lava neighbors = faster cooling)
     if (frameCount % 10 == 0) {
@@ -1785,10 +1942,10 @@ extension ElementBehaviors on SimulationEngine {
       }
       if (lavaNeighborCount <= 1) {
         // Isolated lava — cool much faster
-        coolingThreshold = 80 + rng.nextInt(30);
+        coolingThreshold = SimTuning.lavaCoolIsolated + rng.nextInt(SimTuning.lavaCoolIsolatedVar);
       } else if (lavaNeighborCount <= 3) {
         // Partially isolated
-        coolingThreshold = 140 + rng.nextInt(40);
+        coolingThreshold = SimTuning.lavaCoolPartial + rng.nextInt(SimTuning.lavaCoolPartialVar);
       }
     }
 
@@ -1832,11 +1989,11 @@ extension ElementBehaviors on SimulationEngine {
     // Volcanic gas emission
     final uy = y - g;
     if (inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
-      if (rng.nextInt(80) == 0) {
+      if (rng.nextInt(SimTuning.lavaSmokeEmit) == 0) {
         grid[uy * gridW + x] = El.smoke;
         life[uy * gridW + x] = 0;
         markProcessed(uy * gridW + x);
-      } else if (rng.nextInt(120) == 0) {
+      } else if (rng.nextInt(SimTuning.lavaSteamEmit) == 0) {
         grid[uy * gridW + x] = El.steam;
         life[uy * gridW + x] = 0;
         markProcessed(uy * gridW + x);
@@ -1845,7 +2002,7 @@ extension ElementBehaviors on SimulationEngine {
 
     // Eruption pressure (enhanced by pressure grid)
     final lavaPressure = pressure[idx];
-    final eruptionChance = lavaPressure > 20 ? 30 : 60;
+    final eruptionChance = lavaPressure > 20 ? SimTuning.lavaEruptionPressured : SimTuning.lavaEruptionOpen;
     if (rng.nextInt(eruptionChance) == 0) {
       int capDepth = 0;
       for (int cy = y - g; inBoundsY(cy) && capDepth < 6; cy -= g) {
@@ -1864,7 +2021,7 @@ extension ElementBehaviors on SimulationEngine {
         }
       }
       // High pressure makes eruption more likely
-      final eruptThresh = lavaPressure > 20 ? 10 : 20;
+      final eruptThresh = lavaPressure > 20 ? SimTuning.lavaEruptThreshHigh : SimTuning.lavaEruptThreshLow;
       if (capDepth >= 2 && lavaBelow >= 3 && rng.nextInt(eruptThresh) == 0) {
         final blastY = y - g * capDepth;
         if (inBoundsY(blastY)) {
@@ -1874,7 +2031,7 @@ extension ElementBehaviors on SimulationEngine {
           markProcessed(blastIdx);
           queueReactionFlash(x, blastY, 255, 200, 50, 8);
         }
-        for (final dx in [-1, 1]) {
+        for (int dxI = 0; dxI < 2; dxI++) { final dx = dxI == 0 ? -1 : 1;
           final bx = wrapX(x + dx);
           final by2 = y - g * (capDepth - 1);
           if (inBoundsY(by2) && grid[by2 * gridW + bx] == El.stone && rng.nextBool()) {
@@ -1887,7 +2044,7 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     // Lava spatter
-    if (rng.nextInt(100) == 0 && inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
+    if (rng.nextInt(SimTuning.lavaSpatter) == 0 && inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
       int lavaNeighbors = 0;
       for (int dy = -1; dy <= 1; dy++) {
         for (int dx = -1; dx <= 1; dx++) {
@@ -1993,23 +2150,23 @@ extension ElementBehaviors on SimulationEngine {
           return;
         }
         if ((neighbor == El.plant || neighbor == El.seed ||
-            neighbor == El.oil || neighbor == El.wood) && rng.nextInt(2) == 0) {
+            neighbor == El.oil || neighbor == El.wood) && rng.nextInt(SimTuning.lavaIgniteFlammable) == 0) {
           grid[ni] = El.fire; life[ni] = 0; markProcessed(ni);
         }
         if (neighbor == El.snow) {
           grid[ni] = El.water; life[ni] = 100; markProcessed(ni);
         }
-        if (neighbor == El.sand && rng.nextInt(40) == 0) {
+        if (neighbor == El.sand && rng.nextInt(SimTuning.lavaSandToGlass) == 0) {
           grid[ni] = El.glass; life[ni] = 0; markProcessed(ni);
           queueReactionFlash(nx, ny, 255, 200, 100, 3);
         }
         // Lava melts metal over time (metal meltPoint=240, lava baseTemp=250)
-        if (neighbor == El.metal && rng.nextInt(80) == 0) {
+        if (neighbor == El.metal && rng.nextInt(SimTuning.lavaMeltMetal) == 0) {
           grid[ni] = El.lava; life[ni] = 0; markProcessed(ni);
           queueReactionFlash(nx, ny, 255, 120, 30, 5);
         }
         // Lava dries mud into dirt
-        if (neighbor == El.mud && rng.nextInt(10) == 0) {
+        if (neighbor == El.mud && rng.nextInt(SimTuning.lavaDryMud) == 0) {
           grid[ni] = El.dirt; life[ni] = 0; markProcessed(ni);
           queueReactionFlash(nx, ny, 180, 140, 80, 2);
         }
@@ -2156,7 +2313,7 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
-    if (rng.nextInt(30) == 0) {
+    if (rng.nextInt(SimTuning.snowFreezeWater) == 0) {
       for (int dy = -1; dy <= 1; dy++) {
         for (int dx = -1; dx <= 1; dx++) {
           if (dx == 0 && dy == 0) continue;
@@ -2190,7 +2347,7 @@ extension ElementBehaviors on SimulationEngine {
 
     // Wind-driven horizontal drift while falling
     final by = y + gravityDir;
-    if (windForce != 0 && rng.nextInt(2) == 0) {
+    if (windForce != 0 && rng.nextInt(SimTuning.snowWindDrift) == 0) {
       final windX = wrapX(x + windForce.sign);
       if (inBoundsY(by) && grid[by * gridW + windX] == El.empty) {
         swap(idx, by * gridW + windX);
@@ -2202,7 +2359,7 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
-    if (grid[idx] == El.snow && rng.nextInt(3) == 0) {
+    if (grid[idx] == El.snow && rng.nextInt(SimTuning.snowAvalanche) == 0) {
       _avalancheGranular(x, y, idx);
     }
   }
@@ -2218,12 +2375,24 @@ extension ElementBehaviors on SimulationEngine {
     // at a rate determined by heat flux from the flame to adjacent wood.
     // Flame spread velocity v ≈ 2√(αk/ρcΔT) is typically 0.5-2 mm/s
     // for wood, meaning adjacent cells ignite within seconds.
+    // Moisture integration: wood absorbs moisture from the global buffer
+    // Wet wood (moisture > 100) resists burning
+    final currentMoisture = moisture[idx];
+    if (currentMoisture > 50 && life[idx] > 0) {
+      // Evaporate moisture when burning
+      moisture[idx] = (currentMoisture - 2).clamp(0, 255);
+      // Wet wood has a chance to extinguish itself or burn much slower
+      if (rng.nextInt(4) == 0) {
+        life[idx] = 0; // extinguish
+        return;
+      }
+    }
+
     if (life[idx] > 0) {
       life[idx]++;
 
       // Fire spreads to adjacent wood via surface charring.
-      // Each exposed face independently pyrolyzes at ~8% per frame,
-      // modeling conductive heat transfer through wood grain.
+      // Dry wood ignites fast, wet wood ignites slowly
       for (int dy = -1; dy <= 1; dy++) {
         for (int dx = -1; dx <= 1; dx++) {
           if (dx == 0 && dy == 0) continue;
@@ -2231,13 +2400,19 @@ extension ElementBehaviors on SimulationEngine {
           final ny = y + dy;
           if (!inBoundsY(ny)) continue;
           final ni = ny * gridW + nx;
-          if (grid[ni] == El.wood && life[ni] == 0 && rng.nextInt(12) == 0) {
-            life[ni] = 1;
+          if (grid[ni] == El.wood && life[ni] == 0) {
+            final nMoist = moisture[ni];
+            final spreadChance = nMoist > 100 ? SimTuning.woodFireSpread * 3 : SimTuning.woodFireSpread;
+            if (rng.nextInt(spreadChance) == 0) {
+              life[ni] = 1;
+            }
           }
         }
       }
-      if (life[idx] > 40 + rng.nextInt(20)) {
-        grid[idx] = El.ash; life[idx] = 0; velY[idx] = 0; markProcessed(idx);
+      if (life[idx] > SimTuning.woodBurnoutBase + rng.nextInt(SimTuning.woodBurnoutVar)) {
+        // Pyrolysis: 40% chance wood becomes charcoal (incomplete combustion)
+        grid[idx] = rng.nextInt(SimTuning.woodCharcoalChance) < 2 ? El.charcoal : El.ash;
+        life[idx] = 0; velY[idx] = 0; markProcessed(idx);
         final uy = y - gravityDir;
         if (inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
           grid[uy * gridW + x] = El.smoke; life[uy * gridW + x] = 0;
@@ -2253,6 +2428,11 @@ extension ElementBehaviors on SimulationEngine {
       return;
     }
 
+    // Dry rot: aged wood becomes more flammable (lower ignition threshold)
+    // cellAge > 200 = old, dried-out wood. Threshold drops from 190 to ~170.
+    final age = cellAge[idx];
+    final ignitionThreshold = age > SimTuning.thresholdAgingOld ? 190 - ((age - SimTuning.thresholdAgingOld) >> 2) : 190;
+
     // Temperature-based auto-ignition (flash point).
     // Real physics: wood has a flash point of ~300°C. Heat conducted from
     // adjacent fire raises the wood's temperature until it auto-ignites.
@@ -2262,7 +2442,8 @@ extension ElementBehaviors on SimulationEngine {
     // On our 0-255 scale, fire is 230 and wood base is 128.
     // Ignition threshold ~190 gives enough time for conduction to establish
     // a smooth temperature gradient ahead of the fire front.
-    if (temperature[idx] >= 190) {
+    // Aged wood (dry rot) has a lower threshold.
+    if (temperature[idx] >= ignitionThreshold) {
       // Auto-ignite: wood reaches flash point from heat conduction
       life[idx] = 1; // Start burning
       return;
@@ -2284,7 +2465,7 @@ extension ElementBehaviors on SimulationEngine {
           if (inBoundsY(any) && grid[any * gridW + anx] == El.empty) airCount++;
         }
       }
-      if (airCount == 0 && rng.nextInt(60) == 0) {
+      if (airCount == 0 && rng.nextInt(SimTuning.woodAnoxicPyrolysis) == 0) {
         grid[idx] = El.ash; life[idx] = 0; velY[idx] = 0;
         markProcessed(idx);
         return;
@@ -2317,7 +2498,7 @@ extension ElementBehaviors on SimulationEngine {
 
     // Water absorption (velY 0-3 = water saturation level)
     if (checkAdjacent(x, y, El.water) && velY[idx] < 3) {
-      if (rng.nextInt(30) == 0) {
+      if (rng.nextInt(SimTuning.woodWaterAbsorb) == 0) {
         velY[idx] = (velY[idx] + 1).clamp(0, 3).toInt();
         removeOneAdjacent(x, y, El.water);
       }
@@ -2337,8 +2518,8 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
-    if (checkAdjacent(x, y, El.fire) || checkAdjacent(x, y, El.lava)) {
-      if (velY[idx] < 3 || rng.nextInt(5) == 0) {
+    if (checkAdjacentAny2(x, y, El.fire, El.lava)) {
+      if (velY[idx] < 3 || rng.nextInt(SimTuning.woodWetBurn) == 0) {
         life[idx] = 1; velY[idx] = 0;
         queueReactionFlash(x, y, 255, 150, 30, 3);
       }
@@ -2360,7 +2541,7 @@ extension ElementBehaviors on SimulationEngine {
           if (n == El.water) nearWater = true;
         }
       }
-      if (nearStone && nearWater && rng.nextInt(80) == 0) {
+      if (nearStone && nearWater && rng.nextInt(SimTuning.woodPetrify) == 0) {
         grid[idx] = El.stone;
         life[idx] = 0;
         velX[idx] = 0;
@@ -2404,7 +2585,7 @@ extension ElementBehaviors on SimulationEngine {
         if (fallSolid(x, y, idx, El.metal)) return;
       } else if (!hasAnySupport) {
         // Start accumulating fall velocity slowly (metal resists gravity)
-        if (rng.nextInt(30) == 0) velY[idx] = 1;
+        if (rng.nextInt(SimTuning.metalFallResist) == 0) velY[idx] = 1;
       }
       // With any support, metal holds firm
     } else {
@@ -2412,6 +2593,75 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     if (life[idx] >= 200) return;
+
+    // Rusting: metal + water over time = rust (corrosion)
+    // Alkaline pH (>180) protects metal — slows corrosion rate
+    // Aged metal (cellAge > 250) + moisture = accelerated corrosion
+    final metalPH = pH[idx];
+    final alkalineProtection = metalPH > 180;
+    final metalAge = cellAge[idx];
+    final agingFactor = metalAge > 250 && moisture[idx] > 0 ? 3 : 1;
+    final baseRustRate = (alkalineProtection ? 1500 : 500) ~/ agingFactor;
+    if (checkAdjacent(x, y, El.water) && rng.nextInt(baseRustRate) == 0) {
+      grid[idx] = El.rust; life[idx] = 0; markDirty(x, y); return;
+    }
+    // Salt water accelerates rusting 5x (dissolved salt in adjacent water)
+    if (checkAdjacent(x, y, El.water)) {
+      // Check for salt water (dissolved salt) or solid salt nearby
+      bool saltWater = false;
+      for (int dy = -1; dy <= 1 && !saltWater; dy++) {
+        for (int dx = -1; dx <= 1 && !saltWater; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = wrapX(x + dx); final ny = y + dy;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * gridW + nx;
+          if (grid[ni] == El.water && dissolvedType[ni] == El.salt) {
+            saltWater = true;
+          }
+          if (grid[ni] == El.salt) saltWater = true;
+        }
+      }
+      if (saltWater && rng.nextInt(alkalineProtection ? 300 : 100) == 0) {
+        grid[idx] = El.rust; life[idx] = 0; markDirty(x, y); return;
+      }
+    }
+
+    // Charged metal attracts nearby metal particles (basic magnetism)
+    // High charge on this metal cell pulls loose metal toward it
+    {
+      final ch = charge[idx];
+      if (ch.abs() > 30 && frameCount % 6 == 0) {
+        for (int dy = -2; dy <= 2; dy++) {
+          for (int dx = -2; dx <= 2; dx++) {
+            if (dx == 0 && dy == 0) continue;
+            if (dx.abs() + dy.abs() > 3) continue; // Manhattan distance 3
+            final nx = wrapX(x + dx); final ny = y + dy;
+            if (!inBoundsY(ny)) continue;
+            final ni = ny * gridW + nx;
+            if (grid[ni] == El.metal) {
+              // Check if that metal is unsupported (can move)
+              final belowNy = ny + gravityDir;
+              final nBelow = inBoundsY(belowNy) ? grid[belowNy * gridW + nx] : 0;
+              if (nBelow == El.empty || nBelow == El.water) {
+                // Pull toward this cell: find empty cell between them
+                final mx = x + (dx > 0 ? -1 : (dx < 0 ? 1 : 0));
+                final my = y + (dy > 0 ? -1 : (dy < 0 ? 1 : 0));
+                final mxW = wrapX(mx);
+                if (inBoundsY(my)) {
+                  final mi = my * gridW + mxW;
+                  if (grid[mi] == El.empty) {
+                    swap(ni, mi);
+                    markDirty(nx, ny);
+                    markDirty(mxW, my);
+                    break;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
 
     // Heat conduction: metal (heatConductivity=0.9) absorbs and transfers
     // heat from fire/lava. Real metals conduct heat ~100-400 W/(m·K),
@@ -2468,8 +2718,7 @@ extension ElementBehaviors on SimulationEngine {
 
       // Slow cooling when not adjacent to heat sources
       if (heat > 0 && frameCount % 10 == 0) {
-        final nearHeat = checkAdjacent(x, y, El.lava) ||
-            checkAdjacent(x, y, El.fire);
+        final nearHeat = checkAdjacentAny2(x, y, El.fire, El.lava);
         if (!nearHeat) {
           velX[idx] = (heat - 1).clamp(0, 5);
           markDirty(x, y);
@@ -2487,10 +2736,10 @@ extension ElementBehaviors on SimulationEngine {
             final ni = ny * gridW + nx;
             final neighbor = grid[ni];
             if ((neighbor == El.oil || neighbor == El.plant ||
-                neighbor == El.seed) && rng.nextInt(6) == 0) {
+                neighbor == El.seed) && rng.nextInt(SimTuning.metalHotIgniteRate) == 0) {
               grid[ni] = El.fire; life[ni] = 0; markProcessed(ni);
               queueReactionFlash(nx, ny, 255, 160, 40, 3);
-            } else if (neighbor == El.wood && life[ni] == 0 && rng.nextInt(10) == 0) {
+            } else if (neighbor == El.wood && life[ni] == 0 && rng.nextInt(SimTuning.metalHotWoodChar) == 0) {
               life[ni] = 1; // Start wood charring
             }
           }
@@ -2505,7 +2754,7 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
-    if (rng.nextInt(100) == 0) {
+    if (rng.nextInt(SimTuning.metalCondensation) == 0) {
       for (int dy = -1; dy <= 1; dy++) {
         for (int dx = -1; dx <= 1; dx++) {
           if (dx == 0 && dy == 0) continue;
@@ -2550,11 +2799,16 @@ extension ElementBehaviors on SimulationEngine {
     final shouldRise = riseChance <= 1 || rng.nextInt(riseChance) == 0;
 
     // Drift increases as buoyancy decreases (cool smoke spreads laterally)
+    // Use local wind field for drift bias
+    final localWind = windX2[idx];
     final driftChance = heatExcess > 40 ? 20 : (heatExcess > 15 ? 5 : 3);
     int drift = rng.nextInt(driftChance) == 0 ? (rng.nextBool() ? 1 : -1) : 0;
-    if (windForce != 0) {
+    if (localWind != 0) {
+      final windBias = localWind > 0 ? 1 : -1;
+      if (rng.nextInt(SimTuning.smokeLateralDrift) < 2) drift = windBias;
+    } else if (windForce != 0) {
       final windBias = windForce > 0 ? 1 : -1;
-      if (rng.nextInt(3) < 2) drift = windBias;
+      if (rng.nextInt(SimTuning.smokeLateralDrift) < 2) drift = windBias;
     }
 
     if (shouldRise && inBoundsY(uy)) {
@@ -2563,9 +2817,11 @@ extension ElementBehaviors on SimulationEngine {
       if (grid[uy * gridW + x] == El.empty) { swap(idx, uy * gridW + x); return; }
     }
     // Lateral drift when not rising or blocked (cool smoke disperses)
-    if (!shouldRise || windForce != 0 || rng.nextInt(3) == 0) {
-      final side = wrapX(windForce != 0
-          ? x + (windForce > 0 ? 1 : -1)
+    final hasWind = localWind != 0 || windForce != 0;
+    if (!shouldRise || hasWind || rng.nextInt(SimTuning.smokeLateralDrift) == 0) {
+      final windDir = localWind != 0 ? localWind : windForce;
+      final side = wrapX(windDir != 0
+          ? x + (windDir > 0 ? 1 : -1)
           : (rng.nextBool() ? x - 1 : x + 1));
       if (grid[y * gridW + side] == El.empty) {
         swap(idx, y * gridW + side);
@@ -2588,7 +2844,7 @@ extension ElementBehaviors on SimulationEngine {
         // Buoyancy-driven rise: predominantly straight up with rare
         // lateral wobble. Small bubbles (Re < 200) rise in straight
         // paths; wobble only appears at larger Re from vortex shedding.
-        final wobble = rng.nextInt(20) == 0 ? (rng.nextBool() ? 1 : -1) : 0;
+        final wobble = rng.nextInt(SimTuning.bubbleWobble) == 0 ? (rng.nextBool() ? 1 : -1) : 0;
         final riseX = wrapX(x + wobble);
 
         final ai = uy * gridW + riseX;
@@ -2692,7 +2948,7 @@ extension ElementBehaviors on SimulationEngine {
         }
       } else {
         if (velX[idx] < 30) {
-          if (rng.nextInt(3) == 0) {
+          if (rng.nextInt(SimTuning.ashLateralDrift) == 0) {
             final side = wrapX(rng.nextBool() ? x - 1 : x + 1);
             if (grid[y * gridW + side] == El.empty) {
               swap(idx, y * gridW + side);
@@ -2723,7 +2979,7 @@ extension ElementBehaviors on SimulationEngine {
     // constant-velocity free fall for light particles in air.
     fallGranular(x, y, idx, El.ash);
     // Avalanche: spread piles even when not falling
-    if (rng.nextInt(3) == 0) {
+    if (rng.nextInt(SimTuning.ashAvalanche) == 0) {
       _avalancheGranular(x, y, idx);
     }
   }
@@ -2760,6 +3016,88 @@ extension ElementBehaviors on SimulationEngine {
   }
 
   // =========================================================================
+  // Advanced Materials (Phase 7)
+  // =========================================================================
+
+  void simC4(int x, int y, int idx) {
+    // C4 is very stable. It doesn't detonate from normal heat or fire.
+    // It requires a shockwave (high pressure) or an electrical detonator (high voltage).
+    final myVolt = voltage[idx];
+    final myPres = pressure[idx];
+    
+    // Check for electrical detonation (>200V is a strong spark) or extreme pressure from another explosion
+    if (myVolt > 200 || myPres > 200) {
+      // C4 is more powerful than TNT, larger blast radius
+      pendingExplosions.add(Explosion(x, y, calculateTNTRadius(x, y) + 12));
+      grid[idx] = El.empty; life[idx] = 0; markProcessed(idx);
+      return;
+    }
+    
+    // C4 is sticky/plastic, it stays where it is placed unless there is no support
+    fallSolid(x, y, idx, El.c4);
+  }
+
+  void simUranium(int x, int y, int idx) {
+    // Uranium generates heat based on the presence of OTHER uranium nearby (critical mass).
+    int neighborUraniumCount = 0;
+    for (int dy = -2; dy <= 2; dy++) {
+      for (int dx = -2; dx <= 2; dx++) {
+        if (dx == 0 && dy == 0) continue;
+        final nx = wrapX(x + dx);
+        final ny = y + dy;
+        if (!inBoundsY(ny)) continue;
+        final ni = ny * gridW + nx;
+        if (grid[ni] == El.uranium || grid[ni] == El.lava) {
+          // Lava counts because it might be melted uranium
+          neighborUraniumCount++;
+        }
+      }
+    }
+
+    // If critical mass is reached, dramatically increase temperature.
+    if (neighborUraniumCount > 6) {
+      int currentTemp = temperature[idx];
+      // Runaway thermal reaction
+      currentTemp += (neighborUraniumCount * 2);
+      if (currentTemp > 255) currentTemp = 255;
+      temperature[idx] = currentTemp;
+      
+      // If extremely hot, emit intense radiation/light
+      if (currentTemp > 220 && rng.nextInt(5) == 0) {
+        queueReactionFlash(x, y, 100, 255, 100, 4); // Bright green flash
+        
+        // Radiation damage to nearby organic material
+        for (int dy = -1; dy <= 1; dy++) {
+          for (int dx = -1; dx <= 1; dx++) {
+            if (dx == 0 && dy == 0) continue;
+            final nx = wrapX(x + dx);
+            final ny = y + dy;
+            if (!inBoundsY(ny)) continue;
+            final ni = ny * gridW + nx;
+            final ne = grid[ni];
+            if (ne > 0 && ne < maxElements) {
+              if ((elCategory[ne] & ElCat.organic) != 0) {
+                // Irradiate organics: turn them into ash or charcoal
+                grid[ni] = rng.nextBool() ? El.ash : El.charcoal;
+                markProcessed(ni);
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    fallSolid(x, y, idx, El.uranium);
+  }
+
+  void simLead(int x, int y, int idx) {
+    // Lead acts as a dense physical and thermal shield.
+    // It doesn't do much actively, but its high heat capacity and low conductivity
+    // in element_registry naturally block Uranium's heat and radiation.
+    fallSolid(x, y, idx, El.lead);
+  }
+
+  // =========================================================================
   // Rainbow
   // =========================================================================
 
@@ -2786,7 +3124,7 @@ extension ElementBehaviors on SimulationEngine {
   void simMud(int x, int y, int idx) {
     // Contact drying: mud adjacent to fire/lava dries. At 1/4 rate because
     // real mud requires sustained heat to evaporate water content (~25%).
-    if (rng.nextInt(4) == 0 && (checkAdjacent(x, y, El.fire) || checkAdjacent(x, y, El.lava))) {
+    if (rng.nextInt(SimTuning.mudContactDry) == 0 && (checkAdjacentAny2(x, y, El.fire, El.lava))) {
       grid[idx] = El.dirt; life[idx] = 0; markProcessed(idx);
       queueReactionFlash(x, y, 180, 180, 200, 2);
       return;
@@ -2794,7 +3132,7 @@ extension ElementBehaviors on SimulationEngine {
 
     // Proximity drying: mud within 3 cells of fire/lava dries from
     // radiant heat evaporating its moisture content.
-    if (rng.nextInt(40) == 0) {
+    if (rng.nextInt(SimTuning.mudProximityDry) == 0) {
       for (int dy = -3; dy <= 3; dy++) {
         for (int dx = -3; dx <= 3; dx++) {
           if (dx == 0 && dy == 0) continue;
@@ -2912,7 +3250,7 @@ extension ElementBehaviors on SimulationEngine {
     if (atEdge && !isTrappedUnderground) {
       // Adiabatic cooling at altitude: rising steam expands and cools.
       // ~20% condenses to rain (orographic precipitation), rest dissipates.
-      if (rng.nextInt(5) == 0) {
+      if (rng.nextInt(SimTuning.steamAltitudeRain) == 0) {
         grid[idx] = El.water; life[idx] = 100;
         temperature[idx] = 128; // neutral — cooled by expansion
       } else {
@@ -2964,7 +3302,7 @@ extension ElementBehaviors on SimulationEngine {
         }
         if (coldSurfaceAdjacent) {
           // Deep subcooling → deterministic deposition
-          if (st < 30 || rng.nextInt(3) == 0) {
+          if (st < 30 || rng.nextInt(SimTuning.steamDeposition) == 0) {
             grid[idx] = El.ice; life[idx] = 0;
             temperature[idx] = (st + 15).clamp(0, 255); // latent heat release
             markProcessed(idx);
@@ -3001,7 +3339,7 @@ extension ElementBehaviors on SimulationEngine {
       // gradient ensures rapid heat extraction from the vapor phase.
       // Condensation releases latent heat (2260 kJ/kg), warming the
       // resulting water well above freezing point.
-      if (rng.nextInt(4) != 0) {
+      if (rng.nextInt(SimTuning.steamIceCondense) != 0) {
         grid[idx] = El.water; life[idx] = 100;
         temperature[idx] = 160; // latent heat of condensation warms the water
         markProcessed(idx); return;
@@ -3019,9 +3357,9 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     // Trapped steam dissipates slowly through cracks
-    if (isTrappedUnderground && rng.nextInt(40) == 0) {
+    if (isTrappedUnderground && rng.nextInt(SimTuning.steamTrappedSeep) == 0) {
       // Look for gaps in the ceiling to seep through
-      for (final dx in [-1, 0, 1]) {
+      for (int dxI = 0; dxI < 3; dxI++) { final dx = dxI - 1;
         final nx = wrapX(x + dx);
         final uy2 = uy - gravityDir;
         if (inBoundsY(uy2) && grid[uy2 * gridW + nx] == El.empty) {
@@ -3033,7 +3371,7 @@ extension ElementBehaviors on SimulationEngine {
         }
       }
       // Spread laterally along ceiling
-      for (final dx in [1, -1]) {
+      for (int dxI = 0; dxI < 2; dxI++) { final dx = dxI == 0 ? 1 : -1;
         final nx = wrapX(x + dx);
         if (grid[y * gridW + nx] == El.empty) {
           swap(idx, y * gridW + nx);
@@ -3042,13 +3380,20 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
+    // Use local wind field for drift bias
+    final localWind = windX2[idx];
     if (inBoundsY(uy)) {
-      final drift = rng.nextInt(3) - 1;
+      int drift = rng.nextInt(3) - 1;
+      // Wind biases drift direction
+      if (localWind != 0 && rng.nextInt(3) < 2) {
+        drift = localWind > 0 ? 1 : -1;
+      }
       final nx = wrapX(x + drift);
       if (grid[uy * gridW + nx] == El.empty) { swap(idx, uy * gridW + nx); return; }
       if (grid[uy * gridW + x] == El.empty) { swap(idx, uy * gridW + x); return; }
     }
-    final side = wrapX(rng.nextBool() ? x - 1 : x + 1);
+    final windDir = localWind != 0 ? (localWind > 0 ? 1 : -1) : 0;
+    final side = wrapX(windDir != 0 ? x + windDir : (rng.nextBool() ? x - 1 : x + 1));
     if (grid[y * gridW + side] == El.empty) { swap(idx, y * gridW + side); }
   }
 
@@ -3068,7 +3413,7 @@ extension ElementBehaviors on SimulationEngine {
       grid[idx] = El.fire; life[idx] = 0; markProcessed(idx); return;
     }
 
-    if (checkAdjacent(x, y, El.fire) || checkAdjacent(x, y, El.lava)) {
+    if (checkAdjacentAny2(x, y, El.fire, El.lava)) {
       grid[idx] = El.fire; life[idx] = 0; markProcessed(idx); return;
     }
 
@@ -3157,7 +3502,7 @@ extension ElementBehaviors on SimulationEngine {
   void simAcid(int x, int y, int idx) {
     life[idx]++;
 
-    if (life[idx] > 200 + rng.nextInt(60)) {
+    if (life[idx] > SimTuning.acidLifetimeBase + rng.nextInt(SimTuning.acidLifetimeVar)) {
       grid[idx] = El.empty; life[idx] = 0; return;
     }
 
@@ -3202,6 +3547,8 @@ extension ElementBehaviors on SimulationEngine {
         grid[bestNi] = El.empty; life[bestNi] = 0; markProcessed(bestNi);
         final bnx = bestNi % gridW;
         final bny = bestNi ~/ gridW;
+        // Acid sets low pH on the dissolved cell's location
+        pH[bestNi] = 30;
         queueReactionFlash(bnx, bny, 60, 230, 60, 4);
         // Hydrogen evolution: acid dissolving metal produces H₂ gas.
         // Real reaction: 2HCl + Fe → FeCl₂ + H₂↑. The hydrogen gas
@@ -3243,29 +3590,29 @@ extension ElementBehaviors on SimulationEngine {
         if (neighbor == El.ant) {
           grid[ni] = El.empty; life[ni] = 0; markProcessed(ni);
         }
-        if (neighbor == El.water && rng.nextInt(8) == 0) {
+        if (neighbor == El.water && rng.nextInt(SimTuning.acidWaterDilute) == 0) {
           grid[idx] = El.water; life[idx] = 100; markProcessed(idx); return;
         }
-        if (neighbor == El.ice && rng.nextInt(8) == 0) {
+        if (neighbor == El.ice && rng.nextInt(SimTuning.acidIceMelt) == 0) {
           grid[ni] = El.water; life[ni] = 80; markProcessed(ni);
           queueReactionFlash(nx, ny, 80, 255, 120, 3);
         }
         // Acid melts snow to water. Snow is crystalline ice with high
         // surface area — acid's exothermic dissolution provides latent
         // heat for melting while the acid is partially consumed.
-        if (neighbor == El.snow && rng.nextInt(5) == 0) {
+        if (neighbor == El.snow && rng.nextInt(SimTuning.acidSnowMelt) == 0) {
           grid[ni] = El.water; life[ni] = 60; markProcessed(ni);
           queueReactionFlash(nx, ny, 80, 240, 100, 3);
           life[idx] = (life[idx] + 15).clamp(0, 255); // acid ages faster
         }
-        if (neighbor == El.lava && rng.nextInt(5) == 0) {
+        if (neighbor == El.lava && rng.nextInt(SimTuning.acidLavaReact) == 0) {
           // Acid + lava: violent reaction producing steam and smoke
           grid[ni] = El.steam; life[ni] = 0; markProcessed(ni);
           grid[idx] = El.smoke; life[idx] = 0; markProcessed(idx);
           queueReactionFlash(nx, ny, 200, 255, 100, 6);
           return;
         }
-        if (neighbor == El.water && rng.nextInt(20) == 0) {
+        if (neighbor == El.water && rng.nextInt(SimTuning.acidWaterBubble) == 0) {
           grid[ni] = El.bubble; life[ni] = 0; markProcessed(ni);
         }
       }
@@ -3322,7 +3669,7 @@ extension ElementBehaviors on SimulationEngine {
           // Fully supported — don't fall. But if the support structure
           // is thin (only 1 side), there's a small chance of crumbling.
           final bothSides = hasSupport(leftSupport) && hasSupport(rightSupport);
-          if (bothSides || rng.nextInt(60) != 0) {
+          if (bothSides || rng.nextInt(SimTuning.stoneThinSupport) != 0) {
             // Hold position — structural integrity intact
           } else {
             // Thin support crumbles occasionally
@@ -3332,7 +3679,7 @@ extension ElementBehaviors on SimulationEngine {
           // Lateral support but no diagonal — stable if both sides support,
           // otherwise weaker structure crumbles occasionally
           final bothSidesLateral = hasSupport(leftSupport) && hasSupport(rightSupport);
-          if (!bothSidesLateral && rng.nextInt(8) == 0) {
+          if (!bothSidesLateral && rng.nextInt(SimTuning.stoneNoLateralFall) == 0) {
             if (fallSolid(x, y, idx, El.stone)) return;
           }
         }
@@ -3374,7 +3721,7 @@ extension ElementBehaviors on SimulationEngine {
 
     // Slow cooling when not adjacent to heat sources
     if (frameCount % 8 == 0) {
-      final nearHeat = checkAdjacent(x, y, El.lava) || checkAdjacent(x, y, El.fire);
+      final nearHeat = checkAdjacentAny2(x, y, El.fire, El.lava);
       if (!nearHeat) {
         velX[idx] = (heat - 1).clamp(0, 5);
         markDirty(x, y);
@@ -3387,11 +3734,11 @@ extension ElementBehaviors on SimulationEngine {
     if (life[idx] == 0 && frameCount % 40 == 0 && checkAdjacent(x, y, El.water)) {
       final weathering = velY[idx].clamp(0, 5);
       if (weathering < 5) {
-        if (rng.nextInt(60) == 0) {
+        if (rng.nextInt(SimTuning.stoneWeatherWater) == 0) {
           velY[idx] = (weathering + 1);
           markDirty(x, y);
         }
-      } else if (rng.nextInt(20) == 0) {
+      } else if (rng.nextInt(SimTuning.stoneWeatherCrumble) == 0) {
         // Fully weathered — crumble to sand
         grid[idx] = El.sand;
         life[idx] = 0;
@@ -3418,11 +3765,11 @@ extension ElementBehaviors on SimulationEngine {
         final weathering = velY[idx].clamp(0, 5);
         if (weathering < 5) {
           // ~3x faster than water weathering alone
-          if (rng.nextInt(20) == 0) {
+          if (rng.nextInt(SimTuning.stoneFrostWeather) == 0) {
             velY[idx] = (weathering + 1);
             markDirty(x, y);
           }
-        } else if (rng.nextInt(15) == 0) {
+        } else if (rng.nextInt(SimTuning.stoneFrostCrumble) == 0) {
           // Frost-shattered stone breaks to sand/dirt mixture
           grid[idx] = rng.nextBool() ? El.sand : El.dirt;
           life[idx] = 0; velX[idx] = 0; velY[idx] = 0;
@@ -3441,7 +3788,7 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     // Very hot stone can crack into lava if adjacent to enough lava
-    if (heat >= 5 && rng.nextInt(200) == 0) {
+    if (heat >= 5 && rng.nextInt(SimTuning.stoneLavaCrack) == 0) {
       int lavaCount = 0;
       for (int dy = -1; dy <= 1; dy++) {
         for (int dx = -1; dx <= 1; dx++) {
@@ -3513,7 +3860,7 @@ extension ElementBehaviors on SimulationEngine {
         if (d > maxGrad) maxGrad = d;
       }
       // Threshold 45: deterministic shatter; 35-44: probabilistic (1/3)
-      if (maxGrad > 45 || (maxGrad > 35 && rng.nextInt(3) == 0)) {
+      if (maxGrad > 45 || (maxGrad > 35 && rng.nextInt(SimTuning.glassThermalShatter) == 0)) {
         grid[idx] = El.sand;
         life[idx] = 0;
         velY[idx] = 0;
@@ -3527,7 +3874,7 @@ extension ElementBehaviors on SimulationEngine {
     // Glass melts back to sand when adjacent to lava for extended time
     if (checkAdjacent(x, y, El.lava)) {
       life[idx]++;
-      if (life[idx] > 80 + rng.nextInt(40)) {
+      if (life[idx] > SimTuning.glassLavaMeltBase + rng.nextInt(SimTuning.glassLavaMeltVar)) {
         grid[idx] = El.sand;
         life[idx] = 0;
         markProcessed(idx);
@@ -3561,7 +3908,7 @@ extension ElementBehaviors on SimulationEngine {
     final dir1 = goLeft ? -1 : 1;
     final dir2 = goLeft ? 1 : -1;
 
-    for (final dir in [dir1, dir2]) {
+    for (int dirI = 0; dirI < 2; dirI++) { final dir = dirI == 0 ? dir1 : dir2;
       final sx = wrapX(x + dir);
 
       // Standard avalanche: side empty + diagonal-below empty → slide down.
@@ -3570,7 +3917,7 @@ extension ElementBehaviors on SimulationEngine {
       // produces an effective angle of repose near 34° (real dry sand).
       if (grid[y * gridW + sx] == El.empty &&
           inBoundsY(by) && grid[by * gridW + sx] == El.empty) {
-        if (rng.nextInt(3) > 0) {
+        if (rng.nextInt(SimTuning.avalancheStandard) > 0) {
           swap(idx, by * gridW + sx);
           return;
         }
@@ -3584,7 +3931,7 @@ extension ElementBehaviors on SimulationEngine {
         // Roll to side if 2-out diagonal-below is empty
         if (inBoundsY(by) && grid[by * gridW + sx2] == El.empty &&
             grid[y * gridW + sx2] == El.empty) {
-          if (rng.nextInt(4) == 0) {
+          if (rng.nextInt(SimTuning.avalancheExtended) == 0) {
             swap(idx, y * gridW + sx);
             return;
           }
@@ -3760,13 +4107,28 @@ extension ElementBehaviors on SimulationEngine {
     int state = velY[idx];
 
     final isCarrying = (state == antCarrierState);
-    if (!isCarrying && frameCount % 2 != 0) return;
 
     final g = gravityDir;
     final by = y + g;
     final uy = y - g;
     final homeX = life[idx];
     final w = gridW;
+
+    // GRAVITY FIRST — always runs, even on odd frames.
+    // Ants must fall when unsupported, and fall through other ants.
+    if (inBoundsY(by)) {
+      final belowEl = grid[by * w + x];
+      if (belowEl == El.empty) {
+        swap(idx, by * w + x); return;
+      }
+      // Fall through other ants (prevents blob floating)
+      if (belowEl == El.ant && rng.nextInt(SimTuning.antBlobDisperse) == 0) {
+        swap(idx, by * w + x); return;
+      }
+    }
+
+    // Skip complex behavior on odd frames (gravity still ran above)
+    if (!isCarrying && frameCount % 2 != 0) return;
 
     // Acid dissolves ants
     if (checkAdjacent(x, y, El.acid)) {
@@ -3775,7 +4137,7 @@ extension ElementBehaviors on SimulationEngine {
 
     // Fire/lava: flee and alarm
     if (senseDanger(x, y, 1)) {
-      final hasFire = checkAdjacent(x, y, El.fire) || checkAdjacent(x, y, El.lava);
+      final hasFire = checkAdjacentAny2(x, y, El.fire, El.lava);
       if (hasFire) {
         _fireAlarm(x, y);
         for (int dy = -1; dy <= 1; dy++) {
@@ -3809,7 +4171,7 @@ extension ElementBehaviors on SimulationEngine {
         final ac = grid[uy * w + x];
         if (ac == El.empty || ac == El.water) { swap(idx, uy * w + x); return; }
       }
-      for (final dir in [1, -1]) {
+      for (int dirI = 0; dirI < 2; dirI++) { final dir = dirI == 0 ? 1 : -1;
         final sx = wrapX(x + dir);
         if (grid[y * w + sx] == El.empty) { swap(idx, y * w + sx); return; }
       }
@@ -3842,8 +4204,25 @@ extension ElementBehaviors on SimulationEngine {
     }
     if (velX[idx] == 0) velX[idx] = rng.nextBool() ? 1 : -1;
 
-    // Gravity
-    if (inBoundsY(by) && grid[by * w + x] == El.empty) { swap(idx, by * w + x); return; }
+    // Density dispersal: when too many ants are packed together, push outward
+    if (frameCount % 4 == 0) {
+      final nearbyAnts = countNearby(x, y, 2, El.ant);
+      if (nearbyAnts >= 6) {
+        // Crowded — try to move to any adjacent empty cell
+        final disperseDir = rng.nextBool() ? 1 : -1;
+        final dx2 = wrapX(x + disperseDir);
+        if (grid[y * w + dx2] == El.empty) {
+          velX[idx] = disperseDir; swap(idx, y * w + dx2); return;
+        }
+        if (inBoundsY(uy) && grid[uy * w + dx2] == El.empty) {
+          velX[idx] = disperseDir; swap(idx, uy * w + dx2); return;
+        }
+        // Swap with a neighbor ant to churn the blob
+        if (grid[y * w + dx2] == El.ant) {
+          velX[idx] = disperseDir; swap(idx, y * w + dx2); return;
+        }
+      }
+    }
 
     // -- NEAT neural integration: if a colony manages this ant, use brain ---
     if (creatureCallback != null && frameCount % 3 == 0) {
@@ -3863,30 +4242,48 @@ extension ElementBehaviors on SimulationEngine {
           mdx = rng.nextBool() ? 1 : -1;
           mdy = rng.nextInt(3) - 1; // -1, 0, or 1
         }
+        bool neuralMoved = false;
         {
           final nx = wrapX(x + mdx);
           final ny = y + mdy;
           if (inBoundsY(ny)) {
-            final targetEl = grid[ny * w + nx];
+            final ti = ny * w + nx;
+            final targetEl = grid[ti];
             if (targetEl == El.empty) {
               velX[idx] = mdx;
-              swap(idx, ny * w + nx);
+              swap(idx, ti);
+              neuralMoved = true;
+            } else if (targetEl == El.ant && rng.nextInt(2) == 0) {
+              // Ant-ant swap: ants can walk past each other
+              velX[idx] = mdx;
+              swap(idx, ti);
+              neuralMoved = true;
             } else if (targetEl == El.dirt && rng.nextInt(3) == 0) {
               // Neural-driven digging
-              grid[ny * w + nx] = El.empty;
-              life[ny * w + nx] = 0;
+              grid[ti] = El.empty;
+              life[ti] = 0;
               markDirty(nx, ny);
-              swap(idx, ny * w + nx);
+              swap(idx, ti);
               velY[idx] = antCarrierState;
+              neuralMoved = true;
             } else if (mdx != 0 && grid[y * w + nx] == El.empty) {
               velX[idx] = mdx;
               swap(idx, y * w + nx);
+              neuralMoved = true;
             } else if (mdx != 0) {
-              // Try climbing over 1-cell obstacle
-              final climbY = y - g;
-              if (inBoundsY(climbY) && grid[climbY * w + nx] == El.empty) {
+              final hni = y * w + nx;
+              if (grid[hni] == El.ant && rng.nextInt(2) == 0) {
                 velX[idx] = mdx;
-                swap(idx, climbY * w + nx);
+                swap(idx, hni);
+                neuralMoved = true;
+              } else {
+                // Try climbing over 1-cell obstacle
+                final climbY = y - g;
+                if (inBoundsY(climbY) && grid[climbY * w + nx] == El.empty) {
+                  velX[idx] = mdx;
+                  swap(idx, climbY * w + nx);
+                  neuralMoved = true;
+                }
               }
             }
           }
@@ -3943,7 +4340,9 @@ extension ElementBehaviors on SimulationEngine {
           }
         }
 
-        return; // Neural decision handled — skip hardcoded state machine.
+        // If neural movement succeeded, skip hardcoded path.
+        // If it failed, fall through to let the hardcoded state machine try.
+        if (neuralMoved) return;
       }
     }
 
@@ -4016,7 +4415,7 @@ extension ElementBehaviors on SimulationEngine {
     int targetDir = dir;
     bool foundTarget = false;
     for (int scanD = 1; scanD <= 8; scanD++) {
-      for (final sd in [dir, -dir]) {
+      for (int sdI = 0; sdI < 2; sdI++) { final sd = sdI == 0 ? dir : -dir;
         final sx = wrapX(x + sd * scanD);
         final sc = grid[y * gridW + sx];
         if (sc == El.dirt || sc == El.mud || sc == El.plant || sc == El.seed) {
@@ -4064,7 +4463,7 @@ extension ElementBehaviors on SimulationEngine {
     int targetDir = dir;
     bool foundTarget = false;
     for (int scanD = 1; scanD <= 12; scanD++) {
-      for (final sd in [dir, -dir]) {
+      for (int sdI = 0; sdI < 2; sdI++) { final sd = sdI == 0 ? dir : -dir;
         final sx = wrapX(x + sd * scanD);
         final sc = grid[y * gridW + sx];
         if (sc == El.dirt || sc == El.mud || sc == El.plant || sc == El.seed) {
@@ -4080,7 +4479,7 @@ extension ElementBehaviors on SimulationEngine {
       if (foundTarget) break;
     }
 
-    if (!foundTarget && rng.nextInt(60) == 0) velY[idx] = antExplorerState;
+    if (!foundTarget && rng.nextInt(SimTuning.antExplorerWander) == 0) velY[idx] = antExplorerState;
 
     _antMove(x, y, idx, targetDir);
   }
@@ -4144,7 +4543,7 @@ extension ElementBehaviors on SimulationEngine {
       }
     }
 
-    if (!checkAdjacent(x, y, El.dirt) && !checkAdjacent(x, y, El.sand)) {
+    if (!checkAdjacentAny2(x, y, El.dirt, El.sand)) {
       velY[idx] = antExplorerState;
     }
 
@@ -4188,7 +4587,7 @@ extension ElementBehaviors on SimulationEngine {
           velY[idx] = antReturningState; return;
         }
       }
-      for (final dx in [1, -1]) {
+      for (int dxI = 0; dxI < 2; dxI++) { final dx = dxI == 0 ? 1 : -1;
         final sx = wrapX(x + dx);
         if (grid[y * w + sx] == El.empty) {
           grid[y * w + sx] = depositEl; life[y * w + sx] = 0;
@@ -4261,9 +4660,15 @@ extension ElementBehaviors on SimulationEngine {
     final uy = y - g;
     final w = gridW;
     final nx = wrapX(x + moveDir);
+    final ni = y * w + nx;
 
-    if (grid[y * w + nx] == El.empty) {
-      velX[idx] = moveDir; swap(idx, y * w + nx); return;
+    if (grid[ni] == El.empty) {
+      velX[idx] = moveDir; swap(idx, ni); return;
+    }
+
+    // Ant-ant swap: ants walk past each other (50% chance to prevent jitter)
+    if (grid[ni] == El.ant && (flags[ni] & _antBridgeFlag) == 0 && rng.nextInt(2) == 0) {
+      velX[idx] = moveDir; swap(idx, ni); return;
     }
 
     if (inBoundsY(uy) && grid[uy * w + nx] == El.empty) {
@@ -4271,7 +4676,7 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     // Bridge over water
-    if (grid[y * w + nx] == El.water) {
+    if (grid[ni] == El.water) {
       bool landAhead = false;
       for (int d = 2; d <= 4; d++) {
         final fx = wrapX(x + moveDir * d);
@@ -4280,37 +4685,1582 @@ extension ElementBehaviors on SimulationEngine {
         if (fe == El.empty) { landAhead = true; break; }
       }
       if (landAhead && rng.nextInt(3) == 0) {
-        final wi = y * w + nx;
-        grid[wi] = El.ant; life[wi] = life[idx]; velX[wi] = moveDir;
-        velY[wi] = antExplorerState;
+        grid[ni] = El.ant; life[ni] = life[idx]; velX[ni] = moveDir;
+        velY[ni] = antExplorerState;
         grid[idx] = El.empty; life[idx] = 0; velX[idx] = 0; velY[idx] = 0;
-        markProcessed(wi); markProcessed(idx);
-        flags[wi] = flags[wi] | _antBridgeFlag;
+        markProcessed(ni); markProcessed(idx);
+        flags[ni] = flags[ni] | _antBridgeFlag;
         return;
       }
     }
 
     // Walk on bridge ants
-    if (grid[y * w + nx] == El.ant &&
-        (flags[y * w + nx] & _antBridgeFlag) != 0) {
+    if (grid[ni] == El.ant &&
+        (flags[ni] & _antBridgeFlag) != 0) {
       if (inBoundsY(uy) && grid[uy * w + nx] == El.empty) {
         velX[idx] = moveDir; swap(idx, uy * w + nx); return;
       }
     }
 
     if (inBoundsY(uy) && grid[uy * w + x] == El.empty) {
-      if (grid[y * w + nx] != El.empty) {
+      if (grid[ni] != El.empty) {
         swap(idx, uy * w + x); return;
       }
     }
 
     // Snow slows ants
-    if (grid[y * w + nx] == El.snow) {
+    if (grid[ni] == El.snow) {
       if (rng.nextInt(3) == 0) { velX[idx] = moveDir; return; }
     }
 
     velX[idx] = -moveDir;
     if (rng.nextInt(6) == 0) velX[idx] = rng.nextBool() ? 1 : -1;
+  }
+
+  // =========================================================================
+  // Oxygen — invisible gas, consumed by fire, produced by plants, diffuses
+  // =========================================================================
+  void simOxygen(int x, int y, int idx) {
+    if (checkTemperatureReaction(x, y, idx, El.oxygen)) return;
+    // Fire consumes oxygen
+    if (checkAdjacent(x, y, El.fire)) {
+      grid[idx] = El.empty; life[idx] = 0; markDirty(x, y); return;
+    }
+    // Dissolve into water slowly
+    if (checkAdjacent(x, y, El.water) && rng.nextInt(30) == 0) {
+      grid[idx] = El.empty; life[idx] = 0; markDirty(x, y); return;
+    }
+    // Gas physics: rises, diffuses laterally (same pattern as smoke/steam)
+    final uy = y - gravityDir;
+    if (inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
+      swap(idx, uy * gridW + x); return;
+    }
+    // Lateral drift
+    if (rng.nextInt(2) == 0) {
+      final dir = rng.nextBool() ? 1 : -1;
+      final nx = wrapX(x + dir);
+      if (grid[y * gridW + nx] == El.empty) { swap(idx, y * gridW + nx); }
+    }
+  }
+
+  // =========================================================================
+  // CO2 — heavy gas, sinks, pools in depressions, absorbed by plants
+  // =========================================================================
+  void simCO2(int x, int y, int idx) {
+    if (checkTemperatureReaction(x, y, idx, El.co2)) return;
+    // CO2 dissolves in adjacent water (forms carbonic acid, lowers pH)
+    if (checkAdjacent(x, y, El.water) && rng.nextInt(8) == 0) {
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = wrapX(x + dx); final ny = y + dy;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * gridW + nx;
+          if (grid[ni] == El.water && concentration[ni] < 200) {
+            dissolvedType[ni] = El.co2;
+            final newConc = concentration[ni] + 30;
+            concentration[ni] = newConc < 200 ? newConc : 200;
+            grid[idx] = El.empty; life[idx] = 0; markDirty(x, y);
+            markDirty(nx, ny);
+            return;
+          }
+        }
+      }
+    }
+    // Plants absorb CO2
+    if (checkAdjacent(x, y, El.plant) && rng.nextInt(20) == 0) {
+      grid[idx] = El.empty; life[idx] = 0; markDirty(x, y); return;
+    }
+    if (checkAdjacent(x, y, El.algae) && rng.nextInt(15) == 0) {
+      grid[idx] = El.empty; life[idx] = 0; markDirty(x, y); return;
+    }
+    // Heavy gas: sinks slowly, spreads laterally
+    final g = gravityDir;
+    final w = gridW;
+    final by = y + g;
+    // Sink into empty or displace lighter gases
+    if (inBoundsY(by)) {
+      final bi = by * w + x;
+      final bel = grid[bi];
+      if (bel == El.empty) { swap(idx, bi); return; }
+      if (bel == El.oxygen || bel == El.steam || bel == El.smoke) {
+        swap(idx, bi); return; // CO2 is heavier than these gases
+      }
+    }
+    // Lateral spread
+    if (rng.nextInt(3) == 0) {
+      final dir = rng.nextBool() ? 1 : -1;
+      final nx = wrapX(x + dir);
+      final ni = y * w + nx;
+      if (grid[ni] == El.empty) { swap(idx, ni); }
+    }
+  }
+
+  // =========================================================================
+  // Fungus — living decomposer, grows on organic matter, needs moisture
+  // =========================================================================
+  void simFungus(int x, int y, int idx) {
+    if (checkTemperatureReaction(x, y, idx, El.fungus)) return;
+    final w = gridW;
+    // Gravity: fungus falls if not attached to organic matter or solid surface
+    if (!checkAdjacentAnyOf(x, y, fungusAttachSet)) {
+      final by = y + gravityDir;
+      if (inBoundsY(by) && grid[by * w + x] == El.empty) {
+        swap(idx, by * w + x); return;
+      }
+    }
+    // Check moisture
+    final hasMoisture = checkAdjacent(x, y, El.water) ||
+        (checkAdjacent(x, y, El.dirt) && life[idx] > 0);
+    if (!hasMoisture) {
+      life[idx] = (life[idx] > 0) ? life[idx] - 1 : 0;
+      if (life[idx] <= 0 && rng.nextInt(SimTuning.fungusDeathToCompost) == 0) {
+        grid[idx] = El.compost; markDirty(x, y); return;
+      }
+    } else {
+      life[idx] = (life[idx] < 80) ? life[idx] + 1 : 80;
+    }
+    // Bright light inhibits fungal growth
+    final fungLum = luminance[idx];
+    if (fungLum > 30 && frameCount % 10 == 0) {
+      life[idx] = (life[idx] > 0) ? life[idx] - 1 : 0;
+    }
+    // Growth: spread to adjacent organic matter (only in darkness)
+    final fungGrowMod = fungLum > 30 ? 60 : 20; // bright = 3x slower
+    if (frameCount % fungGrowMod == 0) {
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = wrapX(x + dx); final ny = y + dy;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * w + nx;
+          final ne = grid[ni];
+          if (ne == El.ash && rng.nextInt(SimTuning.fungusAshDecompose) == 0) {
+            grid[ni] = El.compost; markDirty(nx, ny);
+          } else if (ne == El.wood && rng.nextInt(SimTuning.fungusWoodRot) == 0) {
+            grid[ni] = El.fungus; life[ni] = 1; markDirty(nx, ny);
+          } else if (ne == El.dirt && rng.nextInt(SimTuning.fungusDirtSpread) == 0 &&
+              countNearby(x, y, 2, El.fungus) < 5) {
+            grid[ni] = El.fungus; life[ni] = 1; markDirty(nx, ny);
+          }
+        }
+      }
+    }
+    // Sporulation: mature fungus releases spores
+    if (life[idx] > 60 && rng.nextInt(SimTuning.fungusSporulate) == 0) {
+      final uy = y - gravityDir;
+      if (inBoundsY(uy) && grid[uy * w + x] == El.empty) {
+        grid[uy * w + x] = El.spore; life[uy * w + x] = 0;
+        markDirty(x, uy);
+      }
+    }
+    // Produce methane during decomposition
+    if (rng.nextInt(SimTuning.fungusMethane) == 0 && life[idx] > 30) {
+      final uy = y - gravityDir;
+      if (inBoundsY(uy) && grid[uy * w + x] == El.empty) {
+        grid[uy * w + x] = El.methane; markDirty(x, uy);
+      }
+    }
+  }
+
+  // =========================================================================
+  // Spore — ultra-light wind-carried particle, germinates on moist surfaces
+  // =========================================================================
+  void simSpore(int x, int y, int idx) {
+    life[idx]++;
+    if (life[idx] > 120) {
+      grid[idx] = El.empty; life[idx] = 0; markDirty(x, y); return;
+    }
+    // Check landing substrate
+    final w = gridW;
+    final by = y + gravityDir;
+    if (inBoundsY(by)) {
+      final below = grid[by * w + x];
+      if ((below == El.dirt || below == El.compost || below == El.ash || below == El.mud) &&
+          checkAdjacent(x, y, El.water)) {
+        grid[idx] = El.fungus; life[idx] = 1; markDirty(x, y); return;
+      }
+    }
+    // Ultra-slow fall with wind drift (powder physics, like ash)
+    final fallY = y + gravityDir;
+    if (inBoundsY(fallY) && grid[fallY * w + x] == El.empty && rng.nextInt(SimTuning.sporeFallRate) == 0) {
+      swap(idx, fallY * w + x); return;
+    }
+    // Lateral drift (wind-sensitive) — use local wind field
+    if (rng.nextInt(SimTuning.sporeDriftRate) == 0) {
+      final localWind = windX2[idx];
+      final dir = localWind != 0 ? (localWind > 0 ? 1 : -1) : (rng.nextBool() ? 1 : -1);
+      final nx = wrapX(x + dir);
+      if (grid[y * w + nx] == El.empty) { swap(idx, y * w + nx); }
+    }
+  }
+
+  // =========================================================================
+  // Charcoal — energy-dense fuel, burns hotter and longer than wood
+  // =========================================================================
+  void simCharcoal(int x, int y, int idx) {
+    if (checkTemperatureReaction(x, y, idx, El.charcoal)) return;
+    // Ignite from adjacent fire/lava or high temperature
+    if (checkAdjacentAny2(x, y, El.fire, El.lava) ||
+        temperature[idx] > 200) {
+      grid[idx] = El.fire;
+      life[idx] = 0; // Fire will burn extra long from charcoal heat
+      temperature[idx] = 240; // Burns hotter than wood
+      markDirty(x, y);
+      return;
+    }
+    if (checkAdjacent(x, y, El.lightning)) {
+      grid[idx] = El.fire; temperature[idx] = 240;
+      markDirty(x, y); return;
+    }
+    fallGranular(x, y, idx, El.charcoal);
+  }
+
+  // =========================================================================
+  // Compost — rich decomposed matter, super-fertilizer for plants
+  // =========================================================================
+  void simCompost(int x, int y, int idx) {
+    if (checkTemperatureReaction(x, y, idx, El.compost)) return;
+    // Dry out without moisture
+    if (frameCount % 10 == 0) {
+      if (!checkAdjacent(x, y, El.water) && life[idx] > 0) {
+        life[idx]--;
+      } else if (checkAdjacent(x, y, El.water)) {
+        life[idx] = (life[idx] < 100) ? life[idx] + 1 : 100;
+      }
+    }
+    // Fully dried: become dirt
+    if (life[idx] <= 0 && rng.nextInt(SimTuning.compostDryToDirt) == 0) {
+      grid[idx] = El.dirt; markDirty(x, y); return;
+    }
+    // Nutrient diffusion to adjacent dirt
+    if (rng.nextInt(SimTuning.compostNutrient) == 0) {
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = wrapX(x + dx); final ny = y + dy;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * gridW + nx;
+          if (grid[ni] == El.dirt && life[ni] < 50) {
+            life[ni] += 5; markDirty(nx, ny); break;
+          }
+        }
+      }
+    }
+    // Produce methane during active decomposition
+    if (life[idx] > 50 && rng.nextInt(SimTuning.compostMethane) == 0) {
+      final uy = y - gravityDir;
+      if (inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
+        grid[uy * gridW + x] = El.methane; markDirty(x, uy);
+      }
+    }
+    fallGranular(x, y, idx, El.compost);
+  }
+
+  // =========================================================================
+  // Rust — corroded metal, weak solid that crumbles under weight
+  // =========================================================================
+  void simRust(int x, int y, int idx) {
+    // Acid dissolves rust easily
+    if (checkAdjacent(x, y, El.acid)) {
+      grid[idx] = El.empty; life[idx] = 0;
+      removeOneAdjacent(x, y, El.acid);
+      markDirty(x, y); return;
+    }
+    // Crumble under heavy weight
+    if (gravityDir == 1 && y > 0) {
+      final above = grid[(y - 1) * gridW + x];
+      if (above != El.empty && elementDensity[above] > 180 && rng.nextInt(SimTuning.rustCrumble) == 0) {
+        grid[idx] = El.dirt; markDirty(x, y); return;
+      }
+    }
+    // Rust doesn't move — it's a weak solid
+  }
+
+  // =========================================================================
+  // Methane — explosive gas from decomposition
+  // =========================================================================
+  void simMethane(int x, int y, int idx) {
+    // Explodes on contact with fire, lava, or lightning
+    if (checkAdjacentAny3(x, y, El.fire, El.lava, El.lightning)) {
+      grid[idx] = El.fire; life[idx] = 0;
+      temperature[idx] = 250;
+      markDirty(x, y);
+      // Chain ignition: nearby methane also ignites
+      final w = gridW;
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = wrapX(x + dx); final ny = y + dy;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * w + nx;
+          if (grid[ni] == El.methane) {
+            grid[ni] = El.fire; life[ni] = 0; temperature[ni] = 240;
+            markDirty(nx, ny);
+          }
+        }
+      }
+      pendingExplosions.add(Explosion(x, y, 3));
+      return;
+    }
+    // Gas physics: rises (lighter than CO2, heavier than steam)
+    final uy = y - gravityDir;
+    if (inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
+      swap(idx, uy * gridW + x); return;
+    }
+    if (rng.nextInt(SimTuning.methaneLateralDrift) == 0) {
+      final dir = rng.nextBool() ? 1 : -1;
+      final nx = wrapX(x + dir);
+      if (grid[y * gridW + nx] == El.empty) { swap(idx, y * gridW + nx); }
+    }
+  }
+
+  // =========================================================================
+  // Salt — soluble crystal, dissolves in water, de-ices, kills plants
+  // =========================================================================
+  void simSalt(int x, int y, int idx) {
+    if (checkTemperatureReaction(x, y, idx, El.salt)) return;
+    // Dissolve in water: set dissolvedType + concentration on the water cell
+    if (checkAdjacent(x, y, El.water) && rng.nextInt(SimTuning.saltDissolveRate) == 0) {
+      // Find the adjacent water cell to dissolve into
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = wrapX(x + dx); final ny = y + dy;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * gridW + nx;
+          if (grid[ni] == El.water && concentration[ni] < 200) {
+            // Dissolve: salt enters solution
+            dissolvedType[ni] = El.salt;
+            final newConc = concentration[ni] + 50;
+            concentration[ni] = newConc < 200 ? newConc : 200;
+            grid[idx] = El.empty; life[idx] = 0; markDirty(x, y);
+            markDirty(nx, ny);
+            return;
+          }
+        }
+      }
+      // All adjacent water is saturated — don't dissolve
+    }
+    // De-icing: salt melts adjacent ice even at low temperatures
+    if (checkAdjacent(x, y, El.ice) && rng.nextInt(SimTuning.saltDeiceRate) == 0) {
+      removeOneAdjacent(x, y, El.ice);
+      // Place water where ice was
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          final nx = wrapX(x + dx); final ny = y + dy;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * gridW + nx;
+          if (grid[ni] == El.empty) {
+            grid[ni] = El.water; markDirty(nx, ny); break;
+          }
+        }
+      }
+    }
+    // Salt toxicity: kills adjacent plants slowly
+    if (checkAdjacent(x, y, El.plant) && rng.nextInt(SimTuning.saltPlantKill) == 0) {
+      removeOneAdjacent(x, y, El.plant);
+    }
+    fallGranular(x, y, idx, El.salt);
+  }
+
+  // =========================================================================
+  // Clay — hardens into ceramic (glass) when heated
+  // =========================================================================
+  void simClay(int x, int y, int idx) {
+    if (checkTemperatureReaction(x, y, idx, El.clay)) return;
+    // Absorb moisture slowly
+    if (checkAdjacent(x, y, El.water) && life[idx] < 50) {
+      life[idx]++;
+    }
+    fallGranular(x, y, idx, El.clay);
+  }
+
+  // =========================================================================
+  // Algae — aquatic plant, grows in water, produces oxygen bubbles
+  // =========================================================================
+  void simAlgae(int x, int y, int idx) {
+    final w = gridW;
+    // Gravity: algae falls when not in/adjacent to water
+    if (!checkAdjacent(x, y, El.water)) {
+      final by = y + gravityDir;
+      if (inBoundsY(by) && grid[by * w + x] == El.empty) {
+        swap(idx, by * w + x); return;
+      }
+    }
+    // Must be adjacent to water to survive
+    if (!checkAdjacent(x, y, El.water)) {
+      life[idx]++;
+      if (life[idx] > 30) {
+        grid[idx] = El.empty; life[idx] = 0; markDirty(x, y); return;
+      }
+    } else {
+      life[idx] = 0;
+    }
+    // Growth: spread to adjacent water cells
+    if (frameCount % 30 == 0 && rng.nextInt(SimTuning.algaeGrowRate) == 0) {
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = wrapX(x + dx); final ny = y + dy;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * w + nx;
+          if (grid[ni] == El.water && countNearby(x, y, 2, El.algae) < 8) {
+            grid[ni] = El.algae; life[ni] = 0; markDirty(nx, ny); break;
+          }
+        }
+      }
+    }
+    // Oxygen production (as bubbles)
+    if (rng.nextInt(SimTuning.algaeO2Rate) == 0) {
+      final uy = y - gravityDir;
+      if (inBoundsY(uy) && (grid[uy * w + x] == El.water || grid[uy * w + x] == El.empty)) {
+        grid[uy * w + x] = El.oxygen; markDirty(x, uy);
+      }
+    }
+    // Absorb CO2
+    if (checkAdjacent(x, y, El.co2) && rng.nextInt(SimTuning.algaeCO2Absorb) == 0) {
+      removeOneAdjacent(x, y, El.co2);
+    }
+    // Overpopulation die-off (algae bloom)
+    if (countNearby(x, y, 3, El.algae) > SimTuning.algaeBloomThreshold && rng.nextInt(SimTuning.algaeBloomDieoff) == 0) {
+      grid[idx] = El.compost; markDirty(x, y); return;
+    }
+  }
+
+  // =========================================================================
+  // Seaweed — aquatic plant, grows in water, fish food, evolves toxicity
+  // =========================================================================
+  void simSeaweed(int x, int y, int idx) {
+    final w = gridW;
+    // Must be in or adjacent to water
+    if (!checkAdjacent(x, y, El.water) && grid[idx] != El.water) {
+      life[idx]++;
+      if (life[idx] > 20) {
+        grid[idx] = El.empty; life[idx] = 0; markDirty(x, y); return;
+      }
+    } else {
+      if (life[idx] > 0) life[idx]--;
+    }
+
+    // Fire/lava destroys seaweed
+    if (checkAdjacentAny2(x, y, El.fire, El.lava)) {
+      grid[idx] = El.ash; life[idx] = 0; markDirty(x, y); return;
+    }
+
+    // Neural colony decisions
+    final registry = plantColonies;
+    PlantColony? colony;
+    double growUpBias = 0.6;
+    double growLateral = 0.0;
+    double branchProb = 0.03;
+    double seedProd = 0.002;
+    double toxinProd = 0.0;
+
+    if (registry != null) {
+      colony = registry.colonyForCell(idx);
+      if (colony != null) {
+        final inputs = registry.gatherInputs(this, x, y, idx);
+        final out = colony.decide(
+          inputs[0], inputs[1], inputs[2], inputs[3],
+          inputs[4], inputs[5], inputs[6], inputs[7],
+        );
+        growUpBias = (out[kOutGrowUp] + 1.0) * 0.5; // -1..1 -> 0..1
+        growLateral = out[kOutGrowLateral];
+        branchProb = (out[kOutBranch] + 1.0) * 0.05; // 0..0.1
+        seedProd = (out[kOutSeedProduction] + 1.0) * 0.005;
+        toxinProd = (out[kOutToxin] + 1.0) * 0.5;
+        // Drift colony toxin level
+        colony.toxinLevel = (colony.toxinLevel * 0.99 + toxinProd * 0.01).clamp(0.0, 1.0);
+      }
+    }
+
+    // Growth: spread into adjacent water cells
+    final growRate = plantGrowRate[kPlantSeaweed];
+    if (frameCount % growRate == 0) {
+      final curSize = velY[idx].clamp(0, 127).toInt();
+      if (curSize < plantMaxH[kPlantSeaweed]) {
+        // Determine growth direction from neural output
+        final gy = growUpBias > 0.5 ? y - gravityDir : y + gravityDir;
+        final gx = growLateral > 0.3 ? wrapX(x + 1) :
+                   growLateral < -0.3 ? wrapX(x - 1) : x;
+
+        // Try primary direction
+        if (inBoundsY(gy)) {
+          final ni = gy * w + gx;
+          if (grid[ni] == El.water) {
+            grid[ni] = El.seaweed; life[ni] = 0;
+            velY[ni] = (curSize + 1);
+            markProcessed(ni);
+            markDirty(gx, gy);
+            velY[idx] = (curSize + 1);
+            if (colony != null && registry != null) {
+              registry.addCell(colony, ni);
+            }
+          }
+        }
+
+        // Branching
+        if (rng.nextDouble() < branchProb && curSize > 3) {
+          final side = rng.nextBool() ? 1 : -1;
+          final bx = wrapX(x + side);
+          final bi = y * w + bx;
+          if (grid[bi] == El.water) {
+            grid[bi] = El.seaweed; life[bi] = 0;
+            velY[bi] = (curSize);
+            markProcessed(bi);
+            markDirty(bx, y);
+            if (colony != null && registry != null) {
+              registry.addCell(colony, bi);
+            }
+          }
+        }
+      }
+    }
+
+    // Oxygen production
+    if (rng.nextInt(SimTuning.seaweedO2Rate) == 0) {
+      final uy = y - gravityDir;
+      if (inBoundsY(uy) && (grid[uy * w + x] == El.water || grid[uy * w + x] == El.empty)) {
+        grid[uy * w + x] = El.oxygen; markDirty(x, uy);
+        if (colony != null) colony.oxygenProduced++;
+      }
+    }
+
+    // CO2 absorption
+    if (checkAdjacent(x, y, El.co2) && rng.nextInt(SimTuning.seaweedCO2Absorb) == 0) {
+      removeOneAdjacent(x, y, El.co2);
+    }
+
+    // Seed production (spores into water)
+    if (rng.nextDouble() < seedProd && velY[idx] > 8) {
+      for (int dy2 = -1; dy2 <= 1; dy2++) {
+        for (int dx2 = -1; dx2 <= 1; dx2++) {
+          if (dx2 == 0 && dy2 == 0) continue;
+          final sx = wrapX(x + dx2); final sy = y + dy2;
+          if (!inBoundsY(sy)) continue;
+          final si = sy * w + sx;
+          if (grid[si] == El.water) {
+            grid[si] = El.seed; life[si] = 0;
+            velX[si] = kPlantSeaweed;
+            markDirty(sx, sy);
+            if (colony != null) colony.seedsProduced++;
+            return;
+          }
+        }
+      }
+    }
+
+    // Overpopulation die-off
+    if (countNearby(x, y, 3, El.seaweed) > SimTuning.seaweedBloomThreshold && rng.nextInt(SimTuning.seaweedBloomDieoff) == 0) {
+      grid[idx] = El.compost; markDirty(x, y);
+      if (registry != null) registry.removeCell(idx);
+    }
+  }
+
+  // =========================================================================
+  // Moss — surface plant, grows on rock/stone, minimal light, first colonizer
+  // =========================================================================
+  void simMoss(int x, int y, int idx) {
+    final w = gridW;
+
+    // Must be adjacent to a solid surface (stone, wood, dirt, clay)
+    bool onSurface = false;
+    for (int dy2 = -1; dy2 <= 1; dy2++) {
+      for (int dx2 = -1; dx2 <= 1; dx2++) {
+        if (dx2 == 0 && dy2 == 0) continue;
+        final nx = wrapX(x + dx2); final ny = y + dy2;
+        if (!inBoundsY(ny)) continue;
+        final el = grid[ny * w + nx];
+        if (el == El.stone || el == El.wood || el == El.dirt || el == El.clay) {
+          onSurface = true; break;
+        }
+      }
+      if (onSurface) break;
+    }
+
+    if (!onSurface) {
+      // Fall when not attached to surface
+      fallSolid(x, y, idx, El.moss);
+      life[idx]++;
+      if (life[idx] > 40) {
+        grid[idx] = El.empty; life[idx] = 0; markDirty(x, y); return;
+      }
+    } else {
+      if (life[idx] > 0) life[idx]--;
+    }
+
+    // Fire/lava
+    if (checkAdjacentAny2(x, y, El.fire, El.lava)) {
+      grid[idx] = El.fire; life[idx] = 0; markProcessed(idx); return;
+    }
+
+    // Moisture absorption from nearby water
+    if (checkAdjacent(x, y, El.water) && frameCount % 10 == 0) {
+      moisture[idx] = (moisture[idx] + 5).clamp(0, 255);
+    }
+
+    // Neural colony decisions
+    final registry = plantColonies;
+    double spreadProb = 0.005;
+
+    if (registry != null) {
+      final colony = registry.colonyForCell(idx);
+      if (colony != null) {
+        final inputs = registry.gatherInputs(this, x, y, idx);
+        final out = colony.decide(
+          inputs[0], inputs[1], inputs[2], inputs[3],
+          inputs[4], inputs[5], inputs[6], inputs[7],
+        );
+        spreadProb = (out[kOutBranch] + 1.0) * 0.01; // 0..0.02
+      }
+    }
+
+    // Slow growth along surfaces
+    final growRate = plantGrowRate[kPlantMoss];
+    if (frameCount % growRate == 0 && rng.nextDouble() < spreadProb) {
+      for (int dy2 = -1; dy2 <= 1; dy2++) {
+        for (int dx2 = -1; dx2 <= 1; dx2++) {
+          if (dx2 == 0 && dy2 == 0) continue;
+          final nx = wrapX(x + dx2); final ny = y + dy2;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * w + nx;
+          if (grid[ni] != El.empty) continue;
+          // Check that target is also adjacent to a solid
+          bool targetOnSurface = false;
+          for (int sy = -1; sy <= 1; sy++) {
+            for (int sx = -1; sx <= 1; sx++) {
+              if (sx == 0 && sy == 0) continue;
+              final snx = wrapX(nx + sx); final sny = ny + sy;
+              if (!inBoundsY(sny)) continue;
+              final sel = grid[sny * w + snx];
+              if (sel == El.stone || sel == El.wood || sel == El.dirt || sel == El.clay) {
+                targetOnSurface = true; break;
+              }
+            }
+            if (targetOnSurface) break;
+          }
+          if (targetOnSurface && countNearby(nx, ny, 2, El.moss) < 5) {
+            grid[ni] = El.moss; life[ni] = 0;
+            markProcessed(ni); markDirty(nx, ny);
+            if (registry != null) {
+              final colony = registry.colonyForCell(idx);
+              if (colony != null) registry.addCell(colony, ni);
+            }
+            return;
+          }
+        }
+      }
+    }
+
+    // Oxygen production (slower than plants, even in darkness)
+    if (rng.nextInt(SimTuning.mossO2Rate) == 0) {
+      final uy = y - gravityDir;
+      if (inBoundsY(uy) && grid[uy * w + x] == El.empty) {
+        grid[uy * w + x] = El.oxygen; markDirty(x, uy);
+      }
+    }
+
+    // CO2 absorption
+    if (checkAdjacent(x, y, El.co2) && rng.nextInt(SimTuning.mossCO2Absorb) == 0) {
+      removeOneAdjacent(x, y, El.co2);
+    }
+  }
+
+  // =========================================================================
+  // Vine (neural) — climbing plant, grows along walls/ceilings, hangs down
+  // =========================================================================
+  void simNeuralVine(int x, int y, int idx) {
+    final w = gridW;
+
+    // Gravity: vine falls if not attached to any surface or other plant
+    final hasSupport = checkAdjacentAnyOf(x, y, plantSupportSet);
+    if (!hasSupport) {
+      final by = y + gravityDir;
+      if (inBoundsY(by) && grid[by * w + x] == El.empty) {
+        swap(idx, by * w + x); return;
+      }
+    }
+
+    // Fire/lava/acid
+    if (checkAdjacentAny2(x, y, El.fire, El.lava)) {
+      grid[idx] = El.fire; life[idx] = 0; markProcessed(idx); return;
+    }
+    if (checkAdjacent(x, y, El.acid) && rng.nextInt(SimTuning.vineAcidDamage) == 0) {
+      grid[idx] = El.empty; life[idx] = 0; markProcessed(idx); return;
+    }
+
+    // Hydration
+    if (frameCount % 8 == 0) {
+      if (checkAdjacent(x, y, El.water) || moisture[idx] > 50) {
+        life[idx] = (life[idx] + 1).clamp(0, 100);
+      } else {
+        life[idx] = (life[idx] - 1).clamp(0, 100);
+      }
+    }
+
+    // Death from dehydration
+    if (life[idx] <= 0) {
+      grid[idx] = El.ash; life[idx] = 0;
+      final registry = plantColonies;
+      if (registry != null) registry.removeCell(idx);
+      markDirty(x, y); return;
+    }
+
+    // Neural colony decisions
+    final registry = plantColonies;
+    double growUp = 0.5;
+    double growLateral = 0.0;
+    double branchProb = 0.02;
+
+    if (registry != null) {
+      final colony = registry.colonyForCell(idx);
+      if (colony != null) {
+        final inputs = registry.gatherInputs(this, x, y, idx);
+        final out = colony.decide(
+          inputs[0], inputs[1], inputs[2], inputs[3],
+          inputs[4], inputs[5], inputs[6], inputs[7],
+        );
+        growUp = (out[kOutGrowUp] + 1.0) * 0.5;
+        growLateral = out[kOutGrowLateral];
+        branchProb = (out[kOutBranch] + 1.0) * 0.04;
+      }
+    }
+
+    // Growth along surfaces
+    final growRate = plantGrowRate[kPlantNeuralVine];
+    final curSize = velY[idx].clamp(0, 127).toInt();
+    if (frameCount % growRate == 0 && curSize < plantMaxH[kPlantNeuralVine]) {
+      // Build list of valid growth directions near a solid surface
+      final directions = <List<int>>[];
+      final preferUp = growUp > 0.5;
+      final preferDir = growLateral > 0.3 ? 1 : growLateral < -0.3 ? -1 : 0;
+
+      // Prioritize neural-preferred directions
+      final allDirs = preferUp
+          ? [[-1, -gravityDir], [1, -gravityDir], [0, -gravityDir], [-1, 0], [1, 0], [0, gravityDir]]
+          : [[0, gravityDir], [-1, gravityDir], [1, gravityDir], [-1, 0], [1, 0], [0, -gravityDir]];
+
+      for (final d in allDirs) {
+        final nx = wrapX(x + d[0]); final ny = y + d[1];
+        if (!inBoundsY(ny)) continue;
+        if (grid[ny * w + nx] != El.empty) continue;
+        // Must be near a solid surface
+        bool nearSolid = false;
+        for (int sy = -1; sy <= 1; sy++) {
+          for (int sx = -1; sx <= 1; sx++) {
+            if (sx == 0 && sy == 0) continue;
+            final snx = wrapX(nx + sx); final sny = ny + sy;
+            if (!inBoundsY(sny)) continue;
+            final se = grid[sny * w + snx];
+            if (se == El.dirt || se == El.stone || se == El.wood ||
+                se == El.metal || se == El.clay) {
+              nearSolid = true; break;
+            }
+          }
+          if (nearSolid) break;
+        }
+        if (nearSolid) {
+          // Prefer lateral direction matching neural output
+          if (preferDir != 0 && d[0] == preferDir) {
+            directions.insert(0, d);
+          } else {
+            directions.add(d);
+          }
+        }
+      }
+
+      if (directions.isNotEmpty) {
+        final d = directions[0]; // take best direction
+        final nx = wrapX(x + d[0]); final ny = y + d[1];
+        final ni = ny * w + nx;
+        grid[ni] = El.vine; life[ni] = life[idx];
+        velY[ni] = (curSize + 1); markProcessed(ni); markDirty(nx, ny);
+        velY[idx] = (curSize + 1);
+        if (registry != null) {
+          final colony = registry.colonyForCell(idx);
+          if (colony != null) registry.addCell(colony, ni);
+        }
+      }
+
+      // Branching
+      if (rng.nextDouble() < branchProb && curSize > 4 && directions.length > 1) {
+        final d = directions[rng.nextInt(directions.length)];
+        final nx = wrapX(x + d[0]); final ny = y + d[1];
+        final ni = ny * w + nx;
+        if (grid[ni] == El.empty) {
+          grid[ni] = El.vine; life[ni] = life[idx];
+          velY[ni] = (curSize); markProcessed(ni); markDirty(nx, ny);
+          if (registry != null) {
+            final colony = registry.colonyForCell(idx);
+            if (colony != null) registry.addCell(colony, ni);
+          }
+        }
+      }
+    }
+
+    // Photosynthesis
+    if (luminance[idx] > 30 && frameCount % 20 == 0 && rng.nextInt(SimTuning.vineO2Rate) == 0) {
+      final uy = y - gravityDir;
+      if (inBoundsY(uy) && grid[uy * w + x] == El.empty) {
+        grid[uy * w + x] = El.oxygen; markDirty(x, uy);
+      }
+    }
+  }
+
+  // =========================================================================
+  // Flower (neural) — reproducer, produces seeds/pollen, attracts bees
+  // =========================================================================
+  void simNeuralFlower(int x, int y, int idx) {
+    final w = gridW;
+
+    // Gravity: flowers fall if not on soil/dirt/compost/root
+    final by = y + gravityDir;
+    if (inBoundsY(by)) {
+      final below = grid[by * w + x];
+      if (below == El.empty) {
+        swap(idx, by * w + x); return;
+      }
+    }
+
+    // Fire/lava
+    if (checkAdjacentAny2(x, y, El.fire, El.lava)) {
+      grid[idx] = El.fire; life[idx] = 0; markProcessed(idx); return;
+    }
+    if (checkAdjacent(x, y, El.acid) && rng.nextInt(SimTuning.flowerAcidDamage) == 0) {
+      grid[idx] = El.empty; life[idx] = 0; markProcessed(idx); return;
+    }
+
+    // Hydration from soil below
+    if (frameCount % 6 == 0) {
+      bool hasMoisture = false;
+      final by = y + gravityDir;
+      if (inBoundsY(by)) {
+        final bi = by * w + x;
+        if (grid[bi] == El.dirt && life[bi] >= 1) hasMoisture = true;
+        if (grid[bi] == El.root) hasMoisture = true; // roots supply water
+      }
+      if (checkAdjacent(x, y, El.water)) hasMoisture = true;
+      if (hasMoisture) {
+        life[idx] = (life[idx] + 2).clamp(0, 100);
+      } else {
+        life[idx] = (life[idx] - 1).clamp(0, 100);
+      }
+    }
+
+    // Death
+    if (life[idx] <= 0) {
+      grid[idx] = El.ash; life[idx] = 0;
+      final registry = plantColonies;
+      if (registry != null) registry.removeCell(idx);
+      markDirty(x, y); return;
+    }
+
+    // Neural colony decisions
+    final registry = plantColonies;
+    double seedRate = 0.003;
+    double resourceAlloc = 0.5;
+
+    if (registry != null) {
+      final colony = registry.colonyForCell(idx);
+      if (colony != null) {
+        final inputs = registry.gatherInputs(this, x, y, idx);
+        final out = colony.decide(
+          inputs[0], inputs[1], inputs[2], inputs[3],
+          inputs[4], inputs[5], inputs[6], inputs[7],
+        );
+        seedRate = (out[kOutSeedProduction] + 1.0) * 0.005;
+        resourceAlloc = (out[kOutResourceAlloc] + 1.0) * 0.5;
+      }
+    }
+
+    // Grow stem upward (small plant)
+    final curSize = velY[idx].clamp(0, 127).toInt();
+    final growRate = plantGrowRate[kPlantNeuralFlower];
+    if (frameCount % growRate == 0 && curSize < plantMaxH[kPlantNeuralFlower]) {
+      final uy = y - gravityDir;
+      if (inBoundsY(uy) && grid[uy * w + x] == El.empty) {
+        final ni = uy * w + x;
+        grid[ni] = El.flower; life[ni] = life[idx];
+        velY[ni] = (curSize + 1); markProcessed(ni); markDirty(x, uy);
+        velY[idx] = (curSize + 1);
+        if (registry != null) {
+          final colony = registry.colonyForCell(idx);
+          if (colony != null) registry.addCell(colony, ni);
+        }
+      }
+    }
+
+    // Seed production — neural network controls rate
+    if (curSize >= plantMaxH[kPlantNeuralFlower] - 1 && rng.nextDouble() < seedRate) {
+      for (int dy2 = -2; dy2 <= 0; dy2++) {
+        for (int dx2 = -1; dx2 <= 1; dx2++) {
+          if (dx2 == 0 && dy2 == 0) continue;
+          final sx = wrapX(x + dx2); final sy = y + dy2;
+          if (!inBoundsY(sy)) continue;
+          final si = sy * w + sx;
+          if (grid[si] == El.empty) {
+            // Wind-assisted seed spread
+            final seedX = windForce != 0 && rng.nextBool()
+                ? wrapX(sx + windForce.sign) : sx;
+            final seedIdx = sy * w + seedX;
+            if (grid[seedIdx] == El.empty) {
+              grid[seedIdx] = El.seed; life[seedIdx] = 0;
+              velX[seedIdx] = kPlantNeuralFlower;
+              markDirty(seedX, sy);
+            } else {
+              grid[si] = El.seed; life[si] = 0;
+              velX[si] = kPlantNeuralFlower;
+              markDirty(sx, sy);
+            }
+            if (registry != null) {
+              final colony = registry.colonyForCell(idx);
+              if (colony != null) colony.seedsProduced++;
+            }
+            return;
+          }
+        }
+      }
+    }
+
+    // Photosynthesis
+    if (luminance[idx] > 40 && frameCount % 15 == 0 && rng.nextInt(SimTuning.flowerO2Rate) == 0) {
+      final uy = y - gravityDir;
+      if (inBoundsY(uy) && grid[uy * w + x] == El.empty) {
+        grid[uy * w + x] = El.oxygen; markDirty(x, uy);
+      }
+      if (checkAdjacent(x, y, El.co2)) removeOneAdjacent(x, y, El.co2);
+    }
+
+    // Resource allocation: high = grow roots, low = produce more seeds
+    if (resourceAlloc > 0.6 && frameCount % 40 == 0 && rng.nextInt(3) == 0) {
+      // Try to grow a root below
+      final ry = y + gravityDir;
+      if (inBoundsY(ry)) {
+        final ri = ry * w + x;
+        if (grid[ri] == El.dirt) {
+          grid[ri] = El.root; life[ri] = life[idx];
+          velY[ri] = 1; markProcessed(ri); markDirty(x, ry);
+          if (registry != null) {
+            final colony = registry.colonyForCell(idx);
+            if (colony != null) registry.addCell(colony, ri);
+          }
+        }
+      }
+    }
+  }
+
+  // =========================================================================
+  // Root — underground, grows downward seeking water/nutrients
+  // =========================================================================
+  void simRoot(int x, int y, int idx) {
+    final w = gridW;
+
+    // Fire destroys roots
+    if (checkAdjacentAny2(x, y, El.fire, El.lava)) {
+      grid[idx] = El.ash; life[idx] = 0; markDirty(x, y);
+      final registry = plantColonies;
+      if (registry != null) registry.removeCell(idx);
+      return;
+    }
+
+    // Absorb water from adjacent water cells
+    if (frameCount % 8 == 0) {
+      if (checkAdjacent(x, y, El.water)) {
+        life[idx] = (life[idx] + 3).clamp(0, 100);
+        // Also boost moisture in surrounding dirt
+        for (int dy2 = -1; dy2 <= 1; dy2++) {
+          for (int dx2 = -1; dx2 <= 1; dx2++) {
+            if (dx2 == 0 && dy2 == 0) continue;
+            final nx = wrapX(x + dx2); final ny = y + dy2;
+            if (!inBoundsY(ny)) continue;
+            final ni = ny * w + nx;
+            if (grid[ni] == El.dirt && life[ni] < 4) {
+              life[ni] = (life[ni] + 1).clamp(0, 5);
+            }
+          }
+        }
+      } else {
+        // Slowly dehydrate without water
+        life[idx] = (life[idx] - 1).clamp(0, 100);
+      }
+    }
+
+    // Death from dehydration
+    if (life[idx] <= 0 && frameCount % 20 == 0) {
+      grid[idx] = El.dirt; life[idx] = 2;
+      final registry = plantColonies;
+      if (registry != null) registry.removeCell(idx);
+      markDirty(x, y); return;
+    }
+
+    // Neural colony decisions
+    final registry = plantColonies;
+    double growDown = 0.7;
+    double growLateral = 0.0;
+    double branchProb = 0.02;
+
+    if (registry != null) {
+      final colony = registry.colonyForCell(idx);
+      if (colony != null) {
+        final inputs = registry.gatherInputs(this, x, y, idx);
+        final out = colony.decide(
+          inputs[0], inputs[1], inputs[2], inputs[3],
+          inputs[4], inputs[5], inputs[6], inputs[7],
+        );
+        // For roots, growUp is inverted: negative = grow deeper
+        growDown = (1.0 - (out[kOutGrowUp] + 1.0) * 0.5); // invert
+        growLateral = out[kOutGrowLateral];
+        branchProb = (out[kOutBranch] + 1.0) * 0.03;
+      }
+    }
+
+    // Grow downward through dirt, seeking water
+    final growRate = plantGrowRate[kPlantRoot];
+    final curSize = velY[idx].clamp(0, 127).toInt();
+    if (frameCount % growRate == 0 && curSize < plantMaxH[kPlantRoot] && growDown > 0.3) {
+      // Primary direction: down (growDown controls willingness to extend)
+      int gy = y + gravityDir;
+      int gx = x;
+      if (growLateral > 0.4) {
+        gx = wrapX(x + 1);
+      } else if (growLateral < -0.4) {
+        gx = wrapX(x - 1);
+      }
+
+      if (inBoundsY(gy)) {
+        final ni = gy * w + gx;
+        if (grid[ni] == El.dirt || grid[ni] == El.compost) {
+          grid[ni] = El.root; life[ni] = life[idx];
+          velY[ni] = (curSize + 1); markProcessed(ni); markDirty(gx, gy);
+          velY[idx] = (curSize + 1);
+          if (registry != null) {
+            final colony = registry.colonyForCell(idx);
+            if (colony != null) registry.addCell(colony, ni);
+          }
+        }
+      }
+
+      // Branching roots
+      if (rng.nextDouble() < branchProb && curSize > 3) {
+        final side = rng.nextBool() ? 1 : -1;
+        final bx = wrapX(x + side);
+        final bi = y * w + bx;
+        if (grid[bi] == El.dirt || grid[bi] == El.compost) {
+          grid[bi] = El.root; life[bi] = life[idx];
+          velY[bi] = curSize; markProcessed(bi); markDirty(bx, y);
+          if (registry != null) {
+            final colony = registry.colonyForCell(idx);
+            if (colony != null) registry.addCell(colony, bi);
+          }
+        }
+      }
+    }
+  }
+
+  // =========================================================================
+  // Thorn — defensive plant structure, damages creatures
+  // =========================================================================
+  void simThorn(int x, int y, int idx) {
+    // Gravity: thorns fall if not attached to a plant/vine/flower
+    if (!checkAdjacentAnyOf(x, y, thornAttachSet)) {
+      fallSolid(x, y, idx, El.thorn);
+    }
+    // Fire destroys thorns
+    if (checkAdjacentAny2(x, y, El.fire, El.lava)) {
+      grid[idx] = El.fire; life[idx] = 0; markProcessed(idx); return;
+    }
+
+    // Damage nearby ants (creatures)
+    if (frameCount % 10 == 0) {
+      for (int dy2 = -1; dy2 <= 1; dy2++) {
+        for (int dx2 = -1; dx2 <= 1; dx2++) {
+          if (dx2 == 0 && dy2 == 0) continue;
+          final nx = wrapX(x + dx2); final ny = y + dy2;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * gridW + nx;
+          if (grid[ni] == El.ant) {
+            // Damage the ant by reducing its life
+            life[ni] = (life[ni] - SimTuning.thornDamage).clamp(0, 255);
+            markDirty(nx, ny);
+            // Track fitness
+            final registry = plantColonies;
+            if (registry != null) {
+              final colony = registry.colonyForCell(idx);
+              if (colony != null) colony.herbivoresDamaged++;
+            }
+          }
+        }
+      }
+    }
+
+    // Slow decay without a living plant neighbor
+    if (frameCount % 30 == 0) {
+      bool hasPlant = false;
+      for (int dy2 = -1; dy2 <= 1; dy2++) {
+        for (int dx2 = -1; dx2 <= 1; dx2++) {
+          if (dx2 == 0 && dy2 == 0) continue;
+          final nx = wrapX(x + dx2); final ny = y + dy2;
+          if (!inBoundsY(ny)) continue;
+          final el = grid[ny * gridW + nx];
+          if (el == El.plant || el == El.vine || el == El.flower || el == El.root) {
+            hasPlant = true; break;
+          }
+        }
+        if (hasPlant) break;
+      }
+      if (!hasPlant) {
+        life[idx]++;
+        if (life[idx] > 100) {
+          grid[idx] = El.ash; life[idx] = 0; markDirty(x, y);
+          final registry = plantColonies;
+          if (registry != null) registry.removeCell(idx);
+        }
+      }
+    }
+  }
+
+  // =========================================================================
+  // Honey — very viscous ant-produced liquid, preserves organic matter
+  // =========================================================================
+  void simHoney(int x, int y, int idx) {
+    if (checkTemperatureReaction(x, y, idx, El.honey)) return;
+    // Very slow crystallization over long time
+    life[idx]++;
+    if (life[idx] > SimTuning.honeyCrystallizeLife && rng.nextInt(SimTuning.honeyCrystallize) == 0) {
+      grid[idx] = El.sand; life[idx] = 0; markDirty(x, y); return;
+    }
+    // Viscous liquid physics: falls, spreads very slowly (viscosity 6)
+    final g = gravityDir;
+    final w = gridW;
+    final by = y + g;
+    if (inBoundsY(by) && grid[by * w + x] == El.empty) {
+      swap(idx, by * w + x); return;
+    }
+    // Very slow lateral spread (viscosity 6 = spread every 6th frame)
+    if (frameCount % 6 == 0) {
+      final dir = rng.nextBool() ? 1 : -1;
+      final nx = wrapX(x + dir);
+      if (grid[y * w + nx] == El.empty) { swap(idx, y * w + nx); }
+    }
+  }
+
+  // =========================================================================
+  // Hydrogen — lightest gas, rises fast, explosive with oxygen
+  // =========================================================================
+  void simHydrogen(int x, int y, int idx) {
+    // Explosive: H2 + O2 + spark/fire → water + massive heat
+    if (checkAdjacentAny3(x, y, El.fire, El.lava, El.lightning)) {
+      if (checkAdjacent(x, y, El.oxygen)) {
+        grid[idx] = El.steam;
+        temperature[idx] = 250;
+        removeOneAdjacent(x, y, El.oxygen);
+        markDirty(x, y);
+        pendingExplosions.add(Explosion(x, y, 2));
+        return;
+      }
+      grid[idx] = El.fire; temperature[idx] = 230;
+      markDirty(x, y); return;
+    }
+    // Lightest gas: rises through ALL heavier gases
+    final w = gridW;
+    final uy = y - gravityDir;
+    if (inBoundsY(uy)) {
+      final ui = uy * w + x;
+      final above = grid[ui];
+      if (above == El.empty || above == El.oxygen || above == El.co2 ||
+          above == El.smoke || above == El.steam || above == El.methane) {
+        swap(idx, ui); return;
+      }
+    }
+    if (rng.nextInt(SimTuning.hydrogenDrift) == 0) {
+      final dir = rng.nextBool() ? 1 : -1;
+      final nx = wrapX(x + dir);
+      if (grid[y * w + nx] == El.empty) { swap(idx, y * w + nx); }
+    }
+  }
+
+  // =========================================================================
+  // Sulfur — volcanic, burns to toxic smoke, tarnishes metals
+  // =========================================================================
+  void simSulfur(int x, int y, int idx) {
+    if (checkTemperatureReaction(x, y, idx, El.sulfur)) return;
+    if ((checkAdjacentAny2(x, y, El.fire, El.lava) ||
+        temperature[idx] > 150) && checkAdjacent(x, y, El.oxygen)) {
+      grid[idx] = El.fire;
+      temperature[idx] = 200;
+      final uy = y - gravityDir;
+      if (inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
+        grid[uy * gridW + x] = El.smoke;
+        markDirty(x, uy);
+      }
+      markDirty(x, y); return;
+    }
+    if (rng.nextInt(SimTuning.sulfurTarnishRate) == 0 && checkAdjacent(x, y, El.metal)) {
+      life[idx] = (life[idx] + 1).clamp(0, 50);
+    }
+    fallGranular(x, y, idx, El.sulfur);
+  }
+
+  // =========================================================================
+  // Copper — best conductor, resists corrosion, slow green patina
+  // =========================================================================
+  void simCopper(int x, int y, int idx) {
+    final g = gravityDir;
+    final by = y + g;
+    final belowEmpty = inBoundsY(by) && (grid[by * gridW + x] == El.empty
+        || grid[by * gridW + x] == El.water);
+    if (belowEmpty) {
+      bool hasSupport = false;
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = wrapX(x + dx);
+          final ny = y + dy;
+          if (!inBoundsY(ny)) { hasSupport = true; continue; }
+          final n = grid[ny * gridW + nx];
+          if (n == El.stone || n == El.metal || n == El.copper ||
+              n == El.wood || n == El.glass || n == El.ice) {
+            hasSupport = true;
+          }
+        }
+      }
+      if (!hasSupport) {
+        fallSolid(x, y, idx, El.copper);
+        return;
+      }
+    }
+    if (checkAdjacent(x, y, El.water) && rng.nextInt(SimTuning.copperPatinaBase) == 0) {
+      life[idx] = (life[idx] + 1).clamp(0, 100);
+    }
+    // Copper patina: aged copper (cellAge > 200) develops verdigris
+    // which shifts pH toward alkaline (carbonate patina)
+    final copperAge = cellAge[idx];
+    if (copperAge > 200) {
+      // Accelerate patina formation with age
+      final patinaRate = 2000 - ((copperAge - 200) * 10); // faster as it ages
+      if (rng.nextInt(patinaRate > 50 ? patinaRate : 50) == 0) {
+        life[idx] = (life[idx] + 1).clamp(0, 100);
+      }
+      // Aged copper shifts local pH toward alkaline (copper carbonate)
+      if (copperAge > 230 && pH[idx] < 160) {
+        pH[idx] = pH[idx] + 1;
+      }
+    }
+    if (checkAdjacent(x, y, El.acid) && rng.nextInt(SimTuning.copperAcidRate) == 0) {
+      grid[idx] = El.empty; life[idx] = 0;
+      removeOneAdjacent(x, y, El.acid);
+      markDirty(x, y);
+    }
+  }
+
+  // =========================================================================
+  // Web — spider silk, sticky, burns instantly, dissolves in water
+  // =========================================================================
+  void simWeb(int x, int y, int idx) {
+    life[idx]++;
+    if (checkAdjacentAny2(x, y, El.fire, El.lava)) {
+      grid[idx] = El.fire; life[idx] = 0; markDirty(x, y); return;
+    }
+    if (checkAdjacent(x, y, El.water) && rng.nextInt(SimTuning.webWaterDissolve) == 0) {
+      grid[idx] = El.empty; life[idx] = 0; markDirty(x, y); return;
+    }
+    if (checkAdjacent(x, y, El.acid)) {
+      grid[idx] = El.empty; life[idx] = 0; markDirty(x, y); return;
+    }
+    if (life[idx] > SimTuning.webDecayLife) {
+      grid[idx] = El.empty; life[idx] = 0; markDirty(x, y);
+    }
+  }
+
+  // =========================================================================
+  // Alkali Metal — violently reactive with water, soft solid
+  // =========================================================================
+  void simAlkaliMetal(int x, int y, int idx) {
+    final el = grid[idx];
+    // Check for water contact — explosive reaction
+    if (checkAdjacent(x, y, El.water)) {
+      // Scale explosion by reactivity (heavier alkalis = bigger boom)
+      final reactivity = elementReactivity[el];
+      final radius = 1 + (reactivity ~/ 80); // 1-3 cell radius
+      // Remove the alkali metal
+      grid[idx] = El.fire; life[idx] = 0;
+      temperature[idx] = 230; markDirty(x, y);
+      // Consume adjacent water, produce hydrogen
+      for (int dy2 = -radius; dy2 <= radius; dy2++) {
+        for (int dx2 = -radius; dx2 <= radius; dx2++) {
+          final nx = wrapX(x + dx2); final ny = y + dy2;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * gridW + nx;
+          if (grid[ni] == El.water) {
+            if (rng.nextInt(3) == 0) {
+              grid[ni] = El.hydrogen; // produce H₂
+            } else {
+              grid[ni] = El.fire;
+              temperature[ni] = 200;
+            }
+            markDirty(nx, ny);
+          }
+        }
+      }
+      queueReactionFlash(x, y, 255, 180, 50, radius * 3);
+      return;
+    }
+    // Fall as granular
+    fallGranular(x, y, idx, el);
+  }
+
+  // =========================================================================
+  // Halogen Gas — reactive, toxic to organics
+  // =========================================================================
+  void simHalogenGas(int x, int y, int idx) {
+    final w = gridW;
+    // React with metals to form salt
+    for (int dy2 = -1; dy2 <= 1; dy2++) {
+      for (int dx2 = -1; dx2 <= 1; dx2++) {
+        if (dx2 == 0 && dy2 == 0) continue;
+        final nx = wrapX(x + dx2); final ny = y + dy2;
+        if (!inBoundsY(ny)) continue;
+        final ni = ny * w + nx;
+        final neighbor = grid[ni];
+        // Metal + halogen → salt
+        if (neighbor == El.metal || neighbor == El.sodium || neighbor == El.aluminum
+            || neighbor == El.copper || neighbor == El.zinc) {
+          if (rng.nextInt(8) == 0) {
+            grid[ni] = El.salt; markDirty(nx, ny);
+            grid[idx] = El.empty; markDirty(x, y);
+            return;
+          }
+        }
+        // Toxic to organics
+        if ((elCategory[neighbor] & ElCat.organic) != 0 && rng.nextInt(10) == 0) {
+          grid[ni] = El.empty; markDirty(nx, ny);
+        }
+      }
+    }
+    // Rise as gas
+    final uy = y - gravityDir;
+    if (inBoundsY(uy) && grid[uy * w + x] == El.empty) {
+      swap(idx, uy * w + x);
+    } else {
+      // Spread laterally
+      final dir = rng.nextBool() ? 1 : -1;
+      final sx = wrapX(x + dir);
+      if (grid[y * w + sx] == El.empty) {
+        swap(idx, y * w + sx);
+      }
+    }
+  }
+
+  // =========================================================================
+  // Radioactive — decay chains, radiation damage, heat generation
+  // =========================================================================
+  void simRadioactive(int x, int y, int idx) {
+    final el = grid[idx];
+    final w = gridW;
+
+    // Heat generation from radioactive decay
+    if (temperature[idx] < 180) {
+      temperature[idx] = (temperature[idx] + 1).clamp(0, 255);
+    }
+    markDirty(x, y);
+
+    // Radiation damage to adjacent organic elements
+    if (frameCount % 10 == 0) {
+      for (int dy2 = -2; dy2 <= 2; dy2++) {
+        for (int dx2 = -2; dx2 <= 2; dx2++) {
+          if (dx2 == 0 && dy2 == 0) continue;
+          final nx = wrapX(x + dx2); final ny = y + dy2;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * w + nx;
+          final neighbor = grid[ni];
+          if ((elCategory[neighbor] & ElCat.organic) != 0 && rng.nextInt(20) == 0) {
+            grid[ni] = El.ash; life[ni] = 0; markDirty(nx, ny);
+          }
+        }
+      }
+    }
+
+    // For non-solid radioactives (radon = gas), handle movement
+    if (elementProperties[el].state == PhysicsState.gas) {
+      final uy = y - gravityDir;
+      if (inBoundsY(uy) && grid[uy * w + x] == El.empty) {
+        swap(idx, uy * w + x);
+      }
+    }
+    // Decay is handled by the engine's decayRate/decaysInto system
+  }
+
+  // =========================================================================
+  // Liquid Metal — mercury, gallium (liquid + metallic properties)
+  // =========================================================================
+  void simLiquidMetal(int x, int y, int idx) {
+    final el = grid[idx];
+    final w = gridW;
+
+    // Toxic to organics (mercury)
+    if (el == El.mercury && frameCount % 8 == 0) {
+      for (int dy2 = -1; dy2 <= 1; dy2++) {
+        for (int dx2 = -1; dx2 <= 1; dx2++) {
+          if (dx2 == 0 && dy2 == 0) continue;
+          final nx = wrapX(x + dx2); final ny = y + dy2;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * w + nx;
+          if ((elCategory[grid[ni]] & ElCat.organic) != 0 && rng.nextInt(15) == 0) {
+            grid[ni] = El.empty; markDirty(nx, ny);
+          }
+          // Amalgamate with gold/silver
+          if ((grid[ni] == El.gold || grid[ni] == El.silver) && rng.nextInt(20) == 0) {
+            grid[ni] = El.mercury; markDirty(nx, ny); // absorbs precious metals
+          }
+        }
+      }
+    }
+
+    // Liquid behavior: fall + spread
+    final by = y + gravityDir;
+    if (inBoundsY(by)) {
+      final bi = by * w + x;
+      if (grid[bi] == El.empty) {
+        swap(idx, bi); return;
+      }
+      // Density displacement
+      final belowEl = grid[bi];
+      if (elementDensity[el] > elementDensity[belowEl] &&
+          elementProperties[belowEl].state == PhysicsState.liquid) {
+        swap(idx, bi); return;
+      }
+    }
+    // Lateral spread
+    if (frameCount % 2 == 0) {
+      final dir = rng.nextBool() ? 1 : -1;
+      final sx = wrapX(x + dir);
+      if (grid[y * w + sx] == El.empty) {
+        swap(idx, y * w + sx);
+      }
+    }
+  }
+
+  // =========================================================================
+  // Atmospherics (Phase 7)
+  // =========================================================================
+
+  void simVapor(int x, int y, int idx) {
+    // Vapor rises and diffuses
+    final uy = y - gravityDir;
+    if (inBoundsY(uy)) {
+      // Vapor rises through empty space or lighter gases
+      if (grid[uy * gridW + x] == El.empty || grid[uy * gridW + x] == El.smoke) {
+        swap(idx, uy * gridW + x);
+        return;
+      }
+    }
+
+    // High altitude: transform into cloud
+    final isAtAltitude = gravityDir == 1 ? y < (gridH ~/ 8) : y > (gridH - (gridH ~/ 8));
+    if (isAtAltitude) {
+      grid[idx] = El.cloud;
+      life[idx] = 0;
+      markProcessed(idx);
+      return;
+    }
+
+    // Horizontal drift
+    if (rng.nextInt(2) == 0) {
+      final dir = rng.nextBool() ? 1 : -1;
+      final nx = wrapX(x + dir);
+      if (grid[y * gridW + nx] == El.empty) swap(idx, y * gridW + nx);
+    }
+  }
+
+  void simCloud(int x, int y, int idx) {
+    // Clouds drift with the wind
+    final localWind = windX2[idx];
+    if (localWind != 0 && rng.nextInt(2) == 0) {
+      final dir = localWind > 0 ? 1 : -1;
+      final nx = wrapX(x + dir);
+      if (grid[y * gridW + nx] == El.empty) {
+        swap(idx, y * gridW + nx);
+        return;
+      }
+    }
+
+    // Accumulate moisture from local surroundings
+    if (frameCount % 10 == 0) {
+      moisture[idx] = (moisture[idx] + 2).clamp(0, 255);
+    }
+
+    // Precipitation check: when cloud is heavy, it condenses
+    // Threshold depends on pressure and density
+    if (moisture[idx] > 200) {
+      final t = temperature[idx];
+      // Cold clouds produce snow, warm clouds produce rain
+      if (t < 80) {
+        grid[idx] = El.snow;
+      } else {
+        grid[idx] = El.water;
+        life[idx] = 80; // moderate mass for falling droplets
+      }
+      moisture[idx] = 0;
+      markProcessed(idx);
+      return;
+    }
+
+    // Clouds occasionally merge or expand
+    if (rng.nextInt(1000) == 0) {
+      final dir = rng.nextBool() ? 1 : -1;
+      final nx = wrapX(x + dir);
+      if (grid[y * gridW + nx] == El.empty) {
+        grid[y * gridW + nx] = El.cloud;
+        life[y * gridW + nx] = 0;
+        markDirty(nx, y);
+      }
+    }
+  }
+
+  void simSilicon(int x, int y, int idx) {
+    // Silicon is a semiconductor. Its conductivity is conditional.
+    // 1. Thermal conduction: hot silicon conducts electricity (thermistors)
+    // 2. Oxidation gate: oxidized silicon conducts (FET logic)
+    final t = temperature[idx];
+    final ox = oxidation[idx];
+    
+    if (t > 150 || ox > 200) {
+      // It's in a conductive state — allow sparks to pass through
+      // By reducing dielectric and increasing electron mobility temporarily
+      // However, we can't easily modify global tables here, 
+      // so we use the voltage/charge buffers directly.
+      if (charge[idx].abs() > 10) {
+        conductElectricity(x, y);
+      }
+    }
+    
+    // Silicon is a solid, handle its gravity
+    fallSolid(x, y, idx, El.silicon);
+  }
+
+  // =========================================================================
+  // Phosphorus — auto-ignites when adjacent to oxygen/air
+  // =========================================================================
+  void simPhosphorus(int x, int y, int idx) {
+    // White phosphorus auto-ignites in the presence of oxygen
+    if (checkAdjacent(x, y, El.oxygen) || checkAdjacent(x, y, El.empty)) {
+      // Auto-ignition chance (represents exposure to air)
+      if (rng.nextInt(40) == 0) {
+        grid[idx] = El.fire; life[idx] = 0;
+        temperature[idx] = 220; markDirty(x, y);
+        queueReactionFlash(x, y, 255, 255, 200, 4);
+        return;
+      }
+    }
+    // Fire contact: instant ignition
+    if (checkAdjacent(x, y, El.fire) || checkAdjacent(x, y, El.lava)) {
+      grid[idx] = El.fire; life[idx] = 0;
+      temperature[idx] = 230; markDirty(x, y);
+      return;
+    }
+    // Fall as granular
+    fallGranular(x, y, idx, El.phosphorus);
   }
 }
 
@@ -4318,12 +6268,26 @@ extension ElementBehaviors on SimulationEngine {
 // Top-level dispatch function
 // ---------------------------------------------------------------------------
 
-/// Dispatch function passed to [SimulationEngine.step].
 ///
 /// Built-in elements are dispatched via a switch for maximum performance.
 /// Custom elements (registered at runtime) are dispatched through the
 /// [ElementRegistry.customBehaviors] function table.
 void simulateElement(SimulationEngine e, int el, int x, int y, int idx) {
+  // Rigid Body Fast-Path: If updateChunks() marked this solid pixel as falling,
+  // bypass normal behavior to ensure the chunk falls together cohesively.
+  if (e.velY[idx] > 0) {
+    if (el == El.wood || el == El.stone || el == El.metal || el == El.glass) {
+      final by = y + e.gravityDir;
+      if (e.inBoundsY(by) && e.grid[by * e.gridW + x] == El.empty) {
+        e.swap(idx, by * e.gridW + x);
+        return; // Skip normal simulation for falling chunks
+      } else {
+        // Hit something, stop chunk momentum
+        e.velY[idx] = 0;
+      }
+    }
+  }
+
   switch (el) {
     case El.sand: e.simSand(x, y, idx);
     case El.water: e.simWater(x, y, idx);
@@ -4349,6 +6313,48 @@ void simulateElement(SimulationEngine e, int el, int x, int y, int idx) {
     case El.ash: e.simAsh(x, y, idx);
     case El.stone: e.simStone(x, y, idx);
     case El.glass: e.simGlass(x, y, idx);
+    case El.oxygen: e.simOxygen(x, y, idx);
+    case El.co2: e.simCO2(x, y, idx);
+    case El.fungus: e.simFungus(x, y, idx);
+    case El.spore: e.simSpore(x, y, idx);
+    case El.charcoal: e.simCharcoal(x, y, idx);
+    case El.compost: e.simCompost(x, y, idx);
+    case El.rust: e.simRust(x, y, idx);
+    case El.methane: e.simMethane(x, y, idx);
+    case El.salt: e.simSalt(x, y, idx);
+    case El.clay: e.simClay(x, y, idx);
+    case El.algae: e.simAlgae(x, y, idx);
+    case El.honey: e.simHoney(x, y, idx);
+    case El.hydrogen: e.simHydrogen(x, y, idx);
+    case El.sulfur: e.simSulfur(x, y, idx);
+    case El.copper: e.simCopper(x, y, idx);
+    case El.web: e.simWeb(x, y, idx);
+    case El.seaweed: e.simSeaweed(x, y, idx);
+    case El.moss: e.simMoss(x, y, idx);
+    case El.vine: e.simNeuralVine(x, y, idx);
+    case El.flower: e.simNeuralFlower(x, y, idx);
+    case El.root: e.simRoot(x, y, idx);
+    case El.thorn: e.simThorn(x, y, idx);
+    case El.c4: e.simC4(x, y, idx);
+    case El.uranium: e.simUranium(x, y, idx);
+    case El.lead: e.simLead(x, y, idx);
+    case El.vapor: e.simVapor(x, y, idx);
+    case El.cloud: e.simCloud(x, y, idx);
+    case El.silicon: e.simSilicon(x, y, idx);
+    // -- Periodic Table: Family dispatch --
+    // -- Periodic Table: Family dispatch --
+    // Noble gases and nitrogen fall through to default for universal gravity
+    case El.radon: e.simRadioactive(x, y, idx);
+    case El.lithium: case El.sodium: case El.potassium:
+    case El.rubidium: case El.cesium: case El.francium:
+      e.simAlkaliMetal(x, y, idx);
+    case El.mercury: e.simLiquidMetal(x, y, idx);
+    case El.fluorine: case El.chlorine:
+      e.simHalogenGas(x, y, idx);
+    case El.phosphorus: e.simPhosphorus(x, y, idx);
+    case El.thorium: case El.plutonium:
+    case El.radium: case El.americium:
+      e.simRadioactive(x, y, idx);
     default:
       // Custom element: look up registered behavior function.
       final fn = ElementRegistry.customBehaviors[el];
@@ -4357,6 +6363,32 @@ void simulateElement(SimulationEngine e, int el, int x, int y, int idx) {
       } else {
         // No custom behavior — try data-driven reactions from the registry.
         ReactionRegistry.executeReactions(e, el, x, y, idx);
+      }
+      // UNIVERSAL GRAVITY: every element obeys gravity unless it's a static
+      // solid with structural support, a gas (rises instead), or gravity=0.
+      // This prevents ANY element from floating in mid-air.
+      final grav = elementGravity[el];
+      if (grav != 0) {
+        final state = elementProperties[el].state;
+        if (state == PhysicsState.granular || state == PhysicsState.powder) {
+          e.fallGranular(x, y, idx, el);
+        } else if (state == PhysicsState.liquid) {
+          // Liquid: fall + spread
+          final by = y + e.gravityDir;
+          if (e.inBoundsY(by) && e.grid[by * e.gridW + x] == El.empty) {
+            e.swap(idx, by * e.gridW + x);
+          }
+        } else if (grav < 0) {
+          // Gas: rise
+          final uy = y - e.gravityDir;
+          if (e.inBoundsY(uy) && e.grid[uy * e.gridW + x] == El.empty) {
+            e.swap(idx, uy * e.gridW + x);
+          }
+        }
+        // Solids with grav > 0 but no support: fall
+        else if (state == PhysicsState.solid || state == PhysicsState.special) {
+          e.fallSolid(x, y, idx, el);
+        }
       }
   }
 }
