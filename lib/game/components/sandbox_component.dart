@@ -258,9 +258,12 @@ class SandboxComponent extends PositionComponent
             if (paintEl != El.empty) {
               simulation.mass[idx] = elementBaseMass[paintEl];
             }
-            // Clock bit: match current simClock so the NEXT step
-            // (which flips simClock) will process this cell.
-            simulation.flags[idx] = simulation.simClock ? 0x80 : 0;
+            // Clock bit: set OPPOSITE of current simClock. markDirty
+            // writes to nextDirtyChunks which becomes dirtyChunks after
+            // TWO step() swaps. By then simClock has flipped twice,
+            // returning to the current value. The opposite bit ensures
+            // the cell won't match currentClockBit when finally processed.
+            simulation.flags[idx] = simulation.simClock ? 0 : 0x80;
             simulation.markDirty(nx, ny);
             simulation.unsettleNeighbors(nx, ny);
           }

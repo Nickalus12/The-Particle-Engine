@@ -14,12 +14,14 @@ SimulationEngine _makeEngine({int w = 64, int h = 64}) {
 }
 
 /// Place a single element at (x, y) with proper initialization.
+/// Sets clock bit OPPOSITE to current simClock so the cell is processed
+/// when the dirty chunk becomes active (after the next swap cycle).
 void _place(SimulationEngine e, int x, int y, int el) {
   final idx = y * e.gridW + x;
   e.clearCell(idx);
   e.grid[idx] = el;
   e.mass[idx] = elementBaseMass[el];
-  e.flags[idx] = e.simClock ? 0x80 : 0;
+  e.flags[idx] = e.simClock ? 0 : 0x80;
   e.markDirty(x, y);
   e.unsettleNeighbors(x, y);
 }
@@ -377,6 +379,242 @@ void main() {
       final iceCount = _count(e, El.ice);
       expect(iceCount, greaterThanOrEqualTo(2),
           reason: 'Water adjacent to ice at low temp should freeze');
+    });
+  });
+
+  // =========================================================================
+  // Brush placement: mimics real _paintCell behavior exactly
+  // =========================================================================
+
+  group('Brush placement gravity', () {
+    test('Sand blob placed in air falls completely to bottom', () {
+      final e = _makeEngine(w: 64, h: 64);
+      // Mimic brush size 3 placement at (32, 15) — exactly like _paintCell
+      const brushSize = 3;
+      const cx = 32, cy = 15;
+      for (var dy = -brushSize; dy <= brushSize; dy++) {
+        for (var dx = -brushSize; dx <= brushSize; dx++) {
+          if (dx * dx + dy * dy <= brushSize * brushSize) {
+            final nx = e.wrapX(cx + dx);
+            final ny = cy + dy;
+            if (e.inBoundsY(ny)) {
+              final idx = ny * e.gridW + nx;
+              e.clearCell(idx);
+              e.grid[idx] = El.sand;
+              e.mass[idx] = elementBaseMass[El.sand];
+              e.flags[idx] = e.simClock ? 0 : 0x80;
+              e.markDirty(nx, ny);
+              e.unsettleNeighbors(nx, ny);
+            }
+          }
+        }
+      }
+
+      final sandBefore = _count(e, El.sand);
+      expect(sandBefore, greaterThan(20)); // brush creates ~29 cells
+
+      // Check that sand is around y=15
+      final highestBefore = _findHighest(e, 32, El.sand);
+      expect(highestBefore, isNotNull);
+      expect(highestBefore!, lessThan(20));
+
+      // Run simulation — sand should fall to bottom (y=63)
+      _step(e, 60);
+
+      // ALL sand should be near the bottom now
+      final highestAfter = _findHighest(e, 32, El.sand);
+      expect(highestAfter, isNotNull);
+      expect(highestAfter!, greaterThan(40),
+          reason: 'Brush-placed sand blob should fall to bottom. '
+              'Highest sand at y=$highestAfter after 60 frames (started at y~12)');
+
+      // Sand count preserved
+      final sandAfter = _count(e, El.sand);
+      expect(sandAfter, sandBefore,
+          reason: 'Sand count should be preserved');
+    });
+
+    test('Water blob placed in air falls completely', () {
+      final e = _makeEngine(w: 64, h: 64);
+      const brushSize = 3;
+      const cx = 32, cy = 15;
+      for (var dy = -brushSize; dy <= brushSize; dy++) {
+        for (var dx = -brushSize; dx <= brushSize; dx++) {
+          if (dx * dx + dy * dy <= brushSize * brushSize) {
+            final nx = e.wrapX(cx + dx);
+            final ny = cy + dy;
+            if (e.inBoundsY(ny)) {
+              final idx = ny * e.gridW + nx;
+              e.clearCell(idx);
+              e.grid[idx] = El.water;
+              e.mass[idx] = elementBaseMass[El.water];
+              e.flags[idx] = e.simClock ? 0 : 0x80;
+              e.markDirty(nx, ny);
+              e.unsettleNeighbors(nx, ny);
+            }
+          }
+        }
+      }
+
+      _step(e, 60);
+
+      // Water should spread along the bottom
+      final highestWater = _findHighest(e, 32, El.water);
+      if (highestWater != null) {
+        expect(highestWater, greaterThan(40),
+            reason: 'Water placed at y~15 should fall to bottom in 60 frames');
+      }
+    });
+
+    test('Sand placed during active simulation falls', () {
+      final e = _makeEngine(w: 64, h: 64);
+      e.markAllDirty(); // Force all chunks dirty like game does on init
+
+      // Run a few frames first (like the game does before user places)
+      _step(e, 10);
+
+      // NOW place sand (simClock has been toggling)
+      _place(e, 32, 15, El.sand);
+      final idx = 15 * e.gridW + 32;
+      final belowIdx = 16 * e.gridW + 32;
+      print('After placement: simClock=${e.simClock}, '
+          'flags=${e.flags[idx]} (0x${e.flags[idx].toRadixString(16)}), '
+          'grid=${e.grid[idx]}, '
+          'below=${e.grid[belowIdx]}, '
+          'dirtyChunk=${e.nextDirtyChunks[(15 >> 4) * e.chunkCols + (32 >> 4)]}, '
+          'currentDirtyChunk=${e.dirtyChunks[(15 >> 4) * e.chunkCols + (32 >> 4)]}');
+
+      // Check the chunk WILL be dirty after swap
+      print('nextDirty chunks with value 1:');
+      int ndCount = 0;
+      for (int i = 0; i < e.nextDirtyChunks.length; i++) {
+        if (e.nextDirtyChunks[i] != 0) ndCount++;
+      }
+      print('  nextDirtyChunks count: $ndCount');
+      int dcCount = 0;
+      for (int i = 0; i < e.dirtyChunks.length; i++) {
+        if (e.dirtyChunks[i] != 0) dcCount++;
+      }
+      print('  dirtyChunks count: $dcCount');
+
+      _step(e, 1);
+      final y1 = _findLowest(e, 32, El.sand);
+      print('After 1 step: sand at y=$y1, '
+          'flags=${e.flags[y1! * e.gridW + 32].toRadixString(16)}, '
+          'simClock=${e.simClock}');
+
+      _step(e, 1);
+      final y2 = _findLowest(e, 32, El.sand);
+      print('After 2 steps: sand at y=$y2, '
+          'flags=${e.flags[y2! * e.gridW + 32].toRadixString(16)}, '
+          'simClock=${e.simClock}');
+
+      _step(e, 1);
+      final y3 = _findLowest(e, 32, El.sand);
+      print('After 3 steps: sand at y=$y3');
+
+      _step(e, 27);
+      final yFinal = _findLowest(e, 32, El.sand);
+      print('After 30 steps: sand at y=$yFinal');
+
+      expect(yFinal, isNotNull);
+      expect(yFinal!, greaterThan(30),
+          reason: 'Sand placed mid-simulation should fall');
+    });
+
+    test('Sand brush with continuous painting (drag)', () {
+      final e = _makeEngine(w: 64, h: 64);
+      _step(e, 5);
+
+      // Simulate drag painting: place sand, step, place more sand, step
+      // This mimics how the game interleaves placement and simulation
+      for (int frame = 0; frame < 10; frame++) {
+        // Place sand at y=10
+        for (int dx = -2; dx <= 2; dx++) {
+          _place(e, 32 + dx, 10, El.sand);
+        }
+        _step(e, 1);
+      }
+
+      // Stop painting, let simulation run
+      _step(e, 50);
+
+      // All sand should have fallen
+      final highest = _findHighest(e, 32, El.sand);
+      expect(highest, isNotNull);
+      expect(highest!, greaterThan(30),
+          reason: 'Sand placed during drag should eventually fall');
+    });
+  });
+
+  // =========================================================================
+  // Direct function tests
+  // =========================================================================
+
+  group('Direct gravity functions', () {
+    test('fallGranular moves sand down when empty below', () {
+      final e = _makeEngine(w: 64, h: 64);
+      _step(e, 10); // establish simulation state
+
+      final idx = 15 * e.gridW + 32;
+      e.clearCell(idx);
+      e.grid[idx] = El.sand;
+      e.mass[idx] = elementBaseMass[El.sand];
+      e.markDirty(32, 15);
+
+      print('Before fallGranular: grid[15*64+32]=${e.grid[idx]}, '
+          'grid[16*64+32]=${e.grid[16 * e.gridW + 32]}, '
+          'velX=${e.velX[idx]}, velY=${e.velY[idx]}, '
+          'gravityDir=${e.gravityDir}');
+
+      e.fallGranular(32, 15, idx, El.sand);
+
+      final below = 16 * e.gridW + 32;
+      print('After fallGranular: grid[15*64+32]=${e.grid[idx]}, '
+          'grid[16*64+32]=${e.grid[below]}');
+
+      expect(e.grid[below], El.sand,
+          reason: 'fallGranular should swap sand into empty cell below');
+      expect(e.grid[idx], El.empty,
+          reason: 'Old position should be empty after fall');
+    });
+
+    test('simSand calls fallGranular and sand moves', () {
+      final e = _makeEngine(w: 64, h: 64);
+      _step(e, 10);
+
+      final idx = 15 * e.gridW + 32;
+      e.clearCell(idx);
+      e.grid[idx] = El.sand;
+      e.mass[idx] = elementBaseMass[El.sand];
+      e.markDirty(32, 15);
+
+      e.simSand(32, 15, idx);
+
+      final below = 16 * e.gridW + 32;
+      print('After simSand: old=${e.grid[idx]}, new=${e.grid[below]}');
+
+      expect(e.grid[below], El.sand,
+          reason: 'simSand should move sand down via fallGranular');
+    });
+
+    test('simulateElement dispatches sand correctly', () {
+      final e = _makeEngine(w: 64, h: 64);
+      _step(e, 10);
+
+      final idx = 15 * e.gridW + 32;
+      e.clearCell(idx);
+      e.grid[idx] = El.sand;
+      e.mass[idx] = elementBaseMass[El.sand];
+      e.markDirty(32, 15);
+
+      simulateElement(e, El.sand, 32, 15, idx);
+
+      final below = 16 * e.gridW + 32;
+      print('After simulateElement: old=${e.grid[idx]}, new=${e.grid[below]}');
+
+      expect(e.grid[below], El.sand,
+          reason: 'simulateElement should dispatch sand and it should fall');
     });
   });
 

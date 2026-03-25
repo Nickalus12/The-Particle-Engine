@@ -247,7 +247,7 @@ class _PeriodicTableOverlayState extends State<PeriodicTableOverlay>
     sim.clearCell(idx);
     sim.grid[idx] = elId;
     sim.mass[idx] = elementBaseMass[elId];
-    sim.flags[idx] = sim.simClock ? 0x80 : 0;
+    sim.flags[idx] = sim.simClock ? 0 : 0x80;
     if (temperatureOverride != null) {
       sim.temperature[idx] = temperatureOverride.clamp(0, 255);
     } else {
