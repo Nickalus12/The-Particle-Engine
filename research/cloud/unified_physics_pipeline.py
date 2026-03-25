@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Unified physics validation & optimization pipeline for A100 GPU.
+"""Unified physics validation and optimization pipeline for large cloud GPUs.
 
 Master orchestrator that runs all three GPU workloads concurrently:
   1. Conservation law validator (CuPy batched grid simulations)
   2. Chemistry parameter optimizer (Optuna + CuPy GPU scoring)
   3. Electrical conductivity benchmark (CuPy circuit simulations)
 
-Designed for A100 80GB VRAM, 18 CPU cores. Saturates GPU with batched
-simulations while CPU workers handle Optuna trials.
+Designed to auto-scale across A100/H100 class instances. It raises
+scenario counts and batch sizes when large VRAM and CPU budgets are
+available, while preserving CPU-only fallbacks.
 
 Usage:
     # Run full pipeline (recommended for A100)
@@ -28,15 +29,22 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import multiprocessing as mp
 import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 import traceback
 from datetime import datetime
 from pathlib import Path
+
+from system_profile import (  # noqa: E402
+    resolve_electrical_circuits,
+    resolve_validation_scenarios,
+    resolve_worker_count,
+    summarize_profile,
+)
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -61,8 +69,7 @@ logging.basicConfig(
 log = logging.getLogger("unified_pipeline")
 
 # Shared state
-shutdown_event = mp.Event()
-pipeline_results = mp.Manager().dict()
+shutdown_event = threading.Event()
 
 
 def signal_handler(sig, frame):
@@ -175,19 +182,23 @@ def run_chemistry_optimization(trials: int = 10000, workers: int = 4) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Parallel execution
+# Validation execution
 # ---------------------------------------------------------------------------
 
-def run_validation_parallel():
-    """Run conservation + electrical benchmarks in parallel on GPU."""
-    log.info("Starting parallel validation (conservation + electrical)")
-
-    with mp.Pool(2) as pool:
-        conservation_future = pool.apply_async(run_conservation_validation, (100000,))
-        electrical_future = pool.apply_async(run_electrical_benchmark, (5000,))
-
-        conservation_result = conservation_future.get(timeout=700)
-        electrical_result = electrical_future.get(timeout=700)
+def run_validation_suite(
+    scenarios: int | None = None,
+    circuits: int | None = None,
+):
+    """Run validation with a single GPU owner to avoid context contention."""
+    scenarios = resolve_validation_scenarios(scenarios)
+    circuits = resolve_electrical_circuits(circuits)
+    log.info(
+        "Starting serialized validation with %s scenarios and %s circuits",
+        f"{scenarios:,}",
+        f"{circuits:,}",
+    )
+    conservation_result = run_conservation_validation(scenarios)
+    electrical_result = run_electrical_benchmark(circuits)
 
     return conservation_result, electrical_result
 
@@ -212,7 +223,7 @@ def run_full_pipeline(opt_trials: int = 10000, opt_workers: int = 4):
     # Phase 1+2: Validation (parallel)
     log.info("\n--- VALIDATION PHASE ---")
     try:
-        cons_result, elec_result = run_validation_parallel()
+        cons_result, elec_result = run_validation_suite()
         summary["phases"]["conservation"] = cons_result
         summary["phases"]["electrical"] = elec_result
 
@@ -223,6 +234,8 @@ def run_full_pipeline(opt_trials: int = 10000, opt_workers: int = 4):
                  f"({cons_result.get('passed', '?')}/{cons_result.get('total_tests', '?')})")
         log.info(f"Electrical: {'PASS' if elec_ok else 'FAIL'} "
                  f"({elec_result.get('passed', '?')}/{elec_result.get('total', '?')})")
+        if not (cons_ok and elec_ok):
+            log.warning("Validation produced failures; proceeding to optimization anyway")
     except Exception as e:
         log.error(f"Validation phase failed: {e}")
         cons_ok = elec_ok = False
@@ -251,16 +264,18 @@ def run_full_pipeline(opt_trials: int = 10000, opt_workers: int = 4):
     return summary
 
 
-def run_validate_only():
-    """Quick validation mode."""
+def run_validate_only(
+    scenarios: int | None = None,
+    circuits: int | None = None,
+):
+    """Validation mode using system-aware scale."""
     log.info("="*60)
     log.info("UNIFIED PHYSICS PIPELINE - VALIDATE ONLY")
     log.info("="*60)
 
     t0 = time.time()
 
-    cons_result = run_conservation_validation(50000)
-    elec_result = run_electrical_benchmark(1000)
+    cons_result, elec_result = run_validation_suite(scenarios, circuits)
 
     elapsed = time.time() - t0
 
@@ -277,6 +292,7 @@ def run_validate_only():
         "conservation": cons_result,
         "electrical": elec_result,
         "all_passed": cons_ok and elec_ok,
+        "system_profile": summarize_profile(),
     }
     with open(SUMMARY_FILE, "w") as f:
         json.dump(summary, f, indent=2)
@@ -290,7 +306,8 @@ def run_optimize_only(trials: int, workers: int):
     log.info(f"UNIFIED PHYSICS PIPELINE - OPTIMIZE ({trials:,} trials)")
     log.info("="*60)
 
-    result = run_chemistry_optimization(trials, workers)
+    tuned_workers = resolve_worker_count("chemistry", workers or None)
+    result = run_chemistry_optimization(trials, tuned_workers)
 
     summary = {"mode": "optimize", "optimization": result}
     with open(SUMMARY_FILE, "w") as f:
@@ -308,8 +325,7 @@ def run_sequential(opt_trials: int = 10000, opt_workers: int = 4):
     t0 = time.time()
 
     # Validate first
-    cons_result = run_conservation_validation(100000)
-    elec_result = run_electrical_benchmark(5000)
+    cons_result, elec_result = run_validation_suite()
 
     cons_ok = cons_result.get("passed", 0) == cons_result.get("total_tests", -1)
     elec_ok = elec_result.get("passed", 0) == elec_result.get("total", -1)
@@ -325,7 +341,8 @@ def run_sequential(opt_trials: int = 10000, opt_workers: int = 4):
         }
     else:
         log.info("Validation passed — proceeding to optimization")
-        opt_result = run_chemistry_optimization(opt_trials, opt_workers)
+        tuned_workers = resolve_worker_count("chemistry", opt_workers or None)
+        opt_result = run_chemistry_optimization(opt_trials, tuned_workers)
         summary = {
             "mode": "sequential",
             "validation_passed": True,
@@ -361,13 +378,20 @@ def main():
 
     parser.add_argument("--trials", type=int, default=10000,
                         help="Optuna trials for optimization (default: 10000)")
-    parser.add_argument("--workers", type=int, default=4,
-                        help="Parallel Optuna workers (default: 4)")
+    parser.add_argument("--workers", type=int, default=0,
+                        help="Parallel Optuna workers (0 = auto-scale to box)")
+    parser.add_argument("--scenarios", type=int, default=0,
+                        help="Validation scenarios (0 = auto-scale to box)")
+    parser.add_argument("--circuits", type=int, default=0,
+                        help="Electrical circuits (0 = auto-scale to box)")
 
     args = parser.parse_args()
 
     log.info(f"Python: {sys.version}")
     log.info(f"Script dir: {SCRIPT_DIR}")
+
+    profile = summarize_profile()
+    log.info("System profile: %s", json.dumps(profile, indent=2, sort_keys=True))
 
     try:
         import cupy
@@ -377,9 +401,9 @@ def main():
         log.info("CuPy not available — will use NumPy (CPU-only)")
 
     if args.full:
-        run_full_pipeline(args.trials, args.workers)
+        run_full_pipeline(args.trials, resolve_worker_count("chemistry", args.workers or None))
     elif args.validate:
-        run_validate_only()
+        run_validate_only(args.scenarios or None, args.circuits or None)
     elif args.optimize:
         run_optimize_only(args.trials, args.workers)
     elif args.sequential:

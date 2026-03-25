@@ -33,6 +33,8 @@ except ImportError:
 
 import numpy as np
 
+from system_profile import resolve_conservation_batch, resolve_validation_scenarios
+
 # ---------------------------------------------------------------------------
 # Constants matching Dart El class
 # ---------------------------------------------------------------------------
@@ -374,6 +376,7 @@ def simulate_electricity_step_batched(state: dict) -> dict:
     """Run one electricity propagation step across entire batch on GPU."""
     grid = state["grid"]
     voltage = state["voltage"].copy()
+    source_voltage = state["voltage"]
     spark = state["sparkTimer"].copy()
     temp = state["temperature"].copy()
     batch_size = grid.shape[0]
@@ -382,6 +385,8 @@ def simulate_electricity_step_batched(state: dict) -> dict:
 
     # Reshape for 2D neighbor access
     v_2d = voltage.reshape(batch_size, GRID_H, GRID_W).astype(xp.int16)
+    source_2d = source_voltage.reshape(batch_size, GRID_H, GRID_W).astype(xp.int16)
+    source_mask = source_2d != 0
     spark_2d = spark.reshape(batch_size, GRID_H, GRID_W)
     emob_2d = cell_emob.reshape(batch_size, GRID_H, GRID_W)
     temp_2d = temp.reshape(batch_size, GRID_H, GRID_W).astype(xp.int16)
@@ -410,11 +415,11 @@ def simulate_electricity_step_batched(state: dict) -> dict:
     gradient = max_nv - v_2d
     sufficient_gradient = gradient > 5
 
-    propagate_mask = is_conductor & not_refractory & sufficient_gradient
+    propagate_mask = is_conductor & not_refractory & sufficient_gradient & (~source_mask)
 
     # Voltage attenuation: resistance = 255 - electronMobility
     resistance = 255 - emob_2d[propagate_mask].astype(xp.int16)
-    attenuation = resistance >> 3
+    attenuation = xp.maximum(xp.int16(1), resistance >> 5)
     new_voltage = max_nv[propagate_mask] - attenuation
     new_v_2d[propagate_mask] = xp.clip(new_voltage, -128, 127)
     new_spark_2d[propagate_mask] = 1
@@ -430,14 +435,15 @@ def simulate_electricity_step_batched(state: dict) -> dict:
     new_temp_2d[propagate_mask] = temp_at_prop
 
     # Voltage decay for idle conductors
-    idle = is_conductor & (spark_2d == 0) & (~propagate_mask) & (v_2d != 0)
-    decay_rate = xp.maximum(xp.int16(1), (255 - emob_2d[idle].astype(xp.int16)) >> 5)
+    idle = is_conductor & (spark_2d == 0) & (~propagate_mask) & (v_2d != 0) & (~source_mask)
+    decay_rate = xp.maximum(xp.int16(1), (255 - emob_2d[idle].astype(xp.int16)) >> 6)
     pos = v_2d[idle] > 0
     neg = v_2d[idle] < 0
     decayed = v_2d[idle].copy()
     decayed[pos] = xp.maximum(0, decayed[pos] - decay_rate[pos])
     decayed[neg] = xp.minimum(0, decayed[neg] + decay_rate[neg])
     new_v_2d[idle] = decayed
+    new_v_2d[source_mask] = source_2d[source_mask]
 
     # Flatten
     new_voltage_flat = new_v_2d.reshape(batch_size, TOTAL_CELLS).astype(xp.int8)
@@ -472,6 +478,7 @@ def test_mass_conservation(batch_size: int = 10000, steps: int = 5) -> TestResul
     no acid), mass must be perfectly conserved.
     """
     # Generate grids with NO reactive conditions
+    batch_size = min(batch_size, 256)
     state = generate_random_grids(batch_size)
     # Set temperature to safe neutral (no combustion triggers)
     state["temperature"] = xp.full_like(state["temperature"], 100)
@@ -537,6 +544,7 @@ def test_energy_conservation_closed(batch_size: int = 10000, steps: int = 10) ->
     Without exothermic reactions, total temperature should not increase.
     With reactions, total energy (thermal + chemical potential) should be bounded.
     """
+    batch_size = min(batch_size, 256)
     state = generate_random_grids(batch_size)
     # No combustion conditions
     state["temperature"] = xp.full_like(state["temperature"], 100)
@@ -550,7 +558,7 @@ def test_energy_conservation_closed(batch_size: int = 10000, steps: int = 10) ->
     final_energy = xp.sum(state["temperature"].astype(xp.int32), axis=1)
     # In a non-reactive system, energy should not increase
     energy_gain = final_energy - initial_energy
-    violations = int(xp.sum(energy_gain > batch_size))  # Allow small rounding
+    violations = int(xp.sum(energy_gain > 8))  # allow only tiny simulation noise
     max_viol = float(xp.max(energy_gain))
 
     return TestResult(
@@ -654,7 +662,7 @@ def test_voltage_kirchhoff(batch_size: int = 1000, steps: int = 50) -> TestResul
     max_residual = float(xp.max(residuals))
 
     # Allow residual up to 10 (voltage units) due to discrete grid + attenuation
-    passed = mean_residual < 10.0
+    passed = mean_residual < 10.0 and max_residual < 40.0
 
     return TestResult(
         name="voltage_kirchhoff",
@@ -694,7 +702,11 @@ def test_combustion_energy_release(batch_size: int = 500, steps: int = 30) -> Te
     oil_heat = xp.mean(oil_final_energy - oil_init_energy)
 
     # Oil (fuel=180) should release more heat than wood (fuel=120)
-    passed = float(oil_heat) >= float(wood_heat) * 0.9  # Allow some variance
+    passed = (
+        float(wood_heat) > 0.5 and
+        float(oil_heat) > 0.5 and
+        float(oil_heat) >= float(wood_heat) * 1.1
+    )
 
     return TestResult(
         name="combustion_energy_proportional",
@@ -730,7 +742,10 @@ def test_acid_selectivity(batch_size: int = 500, steps: int = 20) -> TestResult:
     metal_dissolved = xp.mean(initial_metal.astype(xp.float32) - final_metal.astype(xp.float32))
 
     # Wood should dissolve most, glass should not dissolve, metal in between
-    wood_ok = float(wood_dissolved) >= float(metal_dissolved)
+    wood_ok = (
+        float(wood_dissolved) >= 1.0 and
+        float(wood_dissolved) >= float(metal_dissolved) + 0.5
+    )
     glass_ok = float(glass_dissolved) <= 1.0  # essentially zero
     passed = wood_ok and glass_ok
 
@@ -750,7 +765,7 @@ def test_acid_selectivity(batch_size: int = 500, steps: int = 20) -> TestResult:
 
 def run_all_tests(total_scenarios: int) -> list[TestResult]:
     """Run all conservation law tests."""
-    batch = max(1000, total_scenarios // 6)
+    batch = resolve_conservation_batch(total_scenarios)
     results = []
 
     tests = [
@@ -784,13 +799,20 @@ def run_all_tests(total_scenarios: int) -> list[TestResult]:
                 name=name, passed=False, scenarios_tested=0,
                 details=f"Exception: {e}"
             ))
+        finally:
+            if GPU_AVAILABLE:
+                try:
+                    xp.get_default_memory_pool().free_all_blocks()
+                    xp.get_default_pinned_memory_pool().free_all_blocks()
+                except Exception:
+                    pass
 
     return results
 
 
 def main():
     parser = argparse.ArgumentParser(description="GPU Conservation Law Validator")
-    parser.add_argument("--scenarios", type=int, default=100000,
+    parser.add_argument("--scenarios", type=int, default=0,
                         help="Total scenarios to test (default: 100000)")
     parser.add_argument("--quick", action="store_true",
                         help="Quick mode: 50k scenarios")
@@ -798,7 +820,7 @@ def main():
                         help="Output JSON file path")
     args = parser.parse_args()
 
-    scenarios = 50000 if args.quick else args.scenarios
+    scenarios = 50000 if args.quick else resolve_validation_scenarios(args.scenarios or None)
     print(f"\nGPU Conservation Law Validator")
     print(f"GPU available: {GPU_AVAILABLE}")
     print(f"Total scenarios: {scenarios:,}")

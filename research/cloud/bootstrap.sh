@@ -21,6 +21,7 @@ export DEBIAN_FRONTEND=noninteractive
 VENV_DIR="$HOME/research_env"
 PROJECT_DIR="$HOME/pe"
 REPO_URL="https://github.com/Nickalus12/The-Particle-Engine.git"
+FLUTTER_DIR="$HOME/flutter"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -43,6 +44,7 @@ sudo apt-get update -qq
 sudo apt-get install -y -qq \
     python3 python3-pip python3-venv \
     apt-transport-https wget gnupg2 git curl \
+    unzip xz-utils zip libglu1-mesa clang cmake ninja-build pkg-config libgtk-3-dev \
     build-essential libffi-dev libssl-dev \
     bc jq \
     2>&1 | tail -3
@@ -61,11 +63,13 @@ pip install --upgrade pip -q
 pip install -q \
     numpy scipy \
     optuna \
+    cmaes \
     neat-python \
     hypothesis \
     "pytest>=7.0" pytest-xdist \
     Pillow \
     scikit-image \
+    scikit-learn \
     colour-science \
     2>&1 | tail -3
 
@@ -141,13 +145,27 @@ if command -v dart &> /dev/null; then
     success "Dart already installed: $(dart --version 2>&1)"
 else
     wget -qO- https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo gpg --dearmor -o /usr/share/keyrings/dart.gpg 2>/dev/null
-    echo 'deb [signed-by=/usr/share/keyrings/dart.gpg arch=amd64] https://storage.googleapis.com/dart-archive/channels/stable/release/latest/linux_packages/debian stable main' \
+    echo 'deb [signed-by=/usr/share/keyrings/dart.gpg arch=amd64] https://storage.googleapis.com/download.dartlang.org/linux/debian stable main' \
         | sudo tee /etc/apt/sources.list.d/dart_stable.list > /dev/null
     sudo apt-get update -qq
     sudo apt-get install -y -qq dart
     export PATH="$PATH:/usr/lib/dart/bin"
-    echo 'export PATH="$PATH:/usr/lib/dart/bin"' >> ~/.bashrc
+    grep -qxF 'export PATH="$PATH:/usr/lib/dart/bin"' ~/.bashrc || echo 'export PATH="$PATH:/usr/lib/dart/bin"' >> ~/.bashrc
     success "Dart installed: $(dart --version 2>&1)"
+fi
+
+# ==========================================================================
+# 3b. Flutter SDK
+# ==========================================================================
+log "Installing Flutter SDK..."
+if [ -x "$FLUTTER_DIR/bin/flutter" ]; then
+    success "Flutter already installed: $("$FLUTTER_DIR/bin/flutter" --version 2>/dev/null | head -1)"
+else
+    rm -rf "$FLUTTER_DIR"
+    git clone --depth 1 --branch stable https://github.com/flutter/flutter.git "$FLUTTER_DIR"
+    grep -qxF 'export PATH="$PATH:$HOME/flutter/bin"' ~/.bashrc || echo 'export PATH="$PATH:$HOME/flutter/bin"' >> ~/.bashrc
+    export PATH="$PATH:$FLUTTER_DIR/bin"
+    success "Flutter installed"
 fi
 
 # ==========================================================================

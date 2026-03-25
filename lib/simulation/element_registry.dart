@@ -24,6 +24,7 @@ class El {
   static const int lightning = 5;
   static const int seed = 6;
   static const int stone = 7;
+  static const int bedrock = stone; // Legacy alias for structural anchor logic.
   static const int tnt = 8;
   static const int rainbow = 9;
   static const int mud = 10;

@@ -65,10 +65,12 @@ from parameter_contract import (  # noqa: E402
     resolve_manifest_path,
     write_trial_config,
 )
+from system_profile import resolve_chemistry_batches, resolve_worker_count  # noqa: E402
 
 STUDY_DB = SCRIPT_DIR.parent / "chemistry_optuna_study.db"
 RESULTS_FILE = SCRIPT_DIR / "chemistry_optimization_results.json"
 BEST_CONFIG_FILE = SCRIPT_DIR / "chemistry_best_trial_config.json"
+CHEMISTRY_BATCHES = resolve_chemistry_batches()
 
 # ---------------------------------------------------------------------------
 # Parameter space definition
@@ -216,8 +218,13 @@ def build_property_arrays(params: dict) -> dict[str, Any]:
     }
 
 
-def run_combustion_scenario(props: dict, batch_size: int = 200, steps: int = 40) -> dict:
+def run_combustion_scenario(
+    props: dict,
+    batch_size: int | None = None,
+    steps: int = 40,
+) -> dict:
     """Score combustion behavior: fire spread rate, heat production, product formation."""
+    batch_size = batch_size or CHEMISTRY_BATCHES["combustion"]
     grid = xp.zeros((batch_size, GRID_H, GRID_W), dtype=xp.uint8)
     temp = xp.full((batch_size, GRID_H, GRID_W), 128, dtype=xp.uint8)
     oxid = xp.full((batch_size, GRID_H, GRID_W), 128, dtype=xp.uint8)
@@ -307,8 +314,13 @@ def run_combustion_scenario(props: dict, batch_size: int = 200, steps: int = 40)
     }
 
 
-def run_corrosion_scenario(props: dict, batch_size: int = 100, steps: int = 100) -> dict:
+def run_corrosion_scenario(
+    props: dict,
+    batch_size: int | None = None,
+    steps: int = 100,
+) -> dict:
     """Score corrosion behavior: rust formation rate should be slow and steady."""
+    batch_size = batch_size or CHEMISTRY_BATCHES["corrosion"]
     grid = xp.zeros((batch_size, GRID_H, GRID_W), dtype=xp.uint8)
     oxid = xp.full((batch_size, GRID_H, GRID_W), 128, dtype=xp.uint8)
     moisture = xp.zeros((batch_size, GRID_H, GRID_W), dtype=xp.uint8)
@@ -370,8 +382,13 @@ def run_corrosion_scenario(props: dict, batch_size: int = 100, steps: int = 100)
     }
 
 
-def run_acid_scenario(props: dict, batch_size: int = 100, steps: int = 30) -> dict:
+def run_acid_scenario(
+    props: dict,
+    batch_size: int | None = None,
+    steps: int = 30,
+) -> dict:
     """Score acid dissolution: should dissolve weak materials, not strong ones."""
+    batch_size = batch_size or CHEMISTRY_BATCHES["acid"]
     grid = xp.zeros((batch_size, GRID_H, GRID_W), dtype=xp.uint8)
     oxid = xp.full((batch_size, GRID_H, GRID_W), 128, dtype=xp.uint8)
 
@@ -437,8 +454,13 @@ def run_acid_scenario(props: dict, batch_size: int = 100, steps: int = 30) -> di
     }
 
 
-def run_electrical_scenario(props: dict, batch_size: int = 100, steps: int = 50) -> dict:
+def run_electrical_scenario(
+    props: dict,
+    batch_size: int | None = None,
+    steps: int = 50,
+) -> dict:
     """Score electricity: current should flow through metal, attenuate in water."""
+    batch_size = batch_size or CHEMISTRY_BATCHES["electrical"]
     grid = xp.zeros((batch_size, GRID_H, GRID_W), dtype=xp.uint8)
     voltage = xp.zeros((batch_size, GRID_H, GRID_W), dtype=xp.int8)
 
@@ -599,8 +621,9 @@ def _canonical_result_payload(params: dict[str, Any]) -> dict[str, Any]:
 # Runner
 # ---------------------------------------------------------------------------
 
-def run_optimization(n_trials: int, n_workers: int = 1):
+def run_optimization(n_trials: int, n_workers: int | None = None):
     """Run Optuna optimization with given number of trials."""
+    n_workers = resolve_worker_count("chemistry", n_workers)
     storage_url = f"sqlite:///{STUDY_DB}"
     study_name = "unified_chemistry_v1"
 
@@ -720,7 +743,8 @@ def main():
 
     run_p = sub.add_parser("run", help="Run optimization")
     run_p.add_argument("--trials", type=int, default=10000)
-    run_p.add_argument("--workers", type=int, default=1)
+    run_p.add_argument("--workers", type=int, default=0,
+                       help="Parallel workers (0 = auto-tune for host)")
 
     show_p = sub.add_parser("show", help="Show results")
     show_p.add_argument("--top", type=int, default=10)

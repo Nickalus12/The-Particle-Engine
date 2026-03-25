@@ -1,10 +1,70 @@
 {
   "contract_version": 1,
   "parameter_manifest": "../parameter_manifest.json",
-  "default_profile": "a100_foundation",
+  "default_profile": "cloud_foundation",
   "profiles": {
+    "cloud_foundation": {
+      "description": "Auto-scaled cloud foundation profile for staged calibration plus chemistry and world-generation search.",
+      "gpu": "auto",
+      "vcpus": 0,
+      "workers": 0,
+      "trials": 4000,
+      "mode": "full-stack",
+      "warm_start": true,
+      "multi_fidelity": true
+      ,
+      "validation_mode": "standard"
+    },
+    "cloud_staged": {
+      "description": "Auto-scaled cloud profile focused on staged Optuna optimization over the canonical runtime surface.",
+      "gpu": "auto",
+      "vcpus": 0,
+      "workers": 0,
+      "trials": 5000,
+      "mode": "staged",
+      "warm_start": true,
+      "multi_fidelity": true
+      ,
+      "validation_mode": "standard"
+    },
+    "cloud_chemistry": {
+      "description": "Auto-scaled cloud profile focused on GPU chemistry-property search.",
+      "gpu": "auto",
+      "vcpus": 0,
+      "workers": 0,
+      "trials": 15000,
+      "mode": "chemistry",
+      "warm_start": false,
+      "multi_fidelity": false
+      ,
+      "validation_mode": "standard"
+    },
+    "cloud_worldgen": {
+      "description": "Auto-scaled cloud profile focused on canonical world-generation calibration.",
+      "gpu": "auto",
+      "vcpus": 0,
+      "workers": 0,
+      "trials": 8000,
+      "mode": "worldgen",
+      "warm_start": false,
+      "multi_fidelity": false
+      ,
+      "validation_mode": "standard"
+    },
+    "cloud_legacy_fast": {
+      "description": "Compatibility profile using the legacy cloud runner with the shared contract.",
+      "gpu": "auto",
+      "vcpus": 0,
+      "workers": 0,
+      "trials": 3000,
+      "mode": "legacy",
+      "warm_start": false,
+      "multi_fidelity": false
+      ,
+      "validation_mode": "quick"
+    },
     "a100_foundation": {
-      "description": "A100 profile for staged material calibration plus chemistry and world-generation search.",
+      "description": "Legacy alias for the older A100 foundation profile; preserved for compatibility.",
       "gpu": "a100",
       "vcpus": 16,
       "workers": 8,
@@ -14,7 +74,7 @@
       "multi_fidelity": true
     },
     "a100_staged": {
-      "description": "A100 profile focused on staged Optuna optimization over the canonical runtime surface.",
+      "description": "Legacy alias for the older A100 staged profile; preserved for compatibility.",
       "gpu": "a100",
       "vcpus": 16,
       "workers": 8,
@@ -24,7 +84,7 @@
       "multi_fidelity": true
     },
     "a100_chemistry": {
-      "description": "A100 profile focused on GPU chemistry-property search.",
+      "description": "Legacy alias for the older A100 chemistry profile; preserved for compatibility.",
       "gpu": "a100",
       "vcpus": 16,
       "workers": 4,
@@ -34,7 +94,7 @@
       "multi_fidelity": false
     },
     "a100_worldgen": {
-      "description": "A100 profile focused on canonical world-generation calibration.",
+      "description": "Legacy alias for the older A100 world-generation profile; preserved for compatibility.",
       "gpu": "a100",
       "vcpus": 16,
       "workers": 6,
@@ -44,7 +104,7 @@
       "multi_fidelity": false
     },
     "vm_legacy_fast": {
-      "description": "Compatibility profile using the legacy cloud runner with the shared contract.",
+      "description": "Legacy alias for the older compatibility cloud runner profile.",
       "gpu": "a100",
       "vcpus": 12,
       "workers": 6,

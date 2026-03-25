@@ -53,6 +53,7 @@ from proper_benchmark import (
     DEFAULT_PARAMS, PARAM_SPACE, PARAM_GROUPS, _INT_PARAMS,
     score_all, compute_aggregate, compute_sensitivity,
 )
+from system_profile import resolve_worker_count
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -114,7 +115,11 @@ def rank_parameters_with_fanova(n_random_trials: int = 200,
     needed = max(0, n_random_trials - existing)
     if needed > 0:
         print(f"  Running {needed} random exploration trials for fANOVA...", flush=True)
-        study.optimize(objective, n_trials=needed, n_jobs=4)
+        study.optimize(
+            objective,
+            n_trials=needed,
+            n_jobs=resolve_worker_count("fanova"),
+        )
 
     # Run fANOVA
     evaluator = optuna.importance.FanovaImportanceEvaluator(seed=42)
@@ -230,7 +235,8 @@ def optimize_group(group_params: list[str],
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
     n_group = len(group_params)
-    actual_workers = min(n_workers, 4)  # CMA-ES works better with fewer parallel
+    tuned_workers = resolve_worker_count("staged", n_workers)
+    actual_workers = min(tuned_workers, 8)
 
     # Build CMA-ES sampler with optional warm start
     sampler_kwargs = {"seed": 42}
@@ -392,7 +398,11 @@ def tune_interactions(current_best: dict[str, Any],
         return agg["physics"]
 
     start = time.time()
-    study.optimize(objective, n_trials=n_trials, n_jobs=4)
+    study.optimize(
+        objective,
+        n_trials=n_trials,
+        n_jobs=min(resolve_worker_count("staged"), 8),
+    )
     elapsed = time.time() - start
 
     result = dict(current_best)
@@ -766,8 +776,8 @@ def main():
 
     parser.add_argument("--trials", type=int, default=300,
                         help="Trials per group (default: 300)")
-    parser.add_argument("--workers", type=int, default=4,
-                        help="Parallel workers (default: 4)")
+    parser.add_argument("--workers", type=int, default=0,
+                        help="Parallel workers (0 = auto-tune for host)")
     parser.add_argument("--warm-start", action="store_true",
                         help="Warm-start from previous best params")
     parser.add_argument("--multi-fidelity", action="store_true",

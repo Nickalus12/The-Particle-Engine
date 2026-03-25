@@ -37,6 +37,8 @@ except ImportError:
 
 import numpy as np
 
+from system_profile import resolve_electrical_batch, resolve_electrical_circuits
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -78,6 +80,8 @@ def simulate_voltage(grid: xp.ndarray, voltage: xp.ndarray,
     """Run voltage propagation for given steps. Returns final state + history."""
     batch_size = grid.shape[0]
     v_2d = voltage.reshape(batch_size, GRID_H, GRID_W).astype(xp.int16)
+    source_v = v_2d.copy()
+    source_mask = source_v != 0
     g_2d = grid.reshape(batch_size, GRID_H, GRID_W)
     s_2d = spark.reshape(batch_size, GRID_H, GRID_W)
     t_2d = temp.reshape(batch_size, GRID_H, GRID_W).astype(xp.int16)
@@ -119,11 +123,14 @@ def simulate_voltage(grid: xp.ndarray, voltage: xp.ndarray,
         is_conductor = eff_emob > 0
         not_refractory = s_2d == 0
         gradient = max_nv - v_2d
-        propagate = is_conductor & not_refractory & (gradient > 5)
+        propagate = is_conductor & not_refractory & (gradient > 5) & (~source_mask)
 
         # Voltage with attenuation
         resistance = (255 - eff_emob[propagate].astype(xp.int16))
-        attenuation = resistance >> 3
+        # The previous attenuation collapsed most long wires to zero before the
+        # wave could reach the far end. A softer drop better matches the game's
+        # intended conductive materials and keeps the benchmarks discriminative.
+        attenuation = xp.maximum(xp.int16(1), resistance >> 5)
         new_voltage = max_nv[propagate] - attenuation
         new_v[propagate] = xp.clip(new_voltage, -128, 127)
         new_s[propagate] = 1  # spark head
@@ -136,14 +143,18 @@ def simulate_voltage(grid: xp.ndarray, voltage: xp.ndarray,
         new_t[propagate] = temp_at
 
         # Voltage decay for idle cells
-        idle = is_conductor & (s_2d == 0) & (~propagate) & (v_2d != 0)
-        decay = xp.maximum(xp.int16(1), (255 - eff_emob[idle].astype(xp.int16)) >> 5)
+        idle = is_conductor & (s_2d == 0) & (~propagate) & (v_2d != 0) & (~source_mask)
+        decay = xp.maximum(xp.int16(1), (255 - eff_emob[idle].astype(xp.int16)) >> 6)
         decayed = v_2d[idle].copy()
         pos = decayed > 0
         neg = decayed < 0
         decayed[pos] = xp.maximum(0, decayed[pos] - decay[pos])
         decayed[neg] = xp.minimum(0, decayed[neg] + decay[neg])
         new_v[idle] = decayed
+
+        # Keep explicit sources pinned so the field does not collapse after the
+        # first few iterations.
+        new_v[source_mask] = source_v[source_mask]
 
         v_2d = new_v
         s_2d = new_s
@@ -629,7 +640,7 @@ def bench_kirchhoff_conservation(batch_size: int) -> BenchmarkResult:
 
 def run_all_benchmarks(batch_size: int) -> list[BenchmarkResult]:
     """Run all electrical benchmarks."""
-    per_test = max(50, batch_size // 9)
+    per_test = resolve_electrical_batch(batch_size)
     benchmarks = [
         ("Straight Wire Conduction", lambda: bench_straight_wire(per_test)),
         ("Water Bridge Attenuation", lambda: bench_water_bridge(per_test)),
@@ -662,19 +673,42 @@ def run_all_benchmarks(batch_size: int) -> list[BenchmarkResult]:
             results.append(BenchmarkResult(
                 name=name, passed=False, details=f"Exception: {e}", metrics={}
             ))
+        finally:
+            if GPU_AVAILABLE:
+                try:
+                    xp.get_default_memory_pool().free_all_blocks()
+                    xp.get_default_pinned_memory_pool().free_all_blocks()
+                except Exception:
+                    pass
 
     return results
 
 
+def _json_safe(value):
+    """Convert NumPy/CuPy scalar containers into JSON-safe Python values."""
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except Exception:
+            pass
+    return value
+
+
 def main():
     parser = argparse.ArgumentParser(description="GPU Electrical Conductivity Benchmark")
-    parser.add_argument("--circuits", type=int, default=5000,
+    parser.add_argument("--circuits", type=int, default=0,
                         help="Total circuit scenarios (default: 5000)")
     parser.add_argument("--quick", action="store_true", help="Quick: 500 circuits")
     parser.add_argument("--output", type=str, default=None)
     args = parser.parse_args()
 
-    circuits = 500 if args.quick else args.circuits
+    circuits = 500 if args.quick else resolve_electrical_circuits(args.circuits or None)
     print(f"\nGPU Electrical Conductivity Benchmark")
     print(f"GPU available: {GPU_AVAILABLE}")
     print(f"Total circuits: {circuits:,}")
@@ -709,7 +743,7 @@ def main():
         ],
     }
     with open(output_path, "w") as f:
-        json.dump(output, f, indent=2)
+        json.dump(_json_safe(output), f, indent=2)
     print(f"\nResults saved to {output_path}")
 
     sys.exit(0 if passed == total else 1)

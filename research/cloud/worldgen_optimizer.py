@@ -53,6 +53,7 @@ from parameter_contract import (  # noqa: E402
     resolve_manifest_path,
     write_trial_config,
 )
+from system_profile import resolve_worker_count  # noqa: E402
 
 STUDY_DB = RESEARCH_DIR / "worldgen_optuna_study.db"
 RESULTS_FILE = RESEARCH_DIR / "worldgen_optimization_results.json"
@@ -509,7 +510,7 @@ def main():
     parser = argparse.ArgumentParser(description="World Generation Optimizer")
     parser.add_argument("--trials", type=int, default=1000,
                        help="Total Optuna trials to run")
-    parser.add_argument("--workers", type=int, default=4,
+    parser.add_argument("--workers", type=int, default=0,
                        help="Number of parallel worker processes")
     parser.add_argument("--show", action="store_true",
                        help="Show best results from existing study")
@@ -533,8 +534,10 @@ def main():
         log.error("Optuna required: pip install optuna")
         sys.exit(1)
 
+    worker_count = resolve_worker_count("worldgen", args.workers or None)
+
     log.info(f"GPU available: {HAS_GPU}")
-    log.info(f"Starting {args.trials} trials across {args.workers} workers")
+    log.info(f"Starting {args.trials} trials across {worker_count} workers")
 
     # Create or load study.
     study = optuna.create_study(
@@ -545,11 +548,11 @@ def main():
         load_if_exists=True,
     )
 
-    trials_per_worker = args.trials // args.workers
-    remainder = args.trials % args.workers
+    trials_per_worker = args.trials // worker_count
+    remainder = args.trials % worker_count
 
     processes = []
-    for w in range(args.workers):
+    for w in range(worker_count):
         n = trials_per_worker + (1 if w < remainder else 0)
         p = mp.Process(target=_run_worker,
                       args=(w, n, "worldgen_optimizer", str(STUDY_DB)))
