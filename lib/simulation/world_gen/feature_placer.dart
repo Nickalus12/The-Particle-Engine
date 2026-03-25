@@ -459,9 +459,13 @@ class FeaturePlacer {
       if (rng.nextDouble() > config.waterLevel * 0.8) continue;
 
       for (var fx = 0; fx < config.width; fx++) {
-        if (heightmap[fx] >= waterSurface) continue;
-        for (var fy = waterSurface; fy >= heightmap[fx]; fy--) {
-          if (fy < 0) break;
+        // Only fill columns where terrain is below the water surface
+        // (heightmap = y of terrain; larger y = lower on screen)
+        if (heightmap[fx] <= waterSurface) continue;
+        // Fill downward from water surface to terrain
+        for (var fy = waterSurface; fy < heightmap[fx]; fy++) {
+          if (fy < 0) continue;
+          if (fy >= config.height) break;
           if (data.get(fx, fy) == El.empty) {
             data.set(fx, fy, El.water);
             data.setTemp(fx, fy, 120); // slightly cool water
