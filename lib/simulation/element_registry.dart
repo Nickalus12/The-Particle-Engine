@@ -739,19 +739,21 @@ final Uint8List elCategory = () {
 /// Sized to [maxElements] for extensibility.
 final Uint8List neverSettle = () {
   final t = Uint8List(maxElements);
+  // ALL liquids, gases, and granulars must never settle — they need continuous
+  // physics (gravity, flow, pressure). Settling makes them freeze in place.
+  for (int i = 0; i < maxElements; i++) {
+    final state = elementPhysicsState[i];
+    if (state == PhysicsState.liquid.index ||
+        state == PhysicsState.gas.index ||
+        state == PhysicsState.granular.index) {
+      t[i] = 1;
+    }
+  }
+  // Active solids that have ongoing behavior (reactions, growth, AI)
   for (final el in [
-    El.lava, El.fire, El.smoke, El.steam, El.bubble, El.acid, El.ash,
-    El.ant, El.plant, El.dirt, El.wood, El.metal, El.oil, El.mud,
-    El.snow, El.rainbow,
-    El.oxygen, El.co2, El.fungus, El.spore, El.compost, El.methane,
-    El.algae, El.honey, El.hydrogen, El.sulfur, El.web,
+    El.lava, El.fire, El.ant, El.plant,
+    El.rainbow, El.fungus, El.spore,
     El.seaweed, El.moss, El.vine, El.flower, El.root, El.thorn,
-    // Periodic table: gases, radioactives, reactive elements
-    El.helium, El.neon, El.argon, El.krypton, El.xenon, El.radon,
-    El.lithium, El.sodium, El.potassium, El.rubidium, El.cesium, El.francium,
-    El.fluorine, El.chlorine, El.bromine,
-    El.nitrogen, El.phosphorus,
-    El.mercury, El.gallium,
     El.radium, El.thorium, El.plutonium, El.americium,
   ]) {
     t[el] = 1;
