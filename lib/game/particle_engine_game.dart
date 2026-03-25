@@ -392,23 +392,9 @@ class ParticleEngineGame extends FlameGame
     }
 
     // -- Vertical (always clamped) --
-    // INNOVATION: Sticky Ground and dynamic clamping
-    // We want to ensure the "baseline" (ground surface) is visible and not
-    // entirely obscured by the HUD.
-    final groundBaseline = cameraHeight * 0.75; // Estimated baseline
     final minY = halfH;
-    // Allow scrolling slightly past the bottom to clear the HUD
-    final maxY = cameraHeight - halfH + (80 / zoom); 
-    
+    final maxY = cameraHeight - halfH;
     double y = pos.y;
-    
-    // Sticky Ground: if we are close to the baseline, prefer it.
-    // This makes the camera "feel" the ground as a natural resting point.
-    if ((y - groundBaseline).abs() < 40 / zoom) {
-       // Smoothly pull toward baseline
-       y = y * 0.9 + groundBaseline * 0.1;
-    }
-
     y = minY < maxY ? y.clamp(minY, maxY) : cameraHeight / 2;
 
     camera.viewfinder.position = Vector2(x, y);

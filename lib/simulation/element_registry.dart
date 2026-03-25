@@ -1139,7 +1139,7 @@ void _initElementProperties() {
   );
   // Ice
   elementProperties[El.ice] = const ElementProperties(
-    density: 90, gravity: 1, state: PhysicsState.solid,
+    density: 90, gravity: 1, state: PhysicsState.solid, // < water(100) so ice floats via fallSolid density check
     heatConductivity: 0.6, meltPoint: 40, meltsInto: El.water,
     baseTemperature: 20, corrosionResistance: 40,
     hardness: 40, windResistance: 1.0,

@@ -408,6 +408,7 @@ class FeaturePlacer {
                 final wy = y - py;
                 if (data.inBounds(px, wy) && data.get(px, wy) == El.empty) {
                   data.set(px, wy, El.water);
+                  data.setTemp(px, wy, 115); // cool underground water
                 }
               }
             }
@@ -459,10 +460,11 @@ class FeaturePlacer {
 
       for (var fx = 0; fx < config.width; fx++) {
         if (heightmap[fx] >= waterSurface) continue;
-        for (var fy = waterSurface; fy < heightmap[fx]; fy--) {
+        for (var fy = waterSurface; fy >= heightmap[fx]; fy--) {
           if (fy < 0) break;
           if (data.get(fx, fy) == El.empty) {
             data.set(fx, fy, El.water);
+            data.setTemp(fx, fy, 120); // slightly cool water
             waterFilled[fx] = true;
           }
         }
@@ -481,6 +483,7 @@ class FeaturePlacer {
           if (y >= heightmap[x]) break;
           if (data.get(x, y) == El.empty) {
             data.set(x, y, El.water);
+            data.setTemp(x, y, 120); // slightly cool surface water
           }
         }
       }
@@ -697,6 +700,7 @@ class FeaturePlacer {
           for (var dy = 0; dy < 3; dy++) {
             if (data.get(x, sourceY - dy) == El.empty) {
               data.set(x, sourceY - dy, El.water);
+              data.setTemp(x, sourceY - dy, 120);
             }
           }
           placed++;
@@ -736,9 +740,11 @@ class FeaturePlacer {
       final surfaceY = heightmap[x];
       if (data.get(x, surfaceY) == El.dirt) {
         data.set(x, surfaceY, El.snow);
+        data.setTemp(x, surfaceY, 80); // cold snow
       }
       if (surfaceY > 0 && data.get(x, surfaceY - 1) == El.empty) {
         data.set(x, surfaceY - 1, El.snow);
+        data.setTemp(x, surfaceY - 1, 80); // cold snow
       }
     }
   }
