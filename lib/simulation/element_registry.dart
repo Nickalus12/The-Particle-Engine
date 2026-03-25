@@ -737,29 +737,7 @@ final Uint8List elCategory = () {
 
 /// Elements that must never settle (have ongoing time-based behaviors).
 /// Sized to [maxElements] for extensibility.
-final Uint8List neverSettle = () {
-  final t = Uint8List(maxElements);
-  // ALL liquids, gases, and granulars must never settle — they need continuous
-  // physics (gravity, flow, pressure). Settling makes them freeze in place.
-  for (int i = 0; i < maxElements; i++) {
-    final state = elementPhysicsState[i];
-    if (state == PhysicsState.liquid.index ||
-        state == PhysicsState.gas.index ||
-        state == PhysicsState.granular.index) {
-      t[i] = 1;
-    }
-  }
-  // Active solids that have ongoing behavior (reactions, growth, AI)
-  for (final el in [
-    El.lava, El.fire, El.ant, El.plant,
-    El.rainbow, El.fungus, El.spore,
-    El.seaweed, El.moss, El.vine, El.flower, El.root, El.thorn,
-    El.radium, El.thorium, El.plutonium, El.americium,
-  ]) {
-    t[el] = 1;
-  }
-  return t;
-}();
+final Uint8List neverSettle = Uint8List(maxElements);
 
 // ---------------------------------------------------------------------------
 // Batch neighbor-check lookup tables (for checkAdjacentAnyOf)
@@ -2256,6 +2234,29 @@ void _rebuildPropertyLookups() {
     elementDielectric[i] = p.dielectric;
     elementReactivity[i] = p.reactivity;
     elementBaseMass[i] = p.baseMass;
+  }
+
+  // Rebuild neverSettle: ALL liquids, gases, granulars, and powders must
+  // never settle — they need continuous physics (gravity, flow, pressure).
+  // This MUST run after elementPhysicsState is populated above.
+  neverSettle.fillRange(0, maxElements, 0);
+  for (int i = 0; i < maxElements; i++) {
+    final state = elementPhysicsState[i];
+    if (state == PhysicsState.liquid.index ||
+        state == PhysicsState.gas.index ||
+        state == PhysicsState.granular.index ||
+        state == PhysicsState.powder.index) {
+      neverSettle[i] = 1;
+    }
+  }
+  // Active solids that have ongoing behavior (reactions, growth, AI)
+  for (final el in [
+    El.lava, El.fire, El.ant, El.plant,
+    El.rainbow, El.fungus, El.spore,
+    El.seaweed, El.moss, El.vine, El.flower, El.root, El.thorn,
+    El.radium, El.thorium, El.plutonium, El.americium,
+  ]) {
+    neverSettle[el] = 1;
   }
 }
 
