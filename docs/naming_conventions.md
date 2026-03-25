@@ -26,12 +26,12 @@ Names should describe responsibility, not hype, novelty, or experiment status.
 - Benchmark spine: [`/home/nickalus/code/The-Particle-Engine/research/benchmark.py`](/home/nickalus/code/The-Particle-Engine/research/benchmark.py)
 
 ## Current Legacy / Transitional Names
-- [`/home/nickalus/code/The-Particle-Engine/research/cloud/run_optimizer.py`](/home/nickalus/code/The-Particle-Engine/research/cloud/run_optimizer.py)
-  Legacy cloud optimizer runner. Still useful, but no longer the canonical top-level entrypoint.
+- [`research/cloud/run_optimizer.py`](../research/cloud/run_optimizer.py)
+  DEPRECATED legacy cloud optimizer runner. Superseded by `training_system.py`.
 - [`/home/nickalus/code/The-Particle-Engine/research/cloud/unified_physics_pipeline.py`](/home/nickalus/code/The-Particle-Engine/research/cloud/unified_physics_pipeline.py)
   Validation worker/orchestrator for a specific GPU physics lane. It should sit under the main training system, not replace it.
-- [`/home/nickalus/code/The-Particle-Engine/research/cloud/proper_benchmark.py`](/home/nickalus/code/The-Particle-Engine/research/cloud/proper_benchmark.py)
-  Functionally important, but the name should eventually be normalized to reflect its actual role.
+- [`research/cloud/benchmark_optuna.py`](../research/cloud/benchmark_optuna.py)
+  Renamed from `proper_benchmark.py` to reflect its role as the Optuna physics benchmark.
 
 ## Naming Direction For Future Refactors
 - If a script is the main entrypoint, give it the simplest name.

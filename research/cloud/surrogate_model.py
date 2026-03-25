@@ -41,7 +41,7 @@ RESEARCH_DIR = SCRIPT_DIR.parent
 PROJECT_DIR = RESEARCH_DIR.parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from proper_benchmark import (
+from benchmark_optuna import (
     DEFAULT_PARAMS, PARAM_SPACE, _INT_PARAMS,
     score_all, compute_aggregate,
 )

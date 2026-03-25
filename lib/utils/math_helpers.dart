@@ -1,10 +1,19 @@
 import 'dart:math';
 
 /// Lightweight math utilities used throughout the simulation.
+///
+/// Call [MathHelpers.init] with the simulation RNG at startup so that
+/// random helpers are deterministic. Falls back to an unseeded Random
+/// if not initialised (e.g. in tests).
 class MathHelpers {
   MathHelpers._();
 
-  static final Random _rng = Random();
+  static Random _rng = Random();
+
+  /// Initialise the shared RNG with the simulation's seeded Random.
+  static void init(Random rng) {
+    _rng = rng;
+  }
 
   /// Returns a random integer in the range \[0, max).
   static int randomInt(int max) => _rng.nextInt(max);

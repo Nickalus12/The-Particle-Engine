@@ -272,6 +272,11 @@ class NeatGenome {
   void mutateAddConnection(NeatConfig config, InnovationCounter innovations, Random rng) {
     if (connections.length >= config.maxConnections) return;
 
+    // Build a Set of existing (inNode, outNode) pairs for O(1) lookup.
+    final existingConns = <(int, int)>{
+      for (final c in connections.values) (c.inNode, c.outNode),
+    };
+
     final nodeList = nodes.values.toList();
     for (var attempt = 0; attempt < 20; attempt++) {
       final from = nodeList[rng.nextInt(nodeList.length)];
@@ -282,7 +287,7 @@ class NeatGenome {
       if (from.id == to.id) continue;
       if (to.type == NodeType.input || to.type == NodeType.bias) continue;
       if (from.type == NodeType.output) continue;
-      if (_hasConnection(from.id, to.id)) continue;
+      if (existingConns.contains((from.id, to.id))) continue;
 
       // Prevent recurrent connections by ensuring layer ordering.
       if (from.layer >= to.layer && to.type != NodeType.output) continue;
@@ -316,6 +321,7 @@ class NeatGenome {
     conn.enabled = false;
 
     // New hidden node gets the next available node id.
+    if (nodes.isEmpty) return;
     final newNodeId = (nodes.keys.reduce(max)) + 1;
 
     // Layer of new node is between source and target.
@@ -519,12 +525,6 @@ class NeatGenome {
   // Helpers
   // -------------------------------------------------------------------------
 
-  bool _hasConnection(int inNode, int outNode) {
-    for (final c in connections.values) {
-      if (c.inNode == inNode && c.outNode == outNode) return true;
-    }
-    return false;
-  }
 
   // -------------------------------------------------------------------------
   // Serialization
@@ -610,7 +610,8 @@ class NeatGenome {
 
   /// Simple Gaussian random via Box-Muller transform.
   static double _gaussian(Random rng) {
-    final u1 = rng.nextDouble();
+    double u1 = rng.nextDouble();
+    if (u1 < 1e-10) u1 = 1e-10;
     final u2 = rng.nextDouble();
     return sqrt(-2.0 * log(u1)) * cos(2.0 * pi * u2);
   }

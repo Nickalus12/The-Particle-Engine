@@ -177,7 +177,7 @@ run_physics_optimization() {
     log "  Trials: $TRIALS, Workers: $WORKERS"
 
     cd "$PROJECT_DIR"
-    python3 research/cloud/proper_benchmark.py \
+    python3 research/cloud/benchmark_optuna.py \
         --optimize \
         --trials "$TRIALS" \
         --workers "$WORKERS" \
@@ -424,11 +424,11 @@ run_mega_benchmark() {
     log ""
 
     cd "$PROJECT_DIR"
-    python3 research/cloud/mega_benchmark.py --score --quick \
+    python3 research/cloud/benchmark_comprehensive.py --score --quick \
         2>&1 | tee -a "$LOG_FILE"
 
     # Save baseline
-    python3 research/cloud/mega_benchmark.py --save-baseline \
+    python3 research/cloud/benchmark_comprehensive.py --save-baseline \
         2>&1 | tee -a "$LOG_FILE"
 
     success "Mega benchmark complete"

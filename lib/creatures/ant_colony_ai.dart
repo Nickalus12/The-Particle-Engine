@@ -13,10 +13,10 @@ import 'neat/ant_brain.dart';
 /// - Emergency responses (flooding, fire near nest).
 /// - Nurse task assignment for brood feeding.
 class AntColonyAI {
-  AntColonyAI({required this.colony});
+  AntColonyAI({required this.colony, required this.rng});
 
   final Colony colony;
-  final Random _rng = Random();
+  final Random rng;
 
   void tick(SimulationEngine sim, List<Colony> allColonies) {
     colony.tick(sim, allColonies);
@@ -91,7 +91,7 @@ class AntColonyAI {
     final nearbyAnts = sim.countNearby(x, y, 5, El.ant);
 
     if (colony.evolution.population.genomes.isEmpty) return null;
-    final genomeIdx = colony.evolution.selectGenomeForSpawn(_rng);
+    final genomeIdx = colony.evolution.selectGenomeForSpawn(rng);
     final genome = colony.evolution.population.genomes[genomeIdx];
     final brain = AntBrain(genome: genome);
 

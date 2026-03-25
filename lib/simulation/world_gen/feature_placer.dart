@@ -210,10 +210,10 @@ class FeaturePlacer {
       for (var mx = cx - radiusX + 3; mx < cx + radiusX - 3; mx += 4 + rng.nextInt(5)) {
         final floorY = cy + radiusY - 1;
         if (data.inBounds(mx, floorY) && data.get(mx, floorY) == El.empty) {
-          data.setPlant(mx, floorY, kPlantMushroom, kStMature);
+          data.setPlant(mx, floorY, plantMushroom, stMature);
           if (rng.nextBool() && data.inBounds(mx + 1, floorY) &&
               data.get(mx + 1, floorY) == El.empty) {
-            data.setPlant(mx + 1, floorY, kPlantMushroom, kStMature);
+            data.setPlant(mx + 1, floorY, plantMushroom, stMature);
           }
         }
       }
@@ -1120,7 +1120,7 @@ class FeaturePlacer {
       if (data.get(x, surfaceY - 1) == El.empty) {
         final grassChance = config.vegetation >= 0.8 ? 0.92 : 0.75;
         if (rng.nextDouble() < grassChance) {
-          data.setPlant(x, surfaceY - 1, kPlantGrass, kStMature);
+          data.setPlant(x, surfaceY - 1, plantGrass, stMature);
         }
       }
     }
@@ -1223,7 +1223,7 @@ class FeaturePlacer {
       if (isMeadow && data.get(x, surfaceY - 1) == El.empty) {
         final fn = flowerNoise.noise2D(x / 10.0, 0.5);
         if (fn > 0.3 && rng.nextDouble() < 0.15) {
-          data.setPlant(x, surfaceY - 1, kPlantFlower, kStMature);
+          data.setPlant(x, surfaceY - 1, plantFlower, stMature);
         }
       }
     }
@@ -1278,12 +1278,12 @@ class FeaturePlacer {
         final px = x + dx;
         final py = topY + dy;
         if (data.inBounds(px, py) && data.get(px, py) == El.empty) {
-          data.setPlant(px, py, kPlantTree, kStMature);
+          data.setPlant(px, py, plantTree, stMature);
         }
       }
     }
     if (data.inBounds(x, topY - 1) && data.get(x, topY - 1) == El.empty) {
-      data.setPlant(x, topY - 1, kPlantTree, kStMature);
+      data.setPlant(x, topY - 1, plantTree, stMature);
     }
   }
 

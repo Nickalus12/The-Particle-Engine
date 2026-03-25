@@ -24,12 +24,15 @@ class PheromoneRenderer extends PositionComponent {
   /// Minimum intensity to render (skip very faint signals).
   static const double _minIntensity = 0.01;
 
+  /// Reusable paint object to avoid per-frame allocation.
+  static final ui.Paint _paint = ui.Paint();
+
   @override
   void render(ui.Canvas canvas) {
     if (!enabled) return;
     super.render(canvas);
 
-    final paint = ui.Paint();
+    final paint = _paint;
 
     for (final colony in registry.colonies) {
       final food = colony.foodPheromones;

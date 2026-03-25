@@ -140,7 +140,7 @@ class ResearchOracle:
         # 2. Physics Optuna (Maximum Parallelism)
         if self.args.all or self.args.physics:
             phys_cmd = [
-                sys.executable, "-u", str(SCRIPT_DIR / "proper_benchmark.py"),
+                sys.executable, "-u", str(SCRIPT_DIR / "benchmark_optuna.py"),
                 "--optimize", "--trials", str(self.args.trials),
                 "--workers", str(self.args.workers)
             ]

@@ -12,25 +12,25 @@ import 'simulation_engine.dart';
 // ---------------------------------------------------------------------------
 
 /// Number of neural network inputs.
-const int kPlantInputs = 8;
+const int plantInputs = 8;
 
 /// Number of hidden neurons.
-const int kPlantHidden = 4;
+const int plantHidden = 4;
 
 /// Number of neural network outputs.
-const int kPlantOutputs = 6;
+const int plantOutputs = 6;
 
 /// Total genome size (weights + biases).
-const int kPlantGenomeSize = kPlantInputs * kPlantHidden + kPlantHidden +
-    kPlantHidden * kPlantOutputs + kPlantOutputs; // = 66
+const int plantGenomeSize = plantInputs * plantHidden + plantHidden +
+    plantHidden * plantOutputs + plantOutputs; // = 66
 
 /// Neural output indices.
-const int kOutGrowUp = 0;
-const int kOutGrowLateral = 1;
-const int kOutBranch = 2;
-const int kOutSeedProduction = 3;
-const int kOutResourceAlloc = 4;
-const int kOutToxin = 5;
+const int outGrowUp = 0;
+const int outGrowLateral = 1;
+const int outBranch = 2;
+const int outSeedProduction = 3;
+const int outResourceAlloc = 4;
+const int outToxin = 5;
 
 /// A single plant colony with a shared neural genome.
 class PlantColony {
@@ -59,20 +59,20 @@ class PlantColony {
   double toxinLevel = 0.0;
 
   /// Reusable buffers for neural forward pass (avoid allocation).
-  final Float64List _hidden = Float64List(kPlantHidden);
-  final Float64List _outputs = Float64List(kPlantOutputs);
-  final Float64List _inputs = Float64List(kPlantInputs);
+  final Float64List _hidden = Float64List(plantHidden);
+  final Float64List _outputs = Float64List(plantOutputs);
+  final Float64List _inputs = Float64List(plantInputs);
 
-  PlantColony({required this.id, Float64List? genome})
-      : genome = genome ?? _randomGenome(Random());
+  PlantColony({required this.id, Float64List? genome, Random? rng})
+      : genome = genome ?? _randomGenome(rng ?? Random());
 
   /// Create with a specific random seed.
   PlantColony.seeded({required this.id, required int seed})
       : genome = _randomGenome(Random(seed));
 
   /// Create a mutated offspring colony from a parent.
-  PlantColony.mutated({required this.id, required PlantColony parent, Random? rng})
-      : genome = _mutateGenome(parent.genome, rng ?? Random()) {
+  PlantColony.mutated({required this.id, required PlantColony parent, required Random rng})
+      : genome = _mutateGenome(parent.genome, rng) {
     toxinLevel = parent.toxinLevel;
   }
 
@@ -101,24 +101,24 @@ class PlantColony {
 
     // Hidden layer: tanh(W_ih * inputs + b_h)
     int wi = 0;
-    for (int h = 0; h < kPlantHidden; h++) {
+    for (int h = 0; h < plantHidden; h++) {
       double sum = 0.0;
-      for (int i = 0; i < kPlantInputs; i++) {
+      for (int i = 0; i < plantInputs; i++) {
         sum += genome[wi++] * _inputs[i];
       }
-      sum += genome[kPlantInputs * kPlantHidden + h]; // bias
+      sum += genome[plantInputs * plantHidden + h]; // bias
       // Fast tanh approximation
       _hidden[h] = sum / (1.0 + sum.abs());
     }
 
     // Output layer: tanh(W_ho * hidden + b_o)
-    final oWeightStart = kPlantInputs * kPlantHidden + kPlantHidden;
-    for (int o = 0; o < kPlantOutputs; o++) {
+    final oWeightStart = plantInputs * plantHidden + plantHidden;
+    for (int o = 0; o < plantOutputs; o++) {
       double sum = 0.0;
-      for (int h = 0; h < kPlantHidden; h++) {
-        sum += genome[oWeightStart + o * kPlantHidden + h] * _hidden[h];
+      for (int h = 0; h < plantHidden; h++) {
+        sum += genome[oWeightStart + o * plantHidden + h] * _hidden[h];
       }
-      sum += genome[oWeightStart + kPlantHidden * kPlantOutputs + o]; // bias
+      sum += genome[oWeightStart + plantHidden * plantOutputs + o]; // bias
       _outputs[o] = sum / (1.0 + sum.abs());
     }
 
@@ -127,8 +127,8 @@ class PlantColony {
 
   /// Generate random initial genome weights in [-1, 1].
   static Float64List _randomGenome(Random rng) {
-    final g = Float64List(kPlantGenomeSize);
-    for (int i = 0; i < kPlantGenomeSize; i++) {
+    final g = Float64List(plantGenomeSize);
+    for (int i = 0; i < plantGenomeSize; i++) {
       g[i] = rng.nextDouble() * 2.0 - 1.0;
     }
     return g;
@@ -136,8 +136,8 @@ class PlantColony {
 
   /// Mutate a genome with small gaussian-like perturbations.
   static Float64List _mutateGenome(Float64List parent, Random rng) {
-    final g = Float64List(kPlantGenomeSize);
-    for (int i = 0; i < kPlantGenomeSize; i++) {
+    final g = Float64List(plantGenomeSize);
+    for (int i = 0; i < plantGenomeSize; i++) {
       if (rng.nextInt(5) == 0) {
         // 20% chance of mutation per weight
         g[i] = parent[i] + (rng.nextDouble() - 0.5) * 0.4;
@@ -158,6 +158,9 @@ class PlantColonyRegistry {
   /// Map from grid index to colony ID for O(1) lookup.
   /// Sized lazily to match the simulation grid.
   Int32List _cellToColony = Int32List(0);
+
+  /// Map from colony ID to colony object for O(1) lookup.
+  final Map<int, PlantColony> _colonyById = {};
 
   /// Sentinel value meaning "no colony".
   static const int noColony = -1;
@@ -186,19 +189,17 @@ class PlantColonyRegistry {
     if (idx < 0 || idx >= _cellToColony.length) return null;
     final cid = _cellToColony[idx];
     if (cid == noColony) return null;
-    for (final c in _colonies) {
-      if (c.id == cid) return c;
-    }
-    return null;
+    return _colonyById[cid];
   }
 
   /// Spawn a new colony at a grid cell with optional parent for mutation.
-  PlantColony spawn(int cellIdx, {PlantColony? parent}) {
+  PlantColony spawn(int cellIdx, {PlantColony? parent, Random? rng}) {
     final id = _nextId++;
     final colony = parent != null
-        ? PlantColony.mutated(id: id, parent: parent)
-        : PlantColony(id: id);
+        ? PlantColony.mutated(id: id, parent: parent, rng: rng ?? Random())
+        : PlantColony(id: id, rng: rng);
     _colonies.add(colony);
+    _colonyById[colony.id] = colony;
     addCell(colony, cellIdx);
     return colony;
   }
@@ -216,11 +217,9 @@ class PlantColonyRegistry {
     final cid = _cellToColony[idx];
     if (cid == noColony) return;
     _cellToColony[idx] = noColony;
-    for (final c in _colonies) {
-      if (c.id == cid) {
-        c.cells.remove(idx);
-        break;
-      }
+    final c = _colonyById[cid];
+    if (c != null) {
+      c.cells.remove(idx);
     }
   }
 
@@ -233,7 +232,10 @@ class PlantColonyRegistry {
     }
     // Prune colonies with no living cells and age > 100
     _colonies.removeWhere((c) {
-      if (c.cells.isEmpty && c.age > 100) return true;
+      if (c.cells.isEmpty && c.age > 100) {
+        _colonyById.remove(c.id);
+        return true;
+      }
       return false;
     });
   }
@@ -241,7 +243,7 @@ class PlantColonyRegistry {
   /// Gather 8 neural inputs for a plant cell at grid index.
   Float64List gatherInputs(SimulationEngine engine, int x, int y, int idx) {
     final w = engine.gridW;
-    final inputs = Float64List(kPlantInputs);
+    final inputs = Float64List(plantInputs);
 
     // 0: luminance (normalized 0-1)
     inputs[0] = engine.luminance[idx] / 255.0;
@@ -288,6 +290,7 @@ class PlantColonyRegistry {
   /// Clear all colonies (e.g., on world reset).
   void clear() {
     _colonies.clear();
+    _colonyById.clear();
     _cellToColony.fillRange(0, _cellToColony.length, noColony);
     _nextId = 0;
   }

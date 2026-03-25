@@ -104,6 +104,19 @@ class GIPostProcess extends Component {
     await _loadShaders();
   }
 
+  @override
+  void onRemove() {
+    _jfaSeedProg = null;
+    _jfaStepProg = null;
+    _distFieldProg = null;
+    _radianceCascadeProg = null;
+    _bloomDownProg = null;
+    _bloomUpProg = null;
+    _tonemapProg = null;
+    _shadersLoaded = false;
+    super.onRemove();
+  }
+
   Future<void> _loadShaders() async {
     try {
       final results = await Future.wait([

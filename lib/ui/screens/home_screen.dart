@@ -212,6 +212,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   void dispose() {
+    _simTicker.removeListener(_tickSimulation);
     _simTicker.dispose();
     _entranceController.dispose();
     _glowController.dispose();

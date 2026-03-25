@@ -214,8 +214,12 @@ class GameState {
   ///
   /// The grid uses run-length encoding: consecutive runs of the same byte
   /// value are stored as [value, count] pairs rather than individual bytes.
+  /// Current save format version. Bump when changing the serialisation layout.
+  static const int currentVersion = 1;
+
   Map<String, dynamic> toJson() {
     return {
+      'version': currentVersion,
       'gridW': gridW,
       'gridH': gridH,
       'grid': _rleEncode(grid),
@@ -257,7 +261,17 @@ class GameState {
   }
 
   /// Decode from a JSON-compatible map.
+  ///
+  /// Validates the save version and rejects saves from incompatible future
+  /// formats. Saves without a version field are treated as version 0 (legacy).
   factory GameState.fromJson(Map<String, dynamic> json) {
+    final version = json['version'] as int? ?? 0;
+    if (version > currentVersion) {
+      throw FormatException(
+        'Save file version $version is newer than supported version '
+        '$currentVersion. Please update the app.',
+      );
+    }
     final gridW = json['gridW'] as int;
     final gridH = json['gridH'] as int;
     final totalCells = gridW * gridH;

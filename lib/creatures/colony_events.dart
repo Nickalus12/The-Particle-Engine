@@ -21,13 +21,13 @@ class ColonyEvents {
   List<ColonyEvent> get events => List.unmodifiable(_events);
 
   /// Most recent event, or null.
-  ColonyEvent? get latest => _events.isNotEmpty ? _events.first : null;
+  ColonyEvent? get latest => _events.isNotEmpty ? _events.last : null;
 
   /// Record a new event.
   void record(ColonyEvent event) {
-    _events.insert(0, event);
+    _events.add(event);
     if (_events.length > maxEvents) {
-      _events.removeLast();
+      _events.removeAt(0);
     }
   }
 

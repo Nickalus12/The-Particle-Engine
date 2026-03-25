@@ -83,6 +83,9 @@ class CreatureRenderer extends PositionComponent {
   static int _envG = 0;
   static int _envB = 0;
 
+  /// Reusable paint object to avoid per-frame allocation.
+  static final ui.Paint _paint = ui.Paint();
+
   // -------------------------------------------------------------------------
   // Integer sine (copied from pixel_renderer.dart)
   // -------------------------------------------------------------------------
@@ -111,7 +114,7 @@ class CreatureRenderer extends PositionComponent {
     super.render(canvas);
     _frameCount++;
 
-    final paint = ui.Paint();
+    final paint = _paint;
     final gridW = simulation.gridW;
     final gridH = simulation.gridH;
 

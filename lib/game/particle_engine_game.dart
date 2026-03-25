@@ -159,6 +159,13 @@ class ParticleEngineGame extends FlameGame
 
   // Fixed resolution camera handles window resizing automatically.
 
+  @override
+  void onRemove() {
+    _autoHideTimer?.cancel();
+    _dayNightEffect?.removeFromParent();
+    super.onRemove();
+  }
+
   // ---------------------------------------------------------------------------
   // Day/night cycle — uses Flame Effect for smooth transition
   // ---------------------------------------------------------------------------

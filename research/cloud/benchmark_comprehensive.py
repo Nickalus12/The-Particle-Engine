@@ -2,7 +2,7 @@
 """Unified multi-benchmark system for The Particle Engine.
 
 Combines 8 benchmark suites into a single mega-score (0-100):
-  1. Physics    (0.22) - 48-param continuous scoring from proper_benchmark
+  1. Physics    (0.22) - 48-param continuous scoring from benchmark_optuna
   2. Chemistry  (0.18) - 41x41 element pair reactions at 5 temperatures
   3. Creatures  (0.13) - NEAT genome fitness, survival, diversity
   4. WorldGen   (0.13) - Geological realism, accessibility, diversity
@@ -12,11 +12,11 @@ Combines 8 benchmark suites into a single mega-score (0-100):
   8. Fields     (0.10) - Per-cell physics field utilization and activity
 
 Usage:
-    python research/cloud/mega_benchmark.py --score
-    python research/cloud/mega_benchmark.py --optimize --trials 5000 --workers 14
-    python research/cloud/mega_benchmark.py --report
-    python research/cloud/mega_benchmark.py --regression
-    python research/cloud/mega_benchmark.py --ci
+    python research/cloud/benchmark_comprehensive.py --score
+    python research/cloud/benchmark_comprehensive.py --optimize --trials 5000 --workers 14
+    python research/cloud/benchmark_comprehensive.py --report
+    python research/cloud/benchmark_comprehensive.py --regression
+    python research/cloud/benchmark_comprehensive.py --ci
 
 Output:
     JSON scores to stdout, detailed reports to research/cloud/mega_results/
@@ -52,7 +52,7 @@ STUDY_DB = RESULTS_DIR / "mega_study.db"
 # ---------------------------------------------------------------------------
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from proper_benchmark import (
+from benchmark_optuna import (
     score_all as physics_score_all,
     compute_aggregate as physics_compute_aggregate,
     DEFAULT_PARAMS as PHYSICS_DEFAULT_PARAMS,
@@ -130,7 +130,7 @@ ELEMENT_COLORS = {
 GLOW_ELEMENTS = {EL_FIRE, EL_LAVA, EL_LIGHTNING, EL_RAINBOW}
 
 # ===================================================================
-# 1. PHYSICS BENCHMARK (from proper_benchmark.py)
+# 1. PHYSICS BENCHMARK (from benchmark_optuna.py)
 # ===================================================================
 
 def benchmark_physics(params: dict[str, Any], quick: bool = False) -> dict[str, float]:

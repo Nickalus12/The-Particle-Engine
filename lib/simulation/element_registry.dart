@@ -2261,25 +2261,25 @@ void _rebuildPropertyLookups() {
 // Plant data constants
 // ---------------------------------------------------------------------------
 
-const int kPlantGrass = 1;
-const int kPlantFlower = 2;
-const int kPlantTree = 3;
-const int kPlantMushroom = 4;
-const int kPlantVine = 5;
-const int kPlantSeaweed = 6;
-const int kPlantMoss = 7;
-const int kPlantNeuralVine = 8;
-const int kPlantNeuralFlower = 9;
-const int kPlantRoot = 10;
-const int kPlantThorn = 11;
+const int plantGrass = 1;
+const int plantFlower = 2;
+const int plantTree = 3;
+const int plantMushroom = 4;
+const int plantVine = 5;
+const int plantSeaweed = 6;
+const int plantMoss = 7;
+const int plantNeuralVine = 8;
+const int plantNeuralFlower = 9;
+const int plantRoot = 10;
+const int plantThorn = 11;
 
-const int kStSprout = 0;
-const int kStGrowing = 1;
-const int kStMature = 2;
-const int kStWilting = 3;
-const int kStDead = 4;
+const int stSprout = 0;
+const int stGrowing = 1;
+const int stMature = 2;
+const int stWilting = 3;
+const int stDead = 4;
 
-/// Maximum height by plant type (indexed by kPlant* constant).
+/// Maximum height by plant type (indexed by PLANT_* constant).
 const List<int> plantMaxH = [0, 3, 6, 15, 3, 12, 20, 2, 15, 5, 12, 3];
 
 /// Minimum soil moisture required to grow.

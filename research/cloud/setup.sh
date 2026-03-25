@@ -53,4 +53,4 @@ dart run research/export_frame.dart 10 2>/dev/null || true
 
 echo ""
 echo "=== Setup Complete ==="
-echo "To run optimization: cd ~/particle-engine && source ~/optenv/bin/activate && python3 research/cloud/run_optimizer.py"
+echo "To run optimization: cd ~/particle-engine && source ~/optenv/bin/activate && python3 research/cloud/training_system.py"

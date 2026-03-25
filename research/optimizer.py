@@ -26,6 +26,12 @@ import time
 from pathlib import Path
 from typing import Any
 
+# Ensure research/ is on sys.path so parameter_contract can be found
+# regardless of the cwd the user invokes from.
+_RESEARCH_DIR = Path(__file__).resolve().parent
+if str(_RESEARCH_DIR) not in sys.path:
+    sys.path.insert(0, str(_RESEARCH_DIR))
+
 from parameter_contract import write_trial_config as write_manifest_trial_config
 
 # ---------------------------------------------------------------------------
@@ -195,14 +201,17 @@ def objective(trial) -> tuple[float, float]:
             cwd=str(PROJECT_DIR),
             env={**os.environ, "TRIAL_CONFIG": str(TRIAL_CONFIG)},
         )
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         print(f"  Trial {trial.number}: TIMEOUT (300s)")
         trial.set_user_attr("error", "timeout")
-        return 0.0, 0.0
+        if exc.stderr:
+            stderr_tail = exc.stderr.strip().splitlines()[-5:] if isinstance(exc.stderr, str) else []
+            trial.set_user_attr("stderr_tail", "\n".join(stderr_tail))
+        return float("nan"), float("nan")
     except Exception as e:
         print(f"  Trial {trial.number}: ERROR ({e})")
         trial.set_user_attr("error", str(e))
-        return 0.0, 0.0
+        return float("nan"), float("nan")
 
     # Parse JSON from stdout
     stdout = result.stdout.strip()

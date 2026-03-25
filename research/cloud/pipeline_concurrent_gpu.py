@@ -8,7 +8,7 @@ Runs four concurrent workloads that saturate all 18 CPU cores + A100 GPU:
   4. GPU temperature diffusion validation (GPU, interleaved with #2)
 
 Usage:
-    source ~/research_env/bin/activate && python3 cloud/max_pipeline.py
+    source ~/research_env/bin/activate && python3 cloud/pipeline_concurrent_gpu.py
 
 Runs indefinitely until killed. All output logged to ~/pipeline_output.log.
 """
@@ -103,7 +103,7 @@ def optuna_worker(worker_id: int, study_name: str):
 
     # Import from our existing optimizer
     sys.path.insert(0, str(SCRIPT_DIR))
-    from run_optimizer import objective
+    from run_optimizer import objective  # run_optimizer.py is DEPRECATED but still functional
 
     while not shutdown_event.is_set():
         # Check if we should pause for Hypothesis

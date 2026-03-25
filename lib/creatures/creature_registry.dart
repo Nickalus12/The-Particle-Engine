@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import '../models/game_state.dart';
 import '../simulation/simulation_engine.dart';
 import 'ant.dart';
@@ -45,6 +47,7 @@ class CreatureRegistry {
     int? seed,
     int gridW = 320,
     int gridH = 180,
+    Random? rng,
   }) {
     final colony = Colony(
       originX: x,
@@ -56,7 +59,7 @@ class CreatureRegistry {
       seed: seed,
     );
     _colonies.add(colony);
-    _colonyAIs[colony.id] = AntColonyAI(colony: colony);
+    _colonyAIs[colony.id] = AntColonyAI(colony: colony, rng: rng ?? Random());
     return colony;
   }
 
@@ -144,7 +147,7 @@ class CreatureRegistry {
       }
 
       _colonies.add(colony);
-      _colonyAIs[colony.id] = AntColonyAI(colony: colony);
+      _colonyAIs[colony.id] = AntColonyAI(colony: colony, rng: Random(colony.id));
       if (colony.id > maxId) maxId = colony.id;
     }
 

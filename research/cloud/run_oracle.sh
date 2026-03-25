@@ -12,7 +12,7 @@ export SCIPY_ARRAY_API=1
 
 cd /home/ubuntu/pe
 echo "[⚡] Initializing High-Scale Research Oracle..."
-/home/ubuntu/research_env/bin/python3 -u research/cloud/mega_runner.py --all --trials 2000 --workers 16
+/home/ubuntu/research_env/bin/python3 -u research/cloud/orchestrator.py --all --trials 2000 --workers 16
 
 echo "[⚡] ORACLE EXITED. Keeping shell open for debugging."
 exec bash

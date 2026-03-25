@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# =========================================================================
+#  DEPRECATED  --  Use training_system.py instead.
+#
+#  This file is kept for backward compatibility with pipeline_concurrent_gpu.py
+#  which imports `objective` from here. New code should use training_system.py
+#  as the single entrypoint for cloud training and optimization.
+# =========================================================================
 """Massively parallel Optuna optimizer for ThunderCompute.
 
 Runs N worker processes in parallel, each executing Optuna trials against

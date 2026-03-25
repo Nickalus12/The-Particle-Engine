@@ -101,6 +101,7 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   void dispose() {
+    _simController.removeListener(_tickElements);
     _simController.dispose();
     _masterController.dispose();
     _exitController.dispose();
@@ -419,5 +420,5 @@ class _FallingElementsPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _FallingElementsPainter old) => true;
+  bool shouldRepaint(covariant _FallingElementsPainter old) => old.time != time;
 }

@@ -17,16 +17,16 @@ Optimizes ElementProperties AND WorldConfig simultaneously.
 
 Usage:
     # Score with default parameters
-    python research/cloud/proper_benchmark.py
+    python research/cloud/benchmark_optuna.py
 
     # Run Optuna optimization
-    python research/cloud/proper_benchmark.py --optimize --trials 5000 --workers 8
+    python research/cloud/benchmark_optuna.py --optimize --trials 5000 --workers 8
 
     # VERIFY every parameter moves the score (run this first!)
-    python research/cloud/proper_benchmark.py --verify
+    python research/cloud/benchmark_optuna.py --verify
 
     # Sensitivity analysis
-    python research/cloud/proper_benchmark.py --sensitivity
+    python research/cloud/benchmark_optuna.py --sensitivity
 
 Output:
     JSON to stdout: {"physics": 72.3, "worldgen": 81.5, "overall": 75.1, ...}

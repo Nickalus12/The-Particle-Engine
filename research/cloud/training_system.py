@@ -50,7 +50,7 @@ def build_plan(args: argparse.Namespace) -> dict[str, Any]:
     resolved_mode = args.mode or profile.get("mode", "full-stack")
     resolved_trials = args.trials or profile.get("trials", 2000)
     configured_workers = args.workers if args.workers is not None else profile.get("workers", 0)
-    resolved_workers = configured_workers or 0
+    resolved_workers = configured_workers or resolve_worker_count("staged")
     resolved_warm_start = args.warm_start or profile.get("warm_start", False)
     resolved_multi_fidelity = args.multi_fidelity or profile.get("multi_fidelity", False)
     resolved_validation_mode = args.validation_mode or profile.get("validation_mode", "standard")

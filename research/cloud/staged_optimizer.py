@@ -49,7 +49,7 @@ RESEARCH_DIR = SCRIPT_DIR.parent
 PROJECT_DIR = RESEARCH_DIR.parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from proper_benchmark import (
+from benchmark_optuna import (
     DEFAULT_PARAMS, PARAM_SPACE, PARAM_GROUPS, _INT_PARAMS,
     score_all, compute_aggregate, compute_sensitivity,
 )
@@ -682,7 +682,7 @@ def run_full_pipeline(n_trials_per_group: int = 300,
 
 
 # ---------------------------------------------------------------------------
-# Predefined Group Optimization (uses PARAM_GROUPS from proper_benchmark)
+# Predefined Group Optimization (uses PARAM_GROUPS from benchmark_optuna)
 # ---------------------------------------------------------------------------
 
 def run_predefined_groups(groups: list[str] | None = None,
@@ -691,7 +691,7 @@ def run_predefined_groups(groups: list[str] | None = None,
                            use_warm_start: bool = False,
                            multi_fidelity: bool = False,
                            ):
-    """Run CMA-ES on predefined parameter groups from proper_benchmark."""
+    """Run CMA-ES on predefined parameter groups from benchmark_optuna."""
     target_groups = groups or list(PARAM_GROUPS.keys())
     current_best = dict(DEFAULT_PARAMS)
 

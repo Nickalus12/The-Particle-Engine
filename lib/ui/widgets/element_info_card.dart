@@ -68,7 +68,7 @@ class _ElementInfoCardState extends State<ElementInfoCard>
 
   void _dismiss() async {
     await _controller.reverse();
-    widget.onDismiss();
+    if (mounted) widget.onDismiss();
   }
 
   static const Map<int, String> _descriptions = {

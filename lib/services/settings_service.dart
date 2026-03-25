@@ -18,8 +18,8 @@ class SettingsService {
       soundEnabled: prefs.getBool(_keySound) ?? true,
       hapticsEnabled: prefs.getBool(_keyHaptics) ?? true,
       showFps: prefs.getBool(_keyFps) ?? false,
-      simulationSpeed: prefs.getDouble(_keySpeed) ?? 1.0,
-      brushSize: prefs.getInt(_keyBrush) ?? 3,
+      simulationSpeed: (prefs.getDouble(_keySpeed) ?? 1.0).clamp(0.25, 4.0),
+      brushSize: (prefs.getInt(_keyBrush) ?? 3).clamp(1, 10),
       showMiniMap: prefs.getBool(_keyMiniMap) ?? true,
     );
   }

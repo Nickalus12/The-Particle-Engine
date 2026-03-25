@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import '../element_registry.dart';
 import '../simulation_engine.dart';
 
@@ -66,8 +64,7 @@ class ReactionRegistry {
   /// Pre-built lookup: source element ID -> list of rules (for query API).
   static final Map<int, List<ReactionRule>> _rulesBySource = {};
 
-  /// Shared RNG for probability checks.
-  static final Random _rng = Random();
+  // RNG is sourced from SimulationEngine.rng for determinism.
 
   /// Initialize with all built-in reaction rules.
   static void init() {
@@ -147,7 +144,7 @@ class ReactionRegistry {
 
         for (final rule in rules) {
           if (rule.probability < 1.0 &&
-              _rng.nextDouble() > rule.probability) {
+              sim.rng.nextDouble() > rule.probability) {
             continue;
           }
 

@@ -362,8 +362,32 @@ class SimulationEngine {
       'life': Uint8List.fromList(life),
       'velX': Int8List.fromList(velX),
       'velY': Int8List.fromList(velY),
+      'flags': Uint8List.fromList(flags),
       'temperature': Uint8List.fromList(temperature),
       'pressure': Uint8List.fromList(pressure),
+      'pheroFood': Uint8List.fromList(pheroFood),
+      'pheroHome': Uint8List.fromList(pheroHome),
+      'charge': Int8List.fromList(charge),
+      'oxidation': Uint8List.fromList(oxidation),
+      'moisture': Uint8List.fromList(moisture),
+      'support': Uint8List.fromList(support),
+      'voltage': Int8List.fromList(voltage),
+      'sparkTimer': Uint8List.fromList(sparkTimer),
+      'lightR': Uint8List.fromList(lightR),
+      'lightG': Uint8List.fromList(lightG),
+      'lightB': Uint8List.fromList(lightB),
+      'pH': Uint8List.fromList(pH),
+      'dissolvedType': Uint8List.fromList(dissolvedType),
+      'concentration': Uint8List.fromList(concentration),
+      'windX2': Int8List.fromList(windX2),
+      'windY2': Int8List.fromList(windY2),
+      'stress': Uint8List.fromList(stress),
+      'vibration': Uint8List.fromList(vibration),
+      'vibrationFreq': Uint8List.fromList(vibrationFreq),
+      'mass': Uint8List.fromList(mass),
+      'luminance': Uint8List.fromList(luminance),
+      'momentum': Uint8List.fromList(momentum),
+      'cellAge': Uint8List.fromList(cellAge),
       'frameCount': frameCount,
       'gravityDir': gravityDir,
       'windForce': windForce,
@@ -380,61 +404,50 @@ class SimulationEngine {
     }
     grid.setAll(0, snapshot['grid'] as Uint8List);
     life.setAll(0, snapshot['life'] as Uint8List);
-    final savedTemp = snapshot['temperature'];
-    if (savedTemp is Uint8List) {
-      temperature.setAll(0, savedTemp);
-    } else {
-      temperature.fillRange(0, temperature.length, 128);
-    }
-    final savedPressure = snapshot['pressure'];
-    if (savedPressure is Uint8List) {
-      pressure.setAll(0, savedPressure);
-    } else {
-      pressure.fillRange(0, pressure.length, 0);
-    }
-    final savedVelX = snapshot['velX'];
-    final savedVelY = snapshot['velY'];
-    if (savedVelX is Int8List) {
-      velX.setAll(0, savedVelX);
-    } else {
-      velX.fillRange(0, velX.length, 0);
-    }
-    if (savedVelY is Int8List) {
-      velY.setAll(0, savedVelY);
-    } else {
-      velY.fillRange(0, velY.length, 0);
-    }
+    _restoreTyped<Int8List>(velX, snapshot['velX'], 0);
+    _restoreTyped<Int8List>(velY, snapshot['velY'], 0);
+    _restoreTyped<Uint8List>(flags, snapshot['flags'], 0);
+    _restoreTyped<Uint8List>(temperature, snapshot['temperature'], 128);
+    _restoreTyped<Uint8List>(pressure, snapshot['pressure'], 0);
+    _restoreTyped<Uint8List>(pheroFood, snapshot['pheroFood'], 0);
+    _restoreTyped<Uint8List>(pheroHome, snapshot['pheroHome'], 0);
+    _restoreTyped<Int8List>(charge, snapshot['charge'], 0);
+    _restoreTyped<Uint8List>(oxidation, snapshot['oxidation'], 128);
+    _restoreTyped<Uint8List>(moisture, snapshot['moisture'], 0);
+    _restoreTyped<Uint8List>(support, snapshot['support'], 0);
+    _restoreTyped<Int8List>(voltage, snapshot['voltage'], 0);
+    _restoreTyped<Uint8List>(sparkTimer, snapshot['sparkTimer'], 0);
+    _restoreTyped<Uint8List>(lightR, snapshot['lightR'], 0);
+    _restoreTyped<Uint8List>(lightG, snapshot['lightG'], 0);
+    _restoreTyped<Uint8List>(lightB, snapshot['lightB'], 0);
+    _restoreTyped<Uint8List>(pH, snapshot['pH'], 128);
+    _restoreTyped<Uint8List>(dissolvedType, snapshot['dissolvedType'], 0);
+    _restoreTyped<Uint8List>(concentration, snapshot['concentration'], 0);
+    _restoreTyped<Int8List>(windX2, snapshot['windX2'], 0);
+    _restoreTyped<Int8List>(windY2, snapshot['windY2'], 0);
+    _restoreTyped<Uint8List>(stress, snapshot['stress'], 0);
+    _restoreTyped<Uint8List>(vibration, snapshot['vibration'], 0);
+    _restoreTyped<Uint8List>(vibrationFreq, snapshot['vibrationFreq'], 0);
+    _restoreTyped<Uint8List>(mass, snapshot['mass'], 0);
+    _restoreTyped<Uint8List>(luminance, snapshot['luminance'], 0);
+    _restoreTyped<Uint8List>(momentum, snapshot['momentum'], 0);
+    _restoreTyped<Uint8List>(cellAge, snapshot['cellAge'], 0);
     frameCount = (snapshot['frameCount'] as int?) ?? 0;
     gravityDir = (snapshot['gravityDir'] as int?) ?? 1;
     windForce = (snapshot['windForce'] as int?) ?? 0;
     isNight = (snapshot['isNight'] as bool?) ?? false;
-    pheroFood.fillRange(0, pheroFood.length, 0);
-    pheroHome.fillRange(0, pheroHome.length, 0);
-    // Reset new physics fields on restore
-    charge.fillRange(0, charge.length, 0);
-    oxidation.fillRange(0, oxidation.length, 128);
-    moisture.fillRange(0, moisture.length, 0);
-    support.fillRange(0, support.length, 0);
-    voltage.fillRange(0, voltage.length, 0);
-    sparkTimer.fillRange(0, sparkTimer.length, 0);
-    lightR.fillRange(0, lightR.length, 0);
-    lightG.fillRange(0, lightG.length, 0);
-    lightB.fillRange(0, lightB.length, 0);
-    pH.fillRange(0, pH.length, 128);
-    dissolvedType.fillRange(0, dissolvedType.length, 0);
-    concentration.fillRange(0, concentration.length, 0);
-    windX2.fillRange(0, windX2.length, 0);
-    windY2.fillRange(0, windY2.length, 0);
-    stress.fillRange(0, stress.length, 0);
-    vibration.fillRange(0, vibration.length, 0);
-    vibrationFreq.fillRange(0, vibrationFreq.length, 0);
-    mass.fillRange(0, mass.length, 0);
-    luminance.fillRange(0, luminance.length, 0);
-    momentum.fillRange(0, momentum.length, 0);
-    cellAge.fillRange(0, cellAge.length, 0);
     colonyX = -1;
     colonyY = -1;
     markAllDirty();
+  }
+
+  /// Restore a typed list field from snapshot data, falling back to [fallback].
+  static void _restoreTyped<T extends List<int>>(T target, dynamic saved, int fallback) {
+    if (saved != null && saved is T) {
+      target.setAll(0, saved);
+    } else {
+      target.fillRange(0, target.length, fallback);
+    }
   }
 
   // =========================================================================
@@ -445,7 +458,9 @@ class SimulationEngine {
   @pragma('vm:prefer-inline')
   void queueReactionFlash(int x, int y, int r, int g, int b, int count) {
     if (reactionFlashes.length < 20) {
-      reactionFlashes.add(Int32List.fromList([x, y, r, g, b, count]));
+      final f = Int32List(6);
+      f[0] = x; f[1] = y; f[2] = r; f[3] = g; f[4] = b; f[5] = count;
+      reactionFlashes.add(f);
     }
   }
 
@@ -609,8 +624,6 @@ class SimulationEngine {
     }
   }
 
-  /// Check if any of the 8 neighbors contains [elType]. Wraps horizontally.
-  @pragma('vm:prefer-inline')
   /// Reset ALL per-cell fields at [idx] to empty/neutral defaults.
   /// Use this whenever removing an element to avoid stale physics state.
   @pragma('vm:prefer-inline')
@@ -768,6 +781,7 @@ class SimulationEngine {
 
   /// Remove one adjacent cell of the given type. Wraps horizontally.
   /// Fully resets all per-cell physics state via [clearCell].
+  @pragma('vm:prefer-inline')
   void removeOneAdjacent(int x, int y, int elType) {
     for (int dy = -1; dy <= 1; dy++) {
       for (int dx = -1; dx <= 1; dx++) {
@@ -1275,6 +1289,7 @@ class SimulationEngine {
   }
 
   /// Check if a water cell is trapped (surrounded, 0-1 water neighbors, no empty).
+  @pragma('vm:prefer-inline')
   bool isTrappedWater(int wx, int wy) {
     int waterN = 0, emptyN = 0;
     for (int dy2 = -1; dy2 <= 1; dy2++) {

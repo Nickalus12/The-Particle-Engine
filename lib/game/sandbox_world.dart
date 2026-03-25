@@ -13,6 +13,7 @@ import '../simulation/plant_colony.dart';
 import '../simulation/reactions/reaction_registry.dart';
 import '../simulation/simulation_engine.dart';
 import '../simulation/world_gen/world_config.dart';
+import '../utils/math_helpers.dart';
 import '../simulation/world_gen/world_generator.dart';
 import 'components/creature_renderer.dart';
 import 'components/background_component.dart';
@@ -109,6 +110,7 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
     final cellSize = game.cellSize;
 
     simulation = SimulationEngine(gridW: gridW, gridH: gridH);
+    MathHelpers.init(simulation.rng);
     creatures = CreatureRegistry();
     plantColonies = PlantColonyRegistry();
     ElementRegistry.init();
@@ -267,6 +269,7 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
       species: species,
       gridW: simulation.gridW,
       gridH: simulation.gridH,
+      rng: simulation.rng,
     );
   }
 

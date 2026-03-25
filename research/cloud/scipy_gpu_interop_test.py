@@ -13,7 +13,7 @@ import scipy
 from scipy.ndimage import generic_filter1d, distance_transform_edt
 from scipy import signal
 
-# Ensure environment is set (usually set by MegaRunner)
+# Ensure environment is set (usually set by orchestrator)
 os.environ["SCIPY_ARRAY_API"] = "1"
 
 def test_cupy_scipy_interop():

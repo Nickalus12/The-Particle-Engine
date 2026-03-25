@@ -1206,14 +1206,14 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     // Seaweed seeds sprout in water, not on dirt
-    if (sType == kPlantSeaweed) {
+    if (sType == plantSeaweed) {
       if (checkAdjacent(x, y, El.water) && life[idx] > 20) {
         grid[idx] = El.seaweed; life[idx] = 50;
         velY[idx] = 1; markProcessed(idx);
         // Create or join a colony
         final registry = plantColonies;
         if (registry != null) {
-          registry.spawn(idx);
+          registry.spawn(idx, rng: rng);
         }
         return;
       }
@@ -1235,14 +1235,14 @@ extension ElementBehaviors on SimulationEngine {
           final elType = _seedTypeToElement(sType);
           grid[idx] = elType; life[idx] = 50;
           if (elType == El.plant) {
-            setPlantData(idx, sType, kStSprout);
+            setPlantData(idx, sType, stSprout);
           }
           velY[idx] = 1; markProcessed(idx);
           // Register neural plant colony for new variant types
-          if (sType >= kPlantSeaweed) {
+          if (sType >= plantSeaweed) {
             final registry = plantColonies;
             if (registry != null) {
-              registry.spawn(idx);
+              registry.spawn(idx, rng: rng);
             }
           }
           return;
@@ -1253,14 +1253,14 @@ extension ElementBehaviors on SimulationEngine {
       }
     } else {
       // Moss seeds can sprout on stone
-      if (sType == kPlantMoss && inBoundsY(by)) {
+      if (sType == plantMoss && inBoundsY(by)) {
         final belowEl = grid[by * gridW + x];
         if (belowEl == El.stone || belowEl == El.clay || belowEl == El.wood) {
           if (life[idx] > 25) {
             grid[idx] = El.moss; life[idx] = 50;
             velY[idx] = 1; markProcessed(idx);
             final registry = plantColonies;
-            if (registry != null) registry.spawn(idx);
+            if (registry != null) registry.spawn(idx, rng: rng);
             return;
           }
           return;
@@ -1279,12 +1279,12 @@ extension ElementBehaviors on SimulationEngine {
   @pragma('vm:prefer-inline')
   int _seedTypeToElement(int sType) {
     switch (sType) {
-      case kPlantSeaweed: return El.seaweed;
-      case kPlantMoss: return El.moss;
-      case kPlantNeuralVine: return El.vine;
-      case kPlantNeuralFlower: return El.flower;
-      case kPlantRoot: return El.root;
-      case kPlantThorn: return El.thorn;
+      case plantSeaweed: return El.seaweed;
+      case plantMoss: return El.moss;
+      case plantNeuralVine: return El.vine;
+      case plantNeuralFlower: return El.flower;
+      case plantRoot: return El.root;
+      case plantThorn: return El.thorn;
       default: return El.plant; // original plant types 1-5
     }
   }
@@ -1532,7 +1532,7 @@ extension ElementBehaviors on SimulationEngine {
       markProcessed(idx); return;
     }
 
-    if (pStage == kStDead) {
+    if (pStage == stDead) {
       // Fungus decomposes dead plants into compost
       if (checkAdjacent(x, y, El.fungus) && rng.nextInt(SimTuning.plantDecomposeRate) == 0) {
         grid[idx] = El.compost; life[idx] = 50; velX[idx] = 0; velY[idx] = 0;
@@ -1593,8 +1593,8 @@ extension ElementBehaviors on SimulationEngine {
     // Photosynthesis: absorb CO2, produce oxygen (living plants only)
     // Requires luminance > 50 for non-mushroom plants to photosynthesize
     final lum = luminance[idx];
-    if (pStage >= kStGrowing && pStage <= kStMature && frameCount % 15 == 0) {
-      final canPhotosynthesize = pType == kPlantMushroom || lum > 50;
+    if (pStage >= stGrowing && pStage <= stMature && frameCount % 15 == 0) {
+      final canPhotosynthesize = pType == plantMushroom || lum > 50;
       if (canPhotosynthesize) {
         // Absorb CO2 if nearby
         if (checkAdjacent(x, y, El.co2)) {
@@ -1611,18 +1611,18 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     // Low light accelerates wilting for non-mushroom plants
-    if (pType != kPlantMushroom && lum < SimTuning.thresholdLightPhotosynthesis && frameCount % SimTuning.throttlePlantGrow == 0) {
+    if (pType != plantMushroom && lum < SimTuning.thresholdLightPhotosynthesis && frameCount % SimTuning.throttlePlantGrow == 0) {
       life[idx] = (life[idx] - 1).clamp(0, 100);
     }
 
     // Wilting / recovery
-    if (life[idx] < SimTuning.thresholdPlantWilt && pStage < kStWilting) {
-      setPlantData(idx, pType, kStWilting);
-    } else if (life[idx] >= 30 && pStage == kStWilting) {
-      setPlantData(idx, pType, velY[idx] >= plantMaxH[pType.clamp(1, 5)] ? kStMature : kStGrowing);
+    if (life[idx] < SimTuning.thresholdPlantWilt && pStage < stWilting) {
+      setPlantData(idx, pType, stWilting);
+    } else if (life[idx] >= 30 && pStage == stWilting) {
+      setPlantData(idx, pType, velY[idx] >= plantMaxH[pType.clamp(1, 5)] ? stMature : stGrowing);
     }
-    if (life[idx] <= 0 && pStage == kStWilting) {
-      setPlantData(idx, pType, kStDead);
+    if (life[idx] <= 0 && pStage == stWilting) {
+      setPlantData(idx, pType, stDead);
       velY[idx] = 0;
       return;
     }
@@ -1632,12 +1632,12 @@ extension ElementBehaviors on SimulationEngine {
       return; // Fell this frame, skip growing
     }
 
-    if (pStage > kStMature) return;
+    if (pStage > stMature) return;
 
     final maxH = plantMaxH[pType.clamp(1, 5)];
     final curSize = velY[idx].clamp(0, 127).toInt();
     if (curSize >= maxH) {
-      if (pStage != kStMature) setPlantData(idx, pType, kStMature);
+      if (pStage != stMature) setPlantData(idx, pType, stMature);
 
       // Mature plants drop seeds — rate increases with age (maturity).
       // Young mature plants: 1/500, aged plants (cellAge>150): 1/200
@@ -1653,7 +1653,7 @@ extension ElementBehaviors on SimulationEngine {
     bool fertilized = checkAdjacent(x, y, El.ash);
     int growRate = plantGrowRate[pType.clamp(1, 5)];
     // Low luminance slows non-mushroom plants; mushrooms thrive in dark
-    if (pType != kPlantMushroom) {
+    if (pType != plantMushroom) {
       if (lum < SimTuning.thresholdLightPhotosynthesis) {
         growRate = (growRate * 5); // near-dark: very slow
       } else if (lum < 100) {
@@ -1667,14 +1667,14 @@ extension ElementBehaviors on SimulationEngine {
 
     if (frameCount % growRate != 0) return;
 
-    if (pStage == kStSprout) setPlantData(idx, pType, kStGrowing);
+    if (pStage == stSprout) setPlantData(idx, pType, stGrowing);
 
     switch (pType) {
-      case kPlantGrass: _growGrass(x, y, idx, curSize);
-      case kPlantFlower: _growFlower(x, y, idx, curSize);
-      case kPlantTree: _growTree(x, y, idx, curSize);
-      case kPlantMushroom: _growMushroom(x, y, idx, curSize);
-      case kPlantVine: _growVine(x, y, idx, curSize);
+      case plantGrass: _growGrass(x, y, idx, curSize);
+      case plantFlower: _growFlower(x, y, idx, curSize);
+      case plantTree: _growTree(x, y, idx, curSize);
+      case plantMushroom: _growMushroom(x, y, idx, curSize);
+      case plantVine: _growVine(x, y, idx, curSize);
     }
   }
 
@@ -1684,7 +1684,7 @@ extension ElementBehaviors on SimulationEngine {
       if (inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
         final ni = uy * gridW + x;
         grid[ni] = El.plant; life[ni] = life[idx];
-        setPlantData(ni, kPlantGrass, kStGrowing); velY[ni] = (curSize + 1);
+        setPlantData(ni, plantGrass, stGrowing); velY[ni] = (curSize + 1);
         markProcessed(ni);
         velY[idx] = (curSize + 1);
       }
@@ -1696,7 +1696,7 @@ extension ElementBehaviors on SimulationEngine {
           inBoundsY(by) && grid[by * gridW + side] == El.dirt) {
         final ni = y * gridW + side;
         grid[ni] = El.plant; life[ni] = life[idx];
-        setPlantData(ni, kPlantGrass, kStSprout); velY[ni] = 1;
+        setPlantData(ni, plantGrass, stSprout); velY[ni] = 1;
         markProcessed(ni);
       }
     }
@@ -1709,7 +1709,7 @@ extension ElementBehaviors on SimulationEngine {
         final ni = uy * gridW + x;
         grid[ni] = El.plant; life[ni] = life[idx];
         final newSize = curSize + 1;
-        setPlantData(ni, kPlantFlower, newSize >= 4 ? kStMature : kStGrowing);
+        setPlantData(ni, plantFlower, newSize >= 4 ? stMature : stGrowing);
         velY[ni] = newSize;
         markProcessed(ni);
         velY[idx] = newSize;
@@ -1725,7 +1725,7 @@ extension ElementBehaviors on SimulationEngine {
         grid[ni] = El.plant; life[ni] = life[idx];
         final newSize = curSize + 1;
         final isTrunk = newSize < 7;
-        setPlantData(ni, kPlantTree, isTrunk ? kStGrowing : kStMature);
+        setPlantData(ni, plantTree, isTrunk ? stGrowing : stMature);
         velY[ni] = newSize;
         markProcessed(ni);
         velY[idx] = newSize;
@@ -1737,7 +1737,7 @@ extension ElementBehaviors on SimulationEngine {
             if (inBoundsY(sy) && grid[sy * gridW + side] == El.empty) {
               final ni = sy * gridW + side;
               grid[ni] = El.plant; life[ni] = life[idx];
-              setPlantData(ni, kPlantTree, kStMature); velY[ni] = curSize;
+              setPlantData(ni, plantTree, stMature); velY[ni] = curSize;
               markProcessed(ni);
               break;
             }
@@ -1748,7 +1748,7 @@ extension ElementBehaviors on SimulationEngine {
             if (grid[y * gridW + side] == El.empty) {
               final ni = y * gridW + side;
               grid[ni] = El.plant; life[ni] = life[idx];
-              setPlantData(ni, kPlantTree, kStMature); velY[ni] = curSize;
+              setPlantData(ni, plantTree, stMature); velY[ni] = curSize;
               markProcessed(ni);
             }
           }
@@ -1797,7 +1797,7 @@ extension ElementBehaviors on SimulationEngine {
         // Convert dirt to plant root (tree type, growing stage)
         grid[ri] = El.plant;
         life[ri] = life[idx]; // share hydration
-        setPlantData(ri, kPlantTree, kStGrowing);
+        setPlantData(ri, plantTree, stGrowing);
         velY[ri] = 1; // root marker (small size)
         markProcessed(ri);
         // Roots help the surrounding dirt retain moisture
@@ -1826,7 +1826,7 @@ extension ElementBehaviors on SimulationEngine {
         final ni = uy * gridW + x;
         grid[ni] = El.plant; life[ni] = life[idx];
         final newSize = curSize + 1;
-        setPlantData(ni, kPlantMushroom, newSize >= 2 ? kStMature : kStGrowing);
+        setPlantData(ni, plantMushroom, newSize >= 2 ? stMature : stGrowing);
         velY[ni] = newSize;
         markProcessed(ni);
         velY[idx] = newSize;
@@ -1841,7 +1841,7 @@ extension ElementBehaviors on SimulationEngine {
             life[by * gridW + sx] >= 4) {
           final ni = y * gridW + sx;
           grid[ni] = El.plant; life[ni] = life[idx];
-          setPlantData(ni, kPlantMushroom, kStSprout); velY[ni] = 1;
+          setPlantData(ni, plantMushroom, stSprout); velY[ni] = 1;
           markProcessed(ni);
           break;
         }
@@ -1877,7 +1877,7 @@ extension ElementBehaviors on SimulationEngine {
         final nx = x + d[0]; final ny = y + d[1];
         final ni = ny * gridW + nx;
         grid[ni] = El.plant; life[ni] = life[idx];
-        setPlantData(ni, kPlantVine, kStGrowing);
+        setPlantData(ni, plantVine, stGrowing);
         velY[ni] = (curSize + 1); markProcessed(ni);
         velY[idx] = (curSize + 1);
       }
@@ -4046,6 +4046,7 @@ extension ElementBehaviors on SimulationEngine {
     }
   }
 
+  @pragma('vm:prefer-inline')
   bool _isUnderground(int x, int y) {
     final g = gravityDir;
     final aboveY = y - g;
@@ -4055,6 +4056,7 @@ extension ElementBehaviors on SimulationEngine {
         above == El.sand || above == El.ant;
   }
 
+  @pragma('vm:prefer-inline')
   int _antPheromoneDir(int x, int y, int dir, Uint8List pheroGrid) {
     final w = gridW;
     if (rng.nextInt(20) == 0) return rng.nextBool() ? 1 : -1;
@@ -5165,21 +5167,21 @@ extension ElementBehaviors on SimulationEngine {
           inputs[0], inputs[1], inputs[2], inputs[3],
           inputs[4], inputs[5], inputs[6], inputs[7],
         );
-        growUpBias = (out[kOutGrowUp] + 1.0) * 0.5; // -1..1 -> 0..1
-        growLateral = out[kOutGrowLateral];
-        branchProb = (out[kOutBranch] + 1.0) * 0.05; // 0..0.1
-        seedProd = (out[kOutSeedProduction] + 1.0) * 0.005;
-        toxinProd = (out[kOutToxin] + 1.0) * 0.5;
+        growUpBias = (out[outGrowUp] + 1.0) * 0.5; // -1..1 -> 0..1
+        growLateral = out[outGrowLateral];
+        branchProb = (out[outBranch] + 1.0) * 0.05; // 0..0.1
+        seedProd = (out[outSeedProduction] + 1.0) * 0.005;
+        toxinProd = (out[outToxin] + 1.0) * 0.5;
         // Drift colony toxin level
         colony.toxinLevel = (colony.toxinLevel * 0.99 + toxinProd * 0.01).clamp(0.0, 1.0);
       }
     }
 
     // Growth: spread into adjacent water cells
-    final growRate = plantGrowRate[kPlantSeaweed];
+    final growRate = plantGrowRate[plantSeaweed];
     if (frameCount % growRate == 0) {
       final curSize = velY[idx].clamp(0, 127).toInt();
-      if (curSize < plantMaxH[kPlantSeaweed]) {
+      if (curSize < plantMaxH[plantSeaweed]) {
         // Determine growth direction from neural output
         final gy = growUpBias > 0.5 ? y - gravityDir : y + gravityDir;
         final gx = growLateral > 0.3 ? wrapX(x + 1) :
@@ -5242,7 +5244,7 @@ extension ElementBehaviors on SimulationEngine {
           final si = sy * w + sx;
           if (grid[si] == El.water) {
             grid[si] = El.seed; life[si] = 0;
-            velX[si] = kPlantSeaweed;
+            velX[si] = plantSeaweed;
             markDirty(sx, sy);
             if (colony != null) colony.seedsProduced++;
             return;
@@ -5312,12 +5314,12 @@ extension ElementBehaviors on SimulationEngine {
           inputs[0], inputs[1], inputs[2], inputs[3],
           inputs[4], inputs[5], inputs[6], inputs[7],
         );
-        spreadProb = (out[kOutBranch] + 1.0) * 0.01; // 0..0.02
+        spreadProb = (out[outBranch] + 1.0) * 0.01; // 0..0.02
       }
     }
 
     // Slow growth along surfaces
-    final growRate = plantGrowRate[kPlantMoss];
+    final growRate = plantGrowRate[plantMoss];
     if (frameCount % growRate == 0 && rng.nextDouble() < spreadProb) {
       for (int dy2 = -1; dy2 <= 1; dy2++) {
         for (int dx2 = -1; dx2 <= 1; dx2++) {
@@ -5421,16 +5423,16 @@ extension ElementBehaviors on SimulationEngine {
           inputs[0], inputs[1], inputs[2], inputs[3],
           inputs[4], inputs[5], inputs[6], inputs[7],
         );
-        growUp = (out[kOutGrowUp] + 1.0) * 0.5;
-        growLateral = out[kOutGrowLateral];
-        branchProb = (out[kOutBranch] + 1.0) * 0.04;
+        growUp = (out[outGrowUp] + 1.0) * 0.5;
+        growLateral = out[outGrowLateral];
+        branchProb = (out[outBranch] + 1.0) * 0.04;
       }
     }
 
     // Growth along surfaces
-    final growRate = plantGrowRate[kPlantNeuralVine];
+    final growRate = plantGrowRate[plantNeuralVine];
     final curSize = velY[idx].clamp(0, 127).toInt();
-    if (frameCount % growRate == 0 && curSize < plantMaxH[kPlantNeuralVine]) {
+    if (frameCount % growRate == 0 && curSize < plantMaxH[plantNeuralVine]) {
       // Build list of valid growth directions near a solid surface
       final directions = <List<int>>[];
       final preferUp = growUp > 0.5;
@@ -5569,15 +5571,15 @@ extension ElementBehaviors on SimulationEngine {
           inputs[0], inputs[1], inputs[2], inputs[3],
           inputs[4], inputs[5], inputs[6], inputs[7],
         );
-        seedRate = (out[kOutSeedProduction] + 1.0) * 0.005;
-        resourceAlloc = (out[kOutResourceAlloc] + 1.0) * 0.5;
+        seedRate = (out[outSeedProduction] + 1.0) * 0.005;
+        resourceAlloc = (out[outResourceAlloc] + 1.0) * 0.5;
       }
     }
 
     // Grow stem upward (small plant)
     final curSize = velY[idx].clamp(0, 127).toInt();
-    final growRate = plantGrowRate[kPlantNeuralFlower];
-    if (frameCount % growRate == 0 && curSize < plantMaxH[kPlantNeuralFlower]) {
+    final growRate = plantGrowRate[plantNeuralFlower];
+    if (frameCount % growRate == 0 && curSize < plantMaxH[plantNeuralFlower]) {
       final uy = y - gravityDir;
       if (inBoundsY(uy) && grid[uy * w + x] == El.empty) {
         final ni = uy * w + x;
@@ -5592,7 +5594,7 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     // Seed production — neural network controls rate
-    if (curSize >= plantMaxH[kPlantNeuralFlower] - 1 && rng.nextDouble() < seedRate) {
+    if (curSize >= plantMaxH[plantNeuralFlower] - 1 && rng.nextDouble() < seedRate) {
       for (int dy2 = -2; dy2 <= 0; dy2++) {
         for (int dx2 = -1; dx2 <= 1; dx2++) {
           if (dx2 == 0 && dy2 == 0) continue;
@@ -5606,11 +5608,11 @@ extension ElementBehaviors on SimulationEngine {
             final seedIdx = sy * w + seedX;
             if (grid[seedIdx] == El.empty) {
               grid[seedIdx] = El.seed; life[seedIdx] = 0;
-              velX[seedIdx] = kPlantNeuralFlower;
+              velX[seedIdx] = plantNeuralFlower;
               markDirty(seedX, sy);
             } else {
               grid[si] = El.seed; life[si] = 0;
-              velX[si] = kPlantNeuralFlower;
+              velX[si] = plantNeuralFlower;
               markDirty(sx, sy);
             }
             if (registry != null) {
@@ -5709,16 +5711,16 @@ extension ElementBehaviors on SimulationEngine {
           inputs[4], inputs[5], inputs[6], inputs[7],
         );
         // For roots, growUp is inverted: negative = grow deeper
-        growDown = (1.0 - (out[kOutGrowUp] + 1.0) * 0.5); // invert
-        growLateral = out[kOutGrowLateral];
-        branchProb = (out[kOutBranch] + 1.0) * 0.03;
+        growDown = (1.0 - (out[outGrowUp] + 1.0) * 0.5); // invert
+        growLateral = out[outGrowLateral];
+        branchProb = (out[outBranch] + 1.0) * 0.03;
       }
     }
 
     // Grow downward through dirt, seeking water
-    final growRate = plantGrowRate[kPlantRoot];
+    final growRate = plantGrowRate[plantRoot];
     final curSize = velY[idx].clamp(0, 127).toInt();
-    if (frameCount % growRate == 0 && curSize < plantMaxH[kPlantRoot] && growDown > 0.3) {
+    if (frameCount % growRate == 0 && curSize < plantMaxH[plantRoot] && growDown > 0.3) {
       // Primary direction: down (growDown controls willingness to extend)
       int gy = y + gravityDir;
       int gx = x;

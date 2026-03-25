@@ -142,7 +142,9 @@ class PixelRenderer {
 
   void spawnParticle(int x, int y, int r, int g, int b, int frames) {
     if (_microParticles.length >= _maxMicroParticles) return;
-    _microParticles.add(Int32List.fromList([x, y, r, g, b, frames]));
+    final p = Int32List(6);
+    p[0] = x; p[1] = y; p[2] = r; p[3] = g; p[4] = b; p[5] = frames;
+    _microParticles.add(p);
   }
 
   void tickMicroParticles() {
@@ -1138,7 +1140,7 @@ class PixelRenderer {
 
             // Smooth depth darkening with no visible steps
             final depthFrac = (depth * 256 ~/ 25).clamp(0, 255);
-            final pressureDarken = (engine.pressure[i] * 40) >> 8; // Darken with pressure
+            final pressureDarken = (engine.pressure[idx] * 40) >> 8; // Darken with pressure
 
             int baseR, baseG, baseB, baseA;
             if (isUndergroundWater) {
@@ -1370,12 +1372,12 @@ class PixelRenderer {
         final pType = engine.plantType(idx);
         final pStage = engine.plantStage(idx);
         final variation = ((idx * 7 + y * 3) % 11) - 5;
-        if (pStage == kStDead) {
+        if (pStage == stDead) {
           _inlineR = (80 + variation).clamp(60, 100);
           _inlineG = (50 + variation).clamp(30, 70);
           _inlineB = 20;
           _inlineA = 255;
-        } else if (pStage == kStWilting) {
+        } else if (pStage == stWilting) {
           // Yellow-green wilting
           _inlineR = (140 + variation).clamp(120, 170);
           _inlineG = (145 + variation).clamp(120, 175);
@@ -1384,14 +1386,14 @@ class PixelRenderer {
         } else {
           _inlineA = 255;
           switch (pType) {
-            case kPlantGrass:
+            case plantGrass:
               // Growth stage affects brightness
-              if (pStage == kStSprout) {
+              if (pStage == stSprout) {
                 // Bright lime green sprout
                 _inlineR = (80 + variation).clamp(60, 110);
                 _inlineG = (210 + variation).clamp(190, 240);
                 _inlineB = (50 + variation).clamp(30, 75);
-              } else if (pStage == kStMature) {
+              } else if (pStage == stMature) {
                 // Deep rich green
                 _inlineR = (25 + variation).clamp(10, 45);
                 _inlineG = (155 + variation).clamp(130, 180);
@@ -1402,8 +1404,8 @@ class PixelRenderer {
                 _inlineG = (180 + variation).clamp(155, 210);
                 _inlineB = (35 + variation).clamp(15, 55);
               }
-            case kPlantFlower:
-              if (pStage == kStMature) {
+            case plantFlower:
+              if (pStage == stMature) {
                 final hue2 = ((idx * 37) % 5);
                 switch (hue2) {
                   case 0:
@@ -1427,7 +1429,7 @@ class PixelRenderer {
                     _inlineG = 136;
                     _inlineB = 255;
                 }
-              } else if (pStage == kStSprout) {
+              } else if (pStage == stSprout) {
                 _inlineR = (60 + variation).clamp(40, 85);
                 _inlineG = (200 + variation).clamp(180, 230);
                 _inlineB = (45 + variation).clamp(25, 70);
@@ -1436,15 +1438,15 @@ class PixelRenderer {
                 _inlineG = (170 + variation).clamp(145, 200);
                 _inlineB = (30 + variation).clamp(15, 50);
               }
-            case kPlantTree:
-              if (pStage == kStGrowing) {
+            case plantTree:
+              if (pStage == stGrowing) {
                 // Warm brown trunk with vertical grain
                 final grainY = _spatialBlend(x, y * 4, 3);
                 final grainShift = (grainY * 14) ~/ 256 - 7;
                 _inlineR = (105 + variation + grainShift).clamp(80, 130);
                 _inlineG = (65 + variation ~/ 2 + grainShift ~/ 2).clamp(40, 90);
                 _inlineB = (30 + variation ~/ 3).clamp(12, 48);
-              } else if (pStage == kStSprout) {
+              } else if (pStage == stSprout) {
                 // Bright green sapling
                 _inlineR = (55 + variation).clamp(35, 80);
                 _inlineG = (195 + variation).clamp(170, 225);
@@ -1455,8 +1457,8 @@ class PixelRenderer {
                 _inlineG = (130 + variation).clamp(105, 160);
                 _inlineB = (18 + variation).clamp(5, 38);
               }
-            case kPlantMushroom:
-              if (pStage == kStMature) {
+            case plantMushroom:
+              if (pStage == stMature) {
                 final spot = (idx * 13) % 7 == 0;
                 if (spot) {
                   _inlineR = 240;
@@ -1472,7 +1474,7 @@ class PixelRenderer {
                 _inlineG = (210 + variation).clamp(190, 230);
                 _inlineB = (180 + variation).clamp(160, 200);
               }
-            case kPlantVine:
+            case plantVine:
               final isLeaf = velY[idx] % 4 == 0;
               if (isLeaf) {
                 _inlineR = (15 + variation).clamp(5, 30);
@@ -1484,7 +1486,7 @@ class PixelRenderer {
                 _inlineB = (30 + variation).clamp(12, 50);
               }
             default:
-              if (pStage == kStSprout) {
+              if (pStage == stSprout) {
                 _inlineR = (60 + variation).clamp(40, 85);
                 _inlineG = (200 + variation).clamp(175, 230);
                 _inlineB = (45 + variation).clamp(25, 70);
@@ -2202,7 +2204,7 @@ class PixelRenderer {
         _inlineA = 255;
         final flVar = ((idx * 13 + y * 5) % 11) - 5;
         final flSize = velY[idx].clamp(0, 127);
-        if (flSize >= plantMaxH[kPlantNeuralFlower] - 1) {
+        if (flSize >= plantMaxH[plantNeuralFlower] - 1) {
           // Bloom: colorful petals, varied per-colony
           final hue = ((idx * 37) % 5);
           switch (hue) {
