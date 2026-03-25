@@ -97,6 +97,11 @@ class WorldGenerator {
     // 18. Initialize temperatures based on element properties.
     _initializeTemperatures(data, config);
 
+    // 19. Cleanup: remove any water/liquid placed above terrain surface.
+    // Various placement functions can accidentally create floating water
+    // columns. This pass ensures no liquid exists above the heightmap.
+    _removeFloatingWater(data, config, heightmap);
+
     return data;
   }
 
@@ -125,6 +130,78 @@ class WorldGenerator {
           }
         }
       }
+    }
+  }
+
+  /// Remove water that was placed above the terrain surface.
+  /// Scans every column and clears any water cell that sits above
+  /// the heightmap (i.e., in the sky where water can't naturally exist).
+  static void _removeFloatingWater(GridData data, WorldConfig config, List<int> heightmap) {
+    int removed = 0;
+    // Pass 1: Remove water above heightmap
+    for (var x = 0; x < config.width; x++) {
+      final surfaceY = heightmap[x];
+      for (var y = 0; y < surfaceY; y++) {
+        final el = data.get(x, y);
+        if (el == El.water || el == El.oil || el == El.acid ||
+            el == El.mud || el == El.honey || el == El.mercury) {
+          data.set(x, y, El.empty);
+          data.life[data.toIndex(x, y)] = 0;
+          removed++;
+        }
+      }
+    }
+    // Pass 2: Remove water columns that extend above surrounding terrain.
+    // A water cell is "floating" if it's above the terrain in BOTH
+    // adjacent columns (not supported by terrain on either side).
+    for (var x = 0; x < config.width; x++) {
+      final leftH = x > 0 ? heightmap[x - 1] : 0;
+      final rightH = x < config.width - 1 ? heightmap[x + 1] : 0;
+      final neighborMin = leftH < rightH ? leftH : rightH; // highest neighbor terrain
+      for (var y = 0; y < neighborMin; y++) {
+        final el = data.get(x, y);
+        if (el == El.water) {
+          data.set(x, y, El.empty);
+          data.life[data.toIndex(x, y)] = 0;
+          removed++;
+        }
+      }
+    }
+    // Pass 3: Remove any remaining vertical water columns in air.
+    // Scan top-down: if we find water with empty above, check if
+    // there's solid support within 5 cells. If not, remove.
+    for (var x = 0; x < config.width; x++) {
+      for (var y = 0; y < config.height - 1; y++) {
+        if (data.get(x, y) != El.water) continue;
+        // Check if this water has air above
+        if (y > 0 && data.get(x, y - 1) == El.empty) {
+          // This water cell is at the top of a column. Check if supported.
+          bool supported = false;
+          // Check left and right for solid terrain at same level
+          for (var dx = -1; dx <= 1; dx += 2) {
+            final nx = x + dx;
+            if (nx >= 0 && nx < config.width) {
+              final n = data.get(nx, y);
+              if (n != El.empty && n != El.water) {
+                supported = true;
+                break;
+              }
+            }
+          }
+          if (!supported) {
+            // Remove the entire column of water below
+            for (var wy = y; wy < config.height; wy++) {
+              if (data.get(x, wy) != El.water) break;
+              data.set(x, wy, El.empty);
+              data.life[data.toIndex(x, wy)] = 0;
+              removed++;
+            }
+          }
+        }
+      }
+    }
+    if (removed > 0) {
+      print('[WorldGen] Removed $removed floating liquid cells');
     }
   }
 

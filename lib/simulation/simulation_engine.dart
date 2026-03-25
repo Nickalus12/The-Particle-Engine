@@ -543,6 +543,12 @@ class SimulationEngine {
   @pragma('vm:prefer-inline')
   bool inBoundsY(int y) => y >= 0 && y < gridH;
 
+  /// Whether an element is empty or a gas that can be displaced by gravity.
+  /// Granulars, liquids, and solids fall through gas just like empty space.
+  @pragma('vm:prefer-inline')
+  bool isEmptyOrGas(int el) =>
+      el == El.empty || elementPhysicsState[el] == PhysicsState.gas.index;
+
   /// Mark the 16x16 chunk containing (x,y) as dirty for the next frame.
   /// Also marks adjacent chunks if the cell is on a chunk boundary.
   /// x is expected to be already wrapped (0..gridW-1).
@@ -583,6 +589,14 @@ class SimulationEngine {
 
   /// Clear settled flag on all 8 neighbors (wraps horizontally).
   @pragma('vm:prefer-inline')
+  /// Whether a physics state index represents a wall (solid, liquid, granular).
+  @pragma('vm:prefer-inline')
+  static bool _isWallState(int s) {
+    return s == PhysicsState.solid.index ||
+        s == PhysicsState.liquid.index ||
+        s == PhysicsState.granular.index;
+  }
+
   void unsettleNeighbors(int x, int y) {
     final w = gridW;
     final maxY = gridH - 1;
@@ -621,6 +635,29 @@ class SimulationEngine {
       flags[scanY * w + sxr] &= 0x80;
       markDirty(sxl, scanY);
       markDirty(sxr, scanY);
+    }
+
+    // -- Explosive decompression: pressurized gas rushes toward the opening ----
+    // Check cardinal neighbors for high-pressure gas cells.
+    final gasIdx = PhysicsState.gas.index;
+    const decompThreshold = 50;
+    for (final (dx, dy) in const [(-1, 0), (1, 0), (0, -1), (0, 1)]) {
+      final nx = wrapX(x + dx);
+      final ny = y + dy;
+      if (!inBoundsY(ny)) continue;
+      final ni = ny * w + nx;
+      final nEl = grid[ni];
+      if (nEl == El.empty || nEl >= maxElements) continue;
+      if (elementPhysicsState[nEl] != gasIdx) continue;
+      if (pressure[ni] < decompThreshold) continue;
+
+      // High-pressure gas found — give it velocity toward the opening
+      // and reduce its pressure (energy is spent on movement).
+      velX[ni] = -dx; // Push toward the opening (opposite of neighbor direction)
+      velY[ni] = -dy;
+      pressure[ni] = (pressure[ni] * 128) >> 8; // Halve pressure on decompression
+      flags[ni] &= 0x80; // Unsettle so it moves immediately
+      markDirty(nx, ny);
     }
   }
 
@@ -887,6 +924,12 @@ class SimulationEngine {
     for (final exp in pendingExplosions) {
       recentExplosions.add(exp);
       final r = exp.radius;
+      // Blast center vibration: max intensity, low rumble frequency
+      {
+        final ci = exp.y * gridW + wrapX(exp.x);
+        vibration[ci] = 255;
+        vibrationFreq[ci] = 40; // low rumble
+      }
       for (int dy = -r; dy <= r; dy++) {
         for (int dx = -r; dx <= r; dx++) {
           final dist2 = dx * dx + dy * dy;
@@ -895,11 +938,17 @@ class SimulationEngine {
           final ny = exp.y + dy;
           if (!inBoundsY(ny)) continue;
           final ni = ny * gridW + nx;
+          // Propagate vibration through blast radius
+          final r2 = r * r;
+          final vib = ((r2 - dist2) * 200) ~/ r2; // 200 at center, 0 at edge
+          if (vib > vibration[ni]) {
+            vibration[ni] = vib;
+            vibrationFreq[ni] = 40 + (dist2 * 60) ~/ r2; // 40-100: rumble to thud
+          }
           final el = grid[ni];
           // Hardness-based explosion resistance: only destroy cells where hardness < explosionForce
           final cellHardness = el < maxElements ? elementHardness[el] : 0;
           // Integer explosion force: (1 - dist2/r2) * 255 = (r2 - dist2) * 255 / r2
-          final r2 = r * r;
           final explosionForce = ((r2 - dist2) * 255) ~/ r2;
           if (cellHardness >= explosionForce) continue;
 
@@ -999,7 +1048,7 @@ class SimulationEngine {
     if (inBoundsY(by)) {
       final below = by * gridW + x;
       final belowEl = grid[below];
-      if (belowEl == El.empty) {
+      if (isEmptyOrGas(belowEl)) {
         // Orifice jamming: when falling straight into a narrow opening
         // (both sides are solid walls), lateral grain pressure creates
         // a force chain that bridges the gap (Beverloo dead zone).
@@ -1039,14 +1088,14 @@ class SimulationEngine {
           momentum[idx] = curMom < 255 ? curMom : 255;
         }
 
-        // Multi-cell fall: when velY > 1, try to skip intermediate empty cells
+        // Multi-cell fall: when velY > 1, try to skip intermediate cells
         if (newVel > 1) {
           int finalY = by;
           for (int d = 2; d <= newVel; d++) {
             final testY = y + g * d;
             if (!inBoundsY(testY)) break;
             final testEl = grid[testY * gridW + x];
-            if (testEl != El.empty) break;
+            if (!isEmptyOrGas(testEl)) break;
             finalY = testY;
           }
           swap(idx, finalY * gridW + x);
@@ -1122,7 +1171,7 @@ class SimulationEngine {
       // Check arch formation: if trying to slide toward wx1 (which is
       // empty below-diag), check if grains from the opposite side (wx2)
       // are pressing against us, creating lateral friction.
-      if (grid[by * gridW + wx1] == El.empty) {
+      if (isEmptyOrGas(grid[by * gridW + wx1])) {
         // Granular arch formation at orifice constrictions.
         // Real physics: grains converging on a narrow opening form arches
         // when lateral friction from neighboring grains and nearby walls
@@ -1149,7 +1198,7 @@ class SimulationEngine {
         swap(idx, by * gridW + wx1);
         return;
       }
-      if (grid[by * gridW + wx2] == El.empty) {
+      if (isEmptyOrGas(grid[by * gridW + wx2])) {
         final belowEl = grid[by * gridW + x];
         if (elementPhysicsState[belowEl] == 0 && belowEl != El.empty) {
           final oppositeEl = grid[y * gridW + wx1];
@@ -1187,32 +1236,32 @@ class SimulationEngine {
 
     // Check for structural support before moving
     // Solids hold together better than granulars, so check side neighbors
-    if (belowEl != El.empty) {
+    if (!isEmptyOrGas(belowEl)) {
       final lx = wrapX(x - 1);
       final rx = wrapX(x + 1);
       final leftEl = grid[y * gridW + lx];
       final rightEl = grid[y * gridW + rx];
-      
+
       // If sandwiched between solids, don't fall (arch support)
-      if (leftEl != El.empty && rightEl != El.empty && 
+      if (!isEmptyOrGas(leftEl) && !isEmptyOrGas(rightEl) &&
           elementHardness[leftEl] > 20 && elementHardness[rightEl] > 20) {
          velY[idx] = 0;
          return false;
       }
-      
+
       // Try diagonal slide if straight down is blocked
       final dl = by * gridW + lx;
       final dr = by * gridW + rx;
       final dlEl = grid[dl];
       final drEl = grid[dr];
-      
+
       // Only slide if there is NO lateral support holding it in place
-      if (leftEl == El.empty && dlEl == El.empty) {
+      if (isEmptyOrGas(leftEl) && isEmptyOrGas(dlEl)) {
         if (rng.nextInt(2) == 0) {
            swap(idx, dl);
            return true;
         }
-      } else if (rightEl == El.empty && drEl == El.empty) {
+      } else if (isEmptyOrGas(rightEl) && isEmptyOrGas(drEl)) {
         if (rng.nextInt(2) == 0) {
            swap(idx, dr);
            return true;
@@ -1220,8 +1269,8 @@ class SimulationEngine {
       }
     }
 
-    // Fall through empty space with momentum
-    if (belowEl == El.empty) {
+    // Fall through empty space or gas with momentum
+    if (isEmptyOrGas(belowEl)) {
       final curVel = velY[idx];
       final newVel = (curVel + 1).clamp(0, 2); // lower terminal vel than granular
       velY[idx] = newVel;
@@ -1239,7 +1288,7 @@ class SimulationEngine {
         for (int d = 2; d <= newVel; d++) {
           final testY = y + g * d;
           if (!inBoundsY(testY)) break;
-          if (grid[testY * gridW + x] != El.empty) break;
+          if (!isEmptyOrGas(grid[testY * gridW + x])) break;
           finalY = testY;
         }
         swap(idx, finalY * gridW + x);
@@ -1352,7 +1401,7 @@ class SimulationEngine {
     if (inBoundsY(by)) {
       final below = by * gridW + x;
       final belowEl = grid[below];
-      if (belowEl == El.empty) {
+      if (isEmptyOrGas(belowEl)) {
         swap(idx, below);
         return;
       }
@@ -1392,11 +1441,11 @@ class SimulationEngine {
       final goLeft = rng.nextBool();
       final wx1 = wrapX(goLeft ? x - 1 : x + 1);
       final wx2 = wrapX(goLeft ? x + 1 : x - 1);
-      if (grid[by * gridW + wx1] == El.empty) {
+      if (isEmptyOrGas(grid[by * gridW + wx1])) {
         swap(idx, by * gridW + wx1);
         return;
       }
-      if (grid[by * gridW + wx2] == El.empty) {
+      if (isEmptyOrGas(grid[by * gridW + wx2])) {
         swap(idx, by * gridW + wx2);
         return;
       }
@@ -1439,6 +1488,46 @@ class SimulationEngine {
             final nx = wrapX(cx + dir);
             if (g[rowOff + nx] == El.empty) {
               swap(rowOff + cx, rowOff + nx);
+              cx = nx;
+            } else {
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    // --- Wind erosion: detach exposed grains from terrain surfaces ---
+    // Gated to every other frame for performance (applyWind already called % 2)
+    if (frameCount & 1 == 0) {
+      final gDir = gravityDir;
+      for (int y = 1; y < gridH - 1; y++) {
+        final rowOff = y * w;
+        final aboveOff = (y - gDir) * w;
+        for (int x = 0; x < w; x++) {
+          final el = g[rowOff + x];
+          // Element-specific erosion thresholds
+          int erosionDenom;
+          switch (el) {
+            case El.snow: erosionDenom = 20;  // easiest to erode
+            case El.ash:  erosionDenom = 30;
+            case El.sand: erosionDenom = 40;  // baseline
+            case El.dirt: erosionDenom = 80;  // hardest to erode
+            default: continue; // not erodible
+          }
+          // Must be exposed: cell above (against gravity) is empty or gas
+          if (!isEmptyOrGas(g[aboveOff + wrapX(x)])) continue;
+          // Erosion probability scales with wind strength
+          if (rng.nextInt(erosionDenom) >= absWind) continue;
+          // Detach grain: move 1-2 cells downwind if empty
+          final move = absWind > 6 ? 2 : 1;
+          final idx = rowOff + x;
+          int cx = x;
+          for (int m = 0; m < move; m++) {
+            final nx = wrapX(cx + dir);
+            final ni = rowOff + nx;
+            if (g[ni] == El.empty) {
+              swap(idx == rowOff + x ? idx : rowOff + cx, ni);
               cx = nx;
             } else {
               break;
@@ -1910,6 +1999,95 @@ class SimulationEngine {
         }
       }
     }
+
+    // -- Ambient cooling (Newton's Law of Cooling) ----------------------------
+    // Cells not at neutral temp lose heat to adjacent empty/gas neighbors.
+    // Each empty/gas cardinal neighbor nudges temp 1 unit toward 128.
+    // Gated to every 4th frame to keep cost low.
+    if (frameCount % 4 == 0) {
+      final ps = elementPhysicsState;
+      final gasIdx = PhysicsState.gas.index;
+      for (int y2 = 1; y2 < h - 1; y2++) {
+        final chunkY2 = y2 >> 4;
+        for (int x2 = 0; x2 < w; x2++) {
+          final ci = chunkY2 * cols + (x2 >> 4);
+          if (dc[ci] == 0) continue;
+
+          final idx2 = y2 * w + x2;
+          final t2 = temp[idx2];
+          if (t2 == 128) continue;
+          if (g[idx2] == El.empty) continue;
+
+          // Count cardinal empty/gas neighbors
+          int airCount = 0;
+          final up = idx2 - w;
+          final dn = idx2 + w;
+          final lt = y2 * w + ((x2 - 1 + w) % w);
+          final rt = y2 * w + ((x2 + 1) % w);
+          if (up >= 0 && (g[up] == El.empty || ps[g[up]] == gasIdx)) airCount++;
+          if (dn < g.length && (g[dn] == El.empty || ps[g[dn]] == gasIdx)) airCount++;
+          if (g[lt] == El.empty || ps[g[lt]] == gasIdx) airCount++;
+          if (g[rt] == El.empty || ps[g[rt]] == gasIdx) airCount++;
+
+          if (airCount > 0) {
+            if (t2 > 128) {
+              final nt = t2 - airCount;
+              temp[idx2] = nt < 128 ? 128 : nt;
+            } else {
+              final nt = t2 + airCount;
+              temp[idx2] = nt > 128 ? 128 : nt;
+            }
+          }
+        }
+      }
+    }
+
+    // -- Thermal radiation pass (Stefan-Boltzmann approximation) ---------------
+    // Hot cells (>180) radiate heat across air gaps to the first solid/liquid.
+    // Gated to every 3rd frame for performance.
+    if (frameCount % 3 == 0) {
+      final cat = elCategory;
+      for (int y = 1; y < h - 1; y++) {
+        final chunkY = y >> 4;
+        for (int x = 0; x < w; x++) {
+          final chunkIdx = chunkY * cols + (x >> 4);
+          if (dc[chunkIdx] == 0) continue;
+
+          final idx = y * w + x;
+          final srcTemp = temp[idx];
+          if (srcTemp <= 180) continue;
+
+          final excess = srcTemp - 180; // Heat above radiation threshold
+
+          // Scan 4 cardinal directions, up to 4 cells each.
+          // dx, dy pairs: right, left, down, up
+          for (int dir = 0; dir < 4; dir++) {
+            final int ddx = dir < 2 ? (dir == 0 ? 1 : -1) : 0;
+            final int ddy = dir >= 2 ? (dir == 2 ? 1 : -1) : 0;
+
+            for (int dist = 1; dist <= 4; dist++) {
+              final nx = (x + ddx * dist + w) % w;
+              final ny = y + ddy * dist;
+              if (ny < 0 || ny >= h) break;
+
+              final ni = ny * w + nx;
+              final nEl = g[ni];
+              if (nEl == El.empty) continue; // Radiation passes through air
+
+              final nCat = cat[nEl];
+              if (nCat & ElCat.gas != 0) continue; // Passes through gas too
+
+              // Hit a solid or liquid — apply radiated heat and stop this ray.
+              final radiated = excess ~/ (dist * dist * 4);
+              if (radiated > 0) {
+                temp[ni] = (temp[ni] + radiated).clamp(0, 255);
+              }
+              break; // Stop scanning — first non-empty/non-gas absorbs it.
+            }
+          }
+        }
+      }
+    }
   }
 
   // =========================================================================
@@ -1991,6 +2169,65 @@ class SimulationEngine {
               p[idx] = maxP - 1;
            }
         }
+      }
+    }
+
+    // Pass 3: Gas Pressure in Enclosed Spaces
+    // Confined gas builds pressure (PV=nRT approximation).
+    // Open gas decays pressure quickly.
+    final gasState = PhysicsState.gas.index;
+    final ps = elementPhysicsState;
+    final temp2 = temperature;
+    for (int y = 1; y < h - 1; y++) {
+      final chunkY = y >> 4;
+      for (int x = 0; x < w; x++) {
+        final chunkIdx = chunkY * cols + (x >> 4);
+        if (dc[chunkIdx] == 0) continue;
+
+        final idx = y * w + x;
+        final el = g[idx];
+        if (el == El.empty) { p[idx] = 0; continue; }
+        if (el >= maxElements) continue;
+        if (ps[el] != gasState) continue;
+
+        // Count solid/liquid walls among 4 cardinal neighbors.
+        int confinement = 0;
+        final up = idx - w;
+        final dn = idx + w;
+        final lt = y * w + ((x - 1 + w) % w);
+        final rt = y * w + ((x + 1) % w);
+
+        if (up >= 0) {
+          final s = g[up] < maxElements ? ps[g[up]] : 0;
+          if (_isWallState(s)) { confinement++; }
+        } else {
+          confinement++; // Boundary counts as wall
+        }
+        if (dn < g.length) {
+          final s = g[dn] < maxElements ? ps[g[dn]] : 0;
+          if (_isWallState(s)) { confinement++; }
+        } else {
+          confinement++;
+        }
+        {
+          final s = g[lt] < maxElements ? ps[g[lt]] : 0;
+          if (_isWallState(s)) { confinement++; }
+        }
+        {
+          final s = g[rt] < maxElements ? ps[g[rt]] : 0;
+          if (_isWallState(s)) { confinement++; }
+        }
+
+        if (confinement >= 3) {
+          // Mostly enclosed — pressure builds, hotter gas = more pressure
+          final tempBonus = (temp2[idx] - 128) >> 5; // /32
+          final increment = confinement + tempBonus;
+          p[idx] = (p[idx] + increment).clamp(0, 200);
+        } else if (confinement < 2) {
+          // Open space — pressure decays rapidly
+          p[idx] = (p[idx] * 200) >> 8; // ~78% decay
+        }
+        // confinement == 2: partially enclosed, pressure holds steady
       }
     }
   }
@@ -3231,6 +3468,9 @@ class SimulationEngine {
         // If support hits 0 and it's a rigid body, it snaps and falls
         if (newSupport == 0 && state == PhysicsState.solid.index) {
            velY[idx] = (velY[idx] + 1).clamp(0, 127).toInt();
+           // Structural snap generates vibration
+           vibration[idx] = 80;
+           vibrationFreq[idx] = 100; // mid-low snap
            // Small chance to crumble from stress
            if (rng.nextInt(20) == 0) {
               if (el == El.stone) grid[idx] = El.dirt;
@@ -3288,12 +3528,16 @@ class SimulationEngine {
               g[idx] = El.dirt;
               life[idx] = 0;
               m[idx] = elementBaseMass[El.dirt];
+              vibration[idx] = (accumulated >> 1).clamp(30, 180);
+              vibrationFreq[idx] = 120; // mid-range crumble
               markDirty(x, y);
               unsettleNeighbors(x, y);
             } else if (el == El.ice) {
               g[idx] = El.water;
               life[idx] = 100;
               m[idx] = elementBaseMass[El.water];
+              vibration[idx] = (accumulated >> 1).clamp(20, 150);
+              vibrationFreq[idx] = 180; // higher-pitched crack
               markDirty(x, y);
               unsettleNeighbors(x, y);
             }
@@ -3591,7 +3835,9 @@ class SimulationEngine {
 
         final idx = y * w + x;
         final flagVal = flags[idx];
-        if ((flagVal & 0x80) == currentClockBit) continue;
+        if ((flagVal & 0x80) == currentClockBit) {
+          continue;
+        }
 
         final el = grid[idx];
         if (el == El.empty) continue;

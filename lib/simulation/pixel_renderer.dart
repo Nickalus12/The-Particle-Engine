@@ -1089,6 +1089,10 @@ class PixelRenderer {
             final wave2 = _fastSinI(wavePhase2); // [0, 256]
             final shimmer = (wave * 25 + wave2 * 15) >> 8; // [0, 40]
 
+            // Wave ripple brightness from velY (set by splash impacts)
+            final waveVel = engine.velY[idx];
+            final waveOffset = waveVel.abs() * 8; // 0..64 brightness boost
+
             // Foam/highlight where water meets solid elements
             final belowIdx = y < h - 1 ? (y + 1) * w + x : -1;
             final isSolid = belowIdx >= 0 && grid[belowIdx] != El.water &&
@@ -1104,15 +1108,15 @@ class PixelRenderer {
             if (hasFoam) {
               // White-ish foam highlight with animated sparkle
               final foamFlicker = ((frameCount + x * 7) % 20 < 3) ? 25 : 0;
-              _inlineR = (110 + shimmer * 2 + foamFlicker).clamp(80, 200);
-              _inlineG = (225 + shimmer + foamFlicker ~/ 2).clamp(200, 255);
-              _inlineB = 255;
+              _inlineR = (110 + shimmer * 2 + foamFlicker + waveOffset).clamp(80, 255);
+              _inlineG = (225 + shimmer + foamFlicker ~/ 2 + waveOffset).clamp(200, 255);
+              _inlineB = (255 + waveOffset).clamp(200, 255);
               _inlineA = 235;
             } else if (isUndergroundWater) {
               // Underground surface water: darker, more muted
-              _inlineR = (30 + shimmer ~/ 2).clamp(20, 60);
-              _inlineG = (120 + shimmer ~/ 2).clamp(100, 160);
-              _inlineB = (200 + shimmer ~/ 3).clamp(180, 230);
+              _inlineR = (30 + shimmer ~/ 2 + waveOffset).clamp(20, 100);
+              _inlineG = (120 + shimmer ~/ 2 + waveOffset).clamp(100, 200);
+              _inlineB = (200 + shimmer ~/ 3 + waveOffset).clamp(180, 255);
               _inlineA = 235;
             } else {
               // Surface water reflects sky color
@@ -1121,10 +1125,10 @@ class PixelRenderer {
               final skyReflectR = (135 * skyDimRG) >> 8;
               final skyReflectG = (195 * skyDimRG) >> 8;
               final skyReflectB = (255 * (256 - (nightT256 * 77 >> 8))) >> 8; // ~(1-t*0.3)*255
-              // Blend ~25% sky reflection into surface water
-              _inlineR = (55 + shimmer + (skyReflectR * 60) ~/ 256).clamp(35, 140);
-              _inlineG = (185 + shimmer + (skyReflectG * 30) ~/ 256).clamp(165, 245);
-              _inlineB = (240 + (skyReflectB * 15) ~/ 256).clamp(230, 255);
+              // Blend ~25% sky reflection into surface water + wave ripple brightness
+              _inlineR = (55 + shimmer + (skyReflectR * 60) ~/ 256 + waveOffset).clamp(35, 200);
+              _inlineG = (185 + shimmer + (skyReflectG * 30) ~/ 256 + waveOffset).clamp(165, 255);
+              _inlineB = (240 + (skyReflectB * 15) ~/ 256 + waveOffset).clamp(230, 255);
               _inlineA = 215;
             }
           } else {
@@ -2464,16 +2468,21 @@ class PixelRenderer {
         _inlineA = (20 + vPulse).clamp(15, 60);
 
       case El.cloud:
-        // Fluffy and opaque, darkening with moisture (storm clouds)
+        // Soft fluffy clouds with transparent edges.
+        // life[idx] = cloud neighbor count (0-8) from simCloud.
+        // More neighbors = denser core = more opaque.
+        // Fewer neighbors = wispy edge = more transparent.
         final cMoist = engine.moisture[idx];
-        final cHash = _smoothHash(x * 13, y * 17);
-        final cVar = (cHash % 20) - 10;
-        // Base: pure white/gray
-        final cBase = _lerpC(250, 60, (cMoist * 255 ~/ 255).clamp(0, 255));
-        _inlineR = (cBase + cVar).clamp(30, 255);
-        _inlineG = (cBase + cVar).clamp(30, 255);
-        _inlineB = (cBase + 20 + cVar).clamp(50, 255);
-        _inlineA = 240;
+        final cNeighbors = life[idx].clamp(0, 8);
+        final cHash = _smoothHash(x * 13 + frameCount ~/ 20, y * 17);
+        final cVar = (cHash % 14) - 7;
+        // Color: white → dark gray as moisture increases (storm)
+        final cBase = 245 - (cMoist * 160 >> 8);
+        _inlineR = (cBase + cVar).clamp(50, 255);
+        _inlineG = (cBase + cVar).clamp(50, 255);
+        _inlineB = (cBase + 15 + cVar).clamp(60, 255);
+        // Alpha: wispy edges, dense core
+        _inlineA = (30 + cNeighbors * 22).clamp(30, 210);
 
       case El.silicon:
         // Dark gray semi-metallic with semiconductor sparkle
@@ -2492,6 +2501,53 @@ class PixelRenderer {
         _inlineR = (80 + siVar).clamp(60, 110);
         _inlineG = (85 + siVar + sparkle).clamp(60, 150);
         _inlineB = (100 + siVar + sparkle).clamp(80, 200);
+
+      // Noble gases: show gas discharge glow when electrically excited
+      case El.neon:
+        final nLife = life[idx];
+        if (nLife > 0) {
+          // Excited neon: characteristic orange-red glow
+          final intensity = (nLife * 12).clamp(0, 255);
+          _inlineR = intensity;
+          _inlineG = (intensity * 35) >> 8;
+          _inlineB = (intensity * 15) >> 8;
+          _inlineA = (60 + intensity * 3 ~/ 4).clamp(60, 220);
+        } else {
+          _inlineR = 255; _inlineG = 96; _inlineB = 64; _inlineA = 24;
+        }
+      case El.argon:
+        final aLife = life[idx];
+        if (aLife > 0) {
+          final intensity = (aLife * 12).clamp(0, 255);
+          _inlineR = (intensity * 160) >> 8;
+          _inlineG = (intensity * 100) >> 8;
+          _inlineB = intensity;
+          _inlineA = (50 + intensity * 3 ~/ 4).clamp(50, 200);
+        } else {
+          _inlineR = 192; _inlineG = 160; _inlineB = 224; _inlineA = 21;
+        }
+      case El.krypton:
+        final kLife = life[idx];
+        if (kLife > 0) {
+          final intensity = (kLife * 12).clamp(0, 255);
+          _inlineR = intensity;
+          _inlineG = (intensity * 240) >> 8;
+          _inlineB = intensity;
+          _inlineA = (50 + intensity * 3 ~/ 4).clamp(50, 220);
+        } else {
+          _inlineR = 224; _inlineG = 224; _inlineB = 224; _inlineA = 18;
+        }
+      case El.xenon:
+        final xLife = life[idx];
+        if (xLife > 0) {
+          final intensity = (xLife * 12).clamp(0, 255);
+          _inlineR = (intensity * 140) >> 8;
+          _inlineG = (intensity * 160) >> 8;
+          _inlineB = intensity;
+          _inlineA = (60 + intensity * 3 ~/ 4).clamp(60, 230);
+        } else {
+          _inlineR = 128; _inlineG = 128; _inlineB = 255; _inlineA = 21;
+        }
 
       default:
         final c = baseColors[el.clamp(0, baseColors.length - 1)];

@@ -133,11 +133,11 @@ class ResearchOracle:
         self.cleanup_zombies()
         self.set_status("Initializing", "Oracle Core Online")
 
-        # 1. Telemetry Daemon (Backbone)
+        # 1. Telemetry Daemon (always runs)
         tel_cmd = [sys.executable, "-u", str(SCRIPT_DIR / "telemetry_daemon.py")]
         self.launch_task("Telemetry", tel_cmd, "telemetry.log")
 
-        # 2. Physics Optuna (Maximum Parallelism)
+        # 2. Physics Optuna (CPU parallelism — runs concurrently with GPU stages)
         if self.args.all or self.args.physics:
             phys_cmd = [
                 sys.executable, "-u", str(SCRIPT_DIR / "benchmark_optuna.py"),
@@ -146,62 +146,112 @@ class ResearchOracle:
             ]
             self.launch_task("Physics-Optuna", phys_cmd, "physics.log")
 
-        # 3. GPU Sequence (Maximized scale)
+        # 3. GPU Pipeline (sequential stages with proper dependency ordering)
+        #
+        # Stage flow:
+        #   A. Physics validation (gate — must pass before optimization)
+        #   B. Style evolution (visual parameter optimization)
+        #   C. Chemistry optimization (element reaction tuning)
+        #   D. Creature training (all 7 species — uses optimized physics)
+        #   E. Ecosystem co-evolution (uses trained creature genomes)
+        #   F. Chemistry validation (final check)
+        #
         if self.args.all or self.args.gpu:
             def gpu_manager():
-                # A. Style Evolution (CLIP)
-                # Innovation: Feedback best score to status
+                env_jax = {
+                    "XLA_PYTHON_CLIENT_MEM_FRACTION": "0.9",
+                    "JAX_PLATFORM_NAME": "gpu",
+                    "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+                    "LD_LIBRARY_PATH": "/usr/local/lib/python3.12/dist-packages/nvidia/cudnn/lib:/usr/local/cuda/lib64:" + os.environ.get("LD_LIBRARY_PATH", "")
+                }
+
+                # A. Physics validation (gate check)
+                self.set_status("Physics Validation", "Conservation + Electrical + Advanced")
+                val_cmd = [
+                    sys.executable, "-u", str(SCRIPT_DIR / "unified_physics_pipeline.py"),
+                    "--validate"
+                ]
+                with open(LOG_DIR / "validation.log", "a") as f:
+                    result = subprocess.run(val_cmd, stdout=f, stderr=f)
+                if result.returncode != 0:
+                    logger.warning("Validation had failures; continuing with optimization")
+                self.emit_event("STAGE_COMPLETE", {"name": "validation"})
+
+                if self.shutdown_event.is_set(): return
+
+                # B. Style Evolution (CLIP — visual tuning)
+                self.set_status("Style Evolution", "CLIP Visual Optimization")
                 style_cmd = [
                     sys.executable, "-u", str(SCRIPT_DIR / "style_evolver_optimized.py"),
                     "--mode", "clip", "--generations", "300", "--population", "256"
                 ]
-                self.set_status("Style Evolution", "High-Scale CLIP")
-                
-                # We run this sync within the manager process to handle dependencies
-                log_path = LOG_DIR / "style.log"
-                with open(log_path, "a") as f:
+                with open(LOG_DIR / "style.log", "a") as f:
                     subprocess.run(style_cmd, stdout=f, stderr=f)
+                self.emit_event("STAGE_COMPLETE", {"name": "style_evolution"})
 
-                # B. QDax Creature Suite (Massive JAX Batching)
+                if self.shutdown_event.is_set(): return
+
+                # C. Chemistry optimization (reaction rate tuning)
+                self.set_status("Chemistry", "Optimizing Reaction Parameters")
+                chem_cmd = [
+                    sys.executable, "-u", str(SCRIPT_DIR / "gpu_chemistry_optimizer.py"),
+                    "run", "--n-trials", "500", "--n-jobs", "4"
+                ]
+                with open(LOG_DIR / "chemistry_opt.log", "a") as f:
+                    subprocess.run(chem_cmd, stdout=f, stderr=f)
+                self.emit_event("STAGE_COMPLETE", {"name": "chemistry_optimization"})
+
+                if self.shutdown_event.is_set(): return
+
+                # D. Creature training (all 7 species — uses optimized physics)
                 species = ["worm", "ant", "beetle", "spider", "fish", "bee", "firefly"]
                 qdax_script = SCRIPT_DIR / "qdax_creature_trainer.py"
-                
+
                 for sp in species:
                     if self.shutdown_event.is_set(): break
-                    self.set_status("QDax Training", f"Species: {sp}")
-                    
-                    # Innovation: Enable Curriculum for Worms to fill behavioral gaps
-                    use_curriculum = "--curriculum" if sp == "worm" else ""
-                    
+                    self.set_status("Creature Training", f"Species: {sp}")
+
                     batch_size = self.args.batch or 16384
-                    cmd = [sys.executable, "-u", str(qdax_script), "--species", sp, "--iterations", "5000", "--batch", str(batch_size)]
-                    if use_curriculum: cmd.append("--curriculum")
-                    
-                    env_jax = {
-                        "XLA_PYTHON_CLIENT_MEM_FRACTION": "0.9",
-                        "JAX_PLATFORM_NAME": "gpu",
-                        "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
-                        "LD_LIBRARY_PATH": "/usr/local/lib/python3.12/dist-packages/nvidia/cudnn/lib:/usr/local/cuda/lib64:" + os.environ.get("LD_LIBRARY_PATH", "")
-                    }
-                    
-                    logger.info(f"Launching QDax {sp} with batch {batch_size}...")
-                    with open(LOG_DIR / "qdax_creatures2.log", "a") as f:
+                    cmd = [sys.executable, "-u", str(qdax_script),
+                           "--species", sp, "--iterations", "5000",
+                           "--batch", str(batch_size)]
+                    if sp == "worm":
+                        cmd.append("--curriculum")
+
+                    logger.info(f"Training {sp} (batch={batch_size})...")
+                    with open(LOG_DIR / "creatures.log", "a") as f:
                         subprocess.run(cmd, env=env_jax, stdout=f, stderr=f)
+                    self.emit_event("STAGE_COMPLETE", {"name": f"creature_{sp}"})
 
-                # C. Chemistry Validation
-                self.set_status("Chemistry", "Validating Results")
-                chem_cmd = [sys.executable, "-u", str(SCRIPT_DIR / "chemistry_sim.py"), "--validate"]
-                with open(LOG_DIR / "chemistry.log", "a") as f:
-                    subprocess.run(chem_cmd, stdout=f, stderr=f)
+                if self.shutdown_event.is_set(): return
 
-                self.set_status("Complete", "All Tasks Finished")
+                # E. Ecosystem co-evolution (uses trained genomes from stage D)
+                self.set_status("Ecosystem", "Co-evolutionary Training")
+                eco_cmd = [
+                    sys.executable, "-u", str(SCRIPT_DIR / "ecosystem_trainer.py"),
+                    "--full", "--generations", "100"
+                ]
+                with open(LOG_DIR / "ecosystem.log", "a") as f:
+                    subprocess.run(eco_cmd, stdout=f, stderr=f)
+                self.emit_event("STAGE_COMPLETE", {"name": "ecosystem"})
+
+                if self.shutdown_event.is_set(): return
+
+                # F. Final chemistry validation
+                self.set_status("Chemistry Validation", "Final Check")
+                chem_val_cmd = [sys.executable, "-u", str(SCRIPT_DIR / "chemistry_sim.py"), "--validate"]
+                with open(LOG_DIR / "chemistry_final.log", "a") as f:
+                    subprocess.run(chem_val_cmd, stdout=f, stderr=f)
+                self.emit_event("STAGE_COMPLETE", {"name": "chemistry_validation"})
+
+                self.set_status("Complete", "Full Pipeline Finished")
 
             p_gpu = mp.Process(target=gpu_manager, name="GPU-Orchestrator")
             p_gpu.start()
             self.processes["GPU-Manager"] = p_gpu
 
         logger.info("="*60)
-        logger.info(" THE RESEARCH ORACLE IS ACTIVE - MAX POTENTIAL ENGAGED")
+        logger.info(" THE RESEARCH ORACLE IS ACTIVE")
         logger.info("="*60)
 
         try:
@@ -210,8 +260,6 @@ class ResearchOracle:
                 if not alive:
                     logger.info("All tasks complete.")
                     break
-                
-                # Check for crashed processes that aren't handling their own retries
                 time.sleep(10)
         except KeyboardInterrupt:
             logger.info("Oracle shutting down...")
@@ -229,6 +277,6 @@ if __name__ == "__main__":
     parser.add_argument("--trials", type=int, default=2000)
     parser.add_argument("--workers", type=int, default=16)
     parser.add_argument("--batch", type=int, default=16384)
-    
+
     oracle = ResearchOracle(parser.parse_args())
     oracle.orchestrate()

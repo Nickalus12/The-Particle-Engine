@@ -425,52 +425,42 @@ class FeaturePlacer {
     WorldConfig config,
     List<int> heightmap,
   ) {
-    final waterFilled = List<bool>.filled(config.width, false);
-
+    // Fill local terrain depressions (valleys between two higher ridges)
+    // with water. Scans each column for local minima bounded by higher
+    // terrain on both sides, then fills the pocket up to the lower ridge.
     for (var x = 1; x < config.width - 1; x++) {
-      if (waterFilled[x]) continue;
-
       final h = heightmap[x];
-      bool isDepression = false;
 
+      // Find the highest ridge to the left (walking outward).
       int leftRidge = h;
-      int rightRidge = h;
-
       for (var lx = x - 1; lx >= 0; lx--) {
-        if (heightmap[lx] > leftRidge) break;
-        leftRidge = heightmap[lx];
+        if (heightmap[lx] < leftRidge) leftRidge = heightmap[lx];
+        if (heightmap[lx] < h - 5) break; // found significantly higher ground
       }
+
+      // Find the highest ridge to the right.
+      int rightRidge = h;
       for (var rx = x + 1; rx < config.width; rx++) {
-        if (heightmap[rx] > rightRidge) break;
-        rightRidge = heightmap[rx];
+        if (heightmap[rx] < rightRidge) rightRidge = heightmap[rx];
+        if (heightmap[rx] < h - 5) break;
       }
 
-      final ridgeHeight = min(leftRidge, rightRidge);
-      if (ridgeHeight < h - 1) {
-        isDepression = true;
-      }
+      // Water surface = the lower of the two ridges (water spills over lower side)
+      // Ridge must be ABOVE (smaller y) the current terrain to form a depression.
+      final spillHeight = max(leftRidge, rightRidge);
+      if (spillHeight >= h) continue; // No depression — ridges aren't above us
 
-      if (!isDepression) continue;
-
-      final waterSurface = ridgeHeight;
-      if (h - waterSurface < 2) continue;
+      final depth = h - spillHeight;
+      if (depth < 3) continue; // Too shallow
 
       final rng = Random(config.seed + x);
       if (rng.nextDouble() > config.waterLevel * 0.8) continue;
 
-      for (var fx = 0; fx < config.width; fx++) {
-        // Only fill columns where terrain is below the water surface
-        // (heightmap = y of terrain; larger y = lower on screen)
-        if (heightmap[fx] <= waterSurface) continue;
-        // Fill downward from water surface to terrain
-        for (var fy = waterSurface; fy < heightmap[fx]; fy++) {
-          if (fy < 0) continue;
-          if (fy >= config.height) break;
-          if (data.get(fx, fy) == El.empty) {
-            data.set(fx, fy, El.water);
-            data.setTemp(fx, fy, 120); // slightly cool water
-            waterFilled[fx] = true;
-          }
+      // Fill water from just below the spill height down to terrain surface
+      for (var fy = spillHeight + 1; fy < h; fy++) {
+        if (data.get(x, fy) == El.empty) {
+          data.set(x, fy, El.water);
+          data.setTemp(x, fy, 120);
         }
       }
     }
@@ -483,11 +473,16 @@ class FeaturePlacer {
       final waterLine = sortedHeights[waterLineIdx];
 
       for (var x = 0; x < config.width; x++) {
-        for (var y = waterLine; y < config.height; y++) {
-          if (y >= heightmap[x]) break;
+        // Only fill water below the water line in columns where the
+        // terrain surface is BELOW the water line (terrain is deeper).
+        // Skip columns where terrain pokes above the water line —
+        // water doesn't sit on top of hills.
+        if (heightmap[x] <= waterLine) continue;
+        for (var y = waterLine; y < heightmap[x]; y++) {
+          if (y < 0) continue;
           if (data.get(x, y) == El.empty) {
             data.set(x, y, El.water);
-            data.setTemp(x, y, 120); // slightly cool surface water
+            data.setTemp(x, y, 120);
           }
         }
       }

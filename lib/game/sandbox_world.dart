@@ -217,6 +217,10 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
           simulation.updateLuminance();
           if (timing) _timingLuminance += _perfWatch.elapsedMicroseconds;
         }
+        // Moisture wicking: capillary action through porous materials
+        if (simulation.frameCount % 8 == 0) {
+          simulation.updateMoisture();
+        }
 
         if (timing) _perfWatch.reset();
         simulation.step(elementBehavior);

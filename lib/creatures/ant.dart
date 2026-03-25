@@ -44,6 +44,8 @@ enum DeathCause {
   combat,
   oldAge,
   colonyDeath,
+  poisoned,
+  asphyxiated,
 }
 
 /// Role an ant is currently fulfilling within the colony.
@@ -186,6 +188,12 @@ class Ant {
   /// Ticks spent in dangerous conditions (fire adjacency, etc.).
   int dangerExposureTicks = 0;
 
+  /// Consecutive ticks exposed to toxic gas (chlorine, fluorine, radon).
+  int toxicGasTicks = 0;
+
+  /// Consecutive ticks without oxygen (asphyxiation tracking).
+  int noOxygenTicks = 0;
+
   /// Ticks since this ant last moved (for idle detection).
   int _idleTicks = 0;
 
@@ -215,6 +223,12 @@ class Ant {
   /// Ticks in fire/lava before burning.
   static const int burnThreshold = 3;
 
+  /// Ticks of toxic gas exposure before death.
+  static const int toxicGasThreshold = 60;
+
+  /// Ticks without oxygen before asphyxiation death.
+  static const int asphyxiationThreshold = 90;
+
   // ---------------------------------------------------------------------------
   // Core tick
   // ---------------------------------------------------------------------------
@@ -237,6 +251,11 @@ class Ant {
 
     // -- Check environmental hazards first ------------------------------------
     if (!_surviveEnvironment(sim)) return false;
+
+    // -- Deposit danger pheromone if exposed to gas/heat hazards ---------------
+    if (toxicGasTicks > 0 || dangerExposureTicks > 2) {
+      dangerPheromones.deposit(x, y, 0.6);
+    }
 
     // -- Age check (queen lives much longer) -----------------------------------
     final effectiveMaxAge = role == AntRole.queen
@@ -279,13 +298,19 @@ class Ant {
     }
 
     // -- Execute action -------------------------------------------------------
+    // Xenon/CO2 slowdown: skip movement 50% of ticks when impaired.
+    final gasImpaired = noOxygenTicks > 5 || toxicGasTicks > 10;
+    final canMove = !gasImpaired || age % 2 == 0;
+
     // Queen moves very slowly (every N ticks).
-    if (role == AntRole.queen) {
-      if (age % SimTuning.queenMoveSpeed == 0) {
+    if (canMove) {
+      if (role == AntRole.queen) {
+        if (age % SimTuning.queenMoveSpeed == 0) {
+          _executeMovement(sim, action.dx, action.dy);
+        }
+      } else {
         _executeMovement(sim, action.dx, action.dy);
       }
-    } else {
-      _executeMovement(sim, action.dx, action.dy);
     }
     _executeFoodActions(sim, action);
     _executeDig(sim, action);
@@ -417,12 +442,96 @@ class Ant {
       return false;
     }
 
+    // -- Toxic gas damage: scan adjacent cells for harmful gases ----------------
+    if (!_surviveGasExposure(sim)) return false;
+
     // -- Crushed: inside a solid somehow (stone/wood fell on ant) ---------------
     if (_isSolid(element)) {
       if (!_tryEscape(sim)) {
         _die(DeathCause.crushed);
         return false;
       }
+    }
+
+    return true;
+  }
+
+  /// Check adjacent cells for gas hazards. Returns false if the ant dies.
+  bool _surviveGasExposure(SimulationEngine sim) {
+    // Count gas types in 8-connected neighborhood + current cell.
+    int toxicCount = 0; // Chlorine, fluorine
+    int radonCount = 0;
+    int co2Count = 0;
+    int oxygenCount = 0;
+    int emptyCount = 0;
+    int xenonCount = 0;
+
+    for (var dy = -1; dy <= 1; dy++) {
+      for (var dx = -1; dx <= 1; dx++) {
+        final ny = y + dy;
+        if (!sim.inBoundsY(ny)) continue;
+        final nx = sim.wrapX(x + dx);
+        final el = sim.grid[ny * sim.gridW + nx];
+
+        if (el == El.empty) {
+          emptyCount++;
+        } else if (el == El.chlorine || el == El.fluorine) {
+          toxicCount++;
+        } else if (el == El.radon) {
+          radonCount++;
+        } else if (el == El.co2) {
+          co2Count++;
+        } else if (el == El.oxygen) {
+          oxygenCount++;
+        } else if (el == El.xenon) {
+          xenonCount++;
+        }
+      }
+    }
+
+    // -- Chlorine/Fluorine: corrosive, -3 energy per tick when adjacent --------
+    if (toxicCount > 0) {
+      energy -= 0.003 * toxicCount;
+      toxicGasTicks += toxicCount;
+      if (toxicGasTicks >= toxicGasThreshold) {
+        _die(DeathCause.poisoned);
+        return false;
+      }
+    } else if (radonCount > 0) {
+      // -- Radon: radiation damage, -1 energy per tick -------------------------
+      energy -= 0.001 * radonCount;
+      toxicGasTicks += radonCount;
+      if (toxicGasTicks >= toxicGasThreshold) {
+        _die(DeathCause.poisoned);
+        return false;
+      }
+    } else {
+      // Recover toxic exposure when away from toxic gases.
+      if (toxicGasTicks > 0) toxicGasTicks--;
+    }
+
+    // -- CO2 asphyxiation: 3+ CO2 cells nearby means suffocation risk ----------
+    if (co2Count >= 3) {
+      energy -= 0.001 * co2Count;
+      noOxygenTicks++;
+    }
+    // -- No oxygen AND no empty cells: sealed environment, suffocating ----------
+    else if (oxygenCount == 0 && emptyCount == 0) {
+      energy -= 0.002;
+      noOxygenTicks++;
+    } else {
+      // Recover when breathing normally.
+      if (noOxygenTicks > 0) noOxygenTicks--;
+    }
+
+    if (noOxygenTicks >= asphyxiationThreshold) {
+      _die(DeathCause.asphyxiated);
+      return false;
+    }
+
+    // -- Xenon: anesthetic effect, slows ant by draining extra energy ----------
+    if (xenonCount > 0) {
+      energy -= 0.001 * xenonCount;
     }
 
     return true;

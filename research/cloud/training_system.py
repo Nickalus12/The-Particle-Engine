@@ -122,6 +122,8 @@ def build_plan(args: argparse.Namespace) -> dict[str, Any]:
             }
         )
     elif resolved_mode == "full-stack":
+        # Stage 1: Validation (must pass before optimization)
+        # Includes conservation, electrical, and advanced physics checks
         steps.append(
             {
                 "name": "gpu_validation",
@@ -132,6 +134,8 @@ def build_plan(args: argparse.Namespace) -> dict[str, Any]:
                 ],
             }
         )
+        # Stage 2: Physics + chemistry optimization (parallel)
+        # These can run independently since they tune different parameter sets
         staged_cmd = [
             sys.executable,
             str(SCRIPT_DIR / "staged_optimizer.py"),
@@ -148,7 +152,7 @@ def build_plan(args: argparse.Namespace) -> dict[str, Any]:
         steps.append({
             "name": "staged_optimizer",
             "cmd": staged_cmd,
-            "parallel_group": "mixed_optimization",
+            "parallel_group": "physics_chemistry",
         })
         steps.append(
             {
@@ -162,9 +166,10 @@ def build_plan(args: argparse.Namespace) -> dict[str, Any]:
                     "--workers",
                     str(resolve_worker_count("chemistry", resolved_workers or None)),
                 ],
-                "parallel_group": "mixed_optimization",
+                "parallel_group": "physics_chemistry",
             }
         )
+        # Stage 3: World generation optimization (uses physics params from stage 2)
         steps.append(
             {
                 "name": "worldgen_optimizer",
@@ -175,6 +180,30 @@ def build_plan(args: argparse.Namespace) -> dict[str, Any]:
                     str(max(1000, resolved_trials)),
                     "--workers",
                     str(resolve_worker_count("worldgen", resolved_workers or None)),
+                ],
+            }
+        )
+        # Stage 4: Creature training (uses optimized physics + worldgen)
+        steps.append(
+            {
+                "name": "creature_trainer",
+                "cmd": [
+                    sys.executable,
+                    str(SCRIPT_DIR / "creature_trainer.py"),
+                    "--species", "all",
+                    "--generations", "200",
+                ],
+            }
+        )
+        # Stage 5: Ecosystem co-evolution (uses trained creature genomes)
+        steps.append(
+            {
+                "name": "ecosystem_trainer",
+                "cmd": [
+                    sys.executable,
+                    str(SCRIPT_DIR / "ecosystem_trainer.py"),
+                    "--full",
+                    "--generations", "100",
                 ],
             }
         )

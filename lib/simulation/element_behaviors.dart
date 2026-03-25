@@ -351,7 +351,7 @@ extension ElementBehaviors on SimulationEngine {
 
     // Fall with momentum — Torricelli: v = sqrt(2*g*h)
     // Pressurized water gets an initial velocity boost proportional to sqrt(pressure)
-    if (inBoundsY(by) && grid[by * gridW + x] == El.empty) {
+    if (inBoundsY(by) && isEmptyOrGas(grid[by * gridW + x])) {
       final maxVel = elementMaxVelocity[El.water];
       int curVel = velY[idx];
       // Pressure-driven initial velocity (Torricelli's theorem)
@@ -370,7 +370,7 @@ extension ElementBehaviors on SimulationEngine {
         for (int d = 2; d <= newVel; d++) {
           final testY = y + g * d;
           if (!inBoundsY(testY)) break;
-          if (grid[testY * gridW + x] != El.empty) break;
+          if (!isEmptyOrGas(grid[testY * gridW + x])) break;
           finalY = testY;
         }
         swap(idx, finalY * gridW + x);
@@ -380,9 +380,21 @@ extension ElementBehaviors on SimulationEngine {
       return;
     }
 
-    // Splash
+    // Splash — also seed wave ripples at impact point
     if (velY[idx] >= 3 && inBoundsY(by) && grid[by * gridW + x] != El.empty) {
-      queueReactionFlash(x, y, 100, 180, 255, (velY[idx] ~/ 2).clamp(2, 4));
+      // Seed wave energy on the impacted cell and neighbors
+      final impactVel = velY[idx];
+      final waveEnergy = (impactVel ~/ 2).clamp(1, 8);
+      velY[idx] = waveEnergy;
+      for (final wd in const [-1, 1]) {
+        final wx = wrapX(x + wd);
+        final wi = y * gridW + wx;
+        if (grid[wi] == El.water && velY[wi].abs() < waveEnergy) {
+          velY[wi] = waveEnergy;
+          markDirty(wx, y);
+        }
+      }
+      queueReactionFlash(x, y, 100, 180, 255, (impactVel ~/ 2).clamp(2, 4));
       for (int i = 0; i < (velY[idx] ~/ 2).clamp(1, 3); i++) {
         final sx = wrapX(x + (rng.nextBool() ? 1 : -1) * (1 + rng.nextInt(2)));
         final sy = y - g * rng.nextInt(2);
@@ -391,6 +403,8 @@ extension ElementBehaviors on SimulationEngine {
           grid[splashIdx] = El.water;
           final splashMass = (mass ~/ 2).clamp(20, 139);
           life[splashIdx] = splashMass;
+          // Seed wave ripple from splash impact
+          velY[splashIdx] = (velY[idx] ~/ 2).clamp(1, 8);
           markProcessed(splashIdx);
           grid[idx] = El.empty;
           life[idx] = 0;
@@ -399,7 +413,40 @@ extension ElementBehaviors on SimulationEngine {
         }
       }
     }
-    velY[idx] = 0;
+
+    // Surface wave propagation: ripples spread laterally across water surface.
+    // A water cell is "surface" if the cell above is empty or gas.
+    // velY encodes wave displacement for surface cells.
+    {
+      final aboveY = y - g;
+      final isSurface = !inBoundsY(aboveY) ||
+          isEmptyOrGas(grid[aboveY * gridW + x]);
+      if (isSurface) {
+        final myVel = velY[idx];
+        if (myVel != 0) {
+          // Propagate wave energy to left and right surface water neighbors
+          for (final dir in const [-1, 1]) {
+            final nx = wrapX(x + dir);
+            final ni = y * gridW + nx;
+            if (grid[ni] == El.water) {
+              // Neighbor must also be surface water
+              final naboveY = y - g;
+              if (!inBoundsY(naboveY) ||
+                  isEmptyOrGas(grid[naboveY * gridW + nx])) {
+                final nv = velY[ni];
+                // Transfer: nv += (myVel - nv) * 0.3  (integer: * 77 >> 8)
+                velY[ni] = nv + ((myVel - nv) * 77) ~/ 256;
+                markDirty(nx, y);
+              }
+            }
+          }
+          // Dampen own wave: lose ~6% per frame (velY * 240 >> 8)
+          velY[idx] = (myVel * 240) >> 8;
+        }
+      } else {
+        velY[idx] = 0;
+      }
+    }
 
     // Puddle spreading: water with enough mass on a solid surface splits
     // laterally to fill depressions, simulating real fluid behavior.
@@ -407,12 +454,12 @@ extension ElementBehaviors on SimulationEngine {
       for (final dir in rng.nextBool() ? [1, -1] : [-1, 1]) {
         final nx = wrapX(x + dir);
         final ni = y * gridW + nx;
-        if (grid[ni] == El.empty) {
+        if (isEmptyOrGas(grid[ni])) {
           // Check that the lateral cell has a solid floor below it
           final nby = y + g;
           if (inBoundsY(nby)) {
             final belowNeighbor = grid[nby * gridW + nx];
-            if (belowNeighbor != El.empty && belowNeighbor != El.water &&
+            if (!isEmptyOrGas(belowNeighbor) && belowNeighbor != El.water &&
                 belowNeighbor != El.oil) {
               // Split: create new water cell with half the mass
               final halfMass = mass ~/ 2;
@@ -435,12 +482,12 @@ extension ElementBehaviors on SimulationEngine {
     final x1 = wrapX(dl ? x + 1 : x - 1);
     final x2 = wrapX(dl ? x - 1 : x + 1);
 
-    if (inBoundsY(by) && grid[by * gridW + x1] == El.empty) {
+    if (inBoundsY(by) && isEmptyOrGas(grid[by * gridW + x1])) {
       velX[idx] = dl ? 1 : -1;
       swap(idx, by * gridW + x1);
       return;
     }
-    if (inBoundsY(by) && grid[by * gridW + x2] == El.empty) {
+    if (inBoundsY(by) && isEmptyOrGas(grid[by * gridW + x2])) {
       velX[idx] = dl ? -1 : 1;
       swap(idx, by * gridW + x2);
       return;
@@ -1921,6 +1968,9 @@ extension ElementBehaviors on SimulationEngine {
     // Temperature-driven cooling (lava -> stone when cold enough)
     if (checkTemperatureReaction(x, y, idx, El.lava)) return;
 
+    // Convection: hot lava rises through cooler lava
+    if (tryConvection(x, y, idx, El.lava)) return;
+
     life[idx]++;
     final g = gravityDir;
 
@@ -2175,7 +2225,7 @@ extension ElementBehaviors on SimulationEngine {
 
     // Gravity — lava always falls if there's space below.
     final by = y + g;
-    if (inBoundsY(by) && grid[by * gridW + x] == El.empty) {
+    if (inBoundsY(by) && isEmptyOrGas(grid[by * gridW + x])) {
       swap(idx, by * gridW + x);
       return;
     }
@@ -2198,8 +2248,8 @@ extension ElementBehaviors on SimulationEngine {
     // Diagonal fall always allowed (not gated by viscosity)
     final lx1 = wrapX(dl ? x - 1 : x + 1);
     final lx2 = wrapX(dl ? x + 1 : x - 1);
-    if (inBoundsY(by) && grid[by * gridW + lx1] == El.empty) { swap(idx, by * gridW + lx1); return; }
-    if (inBoundsY(by) && grid[by * gridW + lx2] == El.empty) { swap(idx, by * gridW + lx2); return; }
+    if (inBoundsY(by) && isEmptyOrGas(grid[by * gridW + lx1])) { swap(idx, by * gridW + lx1); return; }
+    if (inBoundsY(by) && isEmptyOrGas(grid[by * gridW + lx2])) { swap(idx, by * gridW + lx2); return; }
 
     // Temperature-dependent viscosity: real lava viscosity follows
     // η = A·exp(B/T) — exponentially increasing as temperature drops.
@@ -2228,8 +2278,8 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     // Lateral flow: spread 1-2 cells when on solid ground
-    if (grid[y * gridW + lx1] == El.empty) { swap(idx, y * gridW + lx1); return; }
-    if (grid[y * gridW + lx2] == El.empty) { swap(idx, y * gridW + lx2); return; }
+    if (isEmptyOrGas(grid[y * gridW + lx1])) { swap(idx, y * gridW + lx1); return; }
+    if (isEmptyOrGas(grid[y * gridW + lx2])) { swap(idx, y * gridW + lx2); return; }
     // Extended lateral flow for pooling lava
     final lx3 = wrapX(dl ? x - 2 : x + 2);
     final lx4 = wrapX(dl ? x + 2 : x - 2);
@@ -3020,20 +3070,55 @@ extension ElementBehaviors on SimulationEngine {
   // =========================================================================
 
   void simC4(int x, int y, int idx) {
-    // C4 is very stable. It doesn't detonate from normal heat or fire.
-    // It requires a shockwave (high pressure) or an electrical detonator (high voltage).
-    final myVolt = voltage[idx];
+    // C4 (Composition 4): extremely stable plastic explosive.
+    // Real C4 can be burned, shot, dropped — it won't detonate.
+    // It ONLY detonates from: a blasting cap (electrical), a shockwave
+    // (sympathetic detonation from nearby explosion), or extreme pressure.
+    // Detonation velocity: 8,092 m/s — devastatingly powerful.
+
+    final myVolt = voltage[idx].abs();
     final myPres = pressure[idx];
-    
-    // Check for electrical detonation (>200V is a strong spark) or extreme pressure from another explosion
-    if (myVolt > 200 || myPres > 200) {
-      // C4 is more powerful than TNT, larger blast radius
-      pendingExplosions.add(Explosion(x, y, calculateTNTRadius(x, y) + 12));
+    final myVib = vibration[idx];
+
+    // Electrical detonator: any significant voltage (blasting cap = ~50V)
+    final electricTrigger = myVolt > 50;
+
+    // Shockwave from nearby explosion: vibration propagates through ground
+    final shockwaveTrigger = myVib > 120;
+
+    // Extreme pressure (another explosion's blast wave)
+    final pressureTrigger = myPres > 80;
+
+    // Adjacent C4 that's already detonating (chain detonation)
+    bool chainTrigger = false;
+    if (!electricTrigger && !shockwaveTrigger && !pressureTrigger) {
+      // Only check neighbors if primary triggers failed (saves perf)
+      for (int dy = -1; dy <= 1 && !chainTrigger; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = wrapX(x + dx);
+          final ny = y + dy;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * gridW + nx;
+          // Fire adjacent to C4 under pressure (shaped charge scenario)
+          if (grid[ni] == El.fire && myPres > 20) { chainTrigger = true; break; }
+          // Nearby explosion remnant (empty cell with high vibration = just exploded)
+          if (vibration[ni] > 200) { chainTrigger = true; break; }
+        }
+      }
+    }
+
+    if (electricTrigger || shockwaveTrigger || pressureTrigger || chainTrigger) {
+      // C4 blast is much more powerful than TNT
+      pendingExplosions.add(Explosion(x, y, calculateTNTRadius(x, y) + 14));
       grid[idx] = El.empty; life[idx] = 0; markProcessed(idx);
+      // Propagate massive vibration for chain detonation of nearby C4
+      vibration[idx] = 255;
+      vibrationFreq[idx] = 30; // deep boom
       return;
     }
-    
-    // C4 is sticky/plastic, it stays where it is placed unless there is no support
+
+    // C4 is sticky/plastic — stays where placed unless unsupported
     fallSolid(x, y, idx, El.c4);
   }
 
@@ -3122,6 +3207,9 @@ extension ElementBehaviors on SimulationEngine {
   // =========================================================================
 
   void simMud(int x, int y, int idx) {
+    // Convection: hot mud rises through cold mud
+    if (tryConvection(x, y, idx, El.mud)) return;
+
     // Contact drying: mud adjacent to fire/lava dries. At 1/4 rate because
     // real mud requires sustained heat to evaporate water content (~25%).
     if (rng.nextInt(SimTuning.mudContactDry) == 0 && (checkAdjacentAny2(x, y, El.fire, El.lava))) {
@@ -3153,7 +3241,7 @@ extension ElementBehaviors on SimulationEngine {
     final by = y + g;
 
     // Gravity always applies — mud falls every frame
-    if (inBoundsY(by) && grid[by * gridW + x] == El.empty) { swap(idx, by * gridW + x); return; }
+    if (inBoundsY(by) && isEmptyOrGas(grid[by * gridW + x])) { swap(idx, by * gridW + x); return; }
 
     // Density displacement: mud (120) sinks through lighter liquids
     if (tryDensityDisplace(x, y, idx, El.mud)) return;
@@ -3171,8 +3259,8 @@ extension ElementBehaviors on SimulationEngine {
     final dl = rng.nextBool();
     final mx1 = wrapX(dl ? x - 1 : x + 1);
     final mx2 = wrapX(dl ? x + 1 : x - 1);
-    if (inBoundsY(by) && grid[by * gridW + mx1] == El.empty) { swap(idx, by * gridW + mx1); return; }
-    if (inBoundsY(by) && grid[by * gridW + mx2] == El.empty) { swap(idx, by * gridW + mx2); return; }
+    if (inBoundsY(by) && isEmptyOrGas(grid[by * gridW + mx1])) { swap(idx, by * gridW + mx1); return; }
+    if (inBoundsY(by) && isEmptyOrGas(grid[by * gridW + mx2])) { swap(idx, by * gridW + mx2); return; }
 
     // Viscous lateral spread — only when pressured by adjacent mud/water
     if (frameCount % elementViscosity[El.mud] == 0) {
@@ -3190,8 +3278,8 @@ extension ElementBehaviors on SimulationEngine {
         if (pressured) break;
       }
       if (pressured) {
-        if (grid[y * gridW + mx1] == El.empty) { swap(idx, y * gridW + mx1); return; }
-        if (grid[y * gridW + mx2] == El.empty) { swap(idx, y * gridW + mx2); }
+        if (isEmptyOrGas(grid[y * gridW + mx1])) { swap(idx, y * gridW + mx1); return; }
+        if (isEmptyOrGas(grid[y * gridW + mx2])) { swap(idx, y * gridW + mx2); }
       }
     }
   }
@@ -3405,6 +3493,9 @@ extension ElementBehaviors on SimulationEngine {
     // Temperature-driven boiling (oil -> smoke at high temp)
     if (checkTemperatureReaction(x, y, idx, El.oil)) return;
 
+    // Convection: hot oil rises through cold oil
+    if (tryConvection(x, y, idx, El.oil)) return;
+
     // Flash point auto-ignition: oil vapor above its flash point ignites
     // spontaneously. Real oil flash points (200-300°C) are below boil
     // points. In our system, oil heated above 145 (below boilPoint 160)
@@ -3451,12 +3542,12 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     // Active float: if water is below and above is empty, rise upward
-    if (waterBelow && inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
+    if (waterBelow && inBoundsY(uy) && isEmptyOrGas(grid[uy * gridW + x])) {
       swap(idx, uy * gridW + x); return;
     }
 
-    // Fall through empty — only when NOT above any water body
-    if (inBoundsY(by) && grid[by * gridW + x] == El.empty) {
+    // Fall through empty/gas — only when NOT above any water body
+    if (inBoundsY(by) && isEmptyOrGas(grid[by * gridW + x])) {
       if (!waterBelow) {
         swap(idx, by * gridW + x); return;
       }
@@ -3468,8 +3559,8 @@ extension ElementBehaviors on SimulationEngine {
 
     // Diagonal fall — only when not above water
     if (!waterBelow && inBoundsY(by)) {
-      if (grid[by * gridW + ox1] == El.empty) { swap(idx, by * gridW + ox1); return; }
-      if (grid[by * gridW + ox2] == El.empty) { swap(idx, by * gridW + ox2); return; }
+      if (isEmptyOrGas(grid[by * gridW + ox1])) { swap(idx, by * gridW + ox1); return; }
+      if (isEmptyOrGas(grid[by * gridW + ox2])) { swap(idx, by * gridW + ox2); return; }
     }
 
     // Surface tension: isolated oil droplets resist lateral spread
@@ -3490,8 +3581,8 @@ extension ElementBehaviors on SimulationEngine {
     // Lateral spread — viscosity-throttled (oil viscosity = 2)
     // Only spread when NOT above water (oil floating on water should stay put)
     if (!waterBelow && frameCount % elementViscosity[El.oil] == 0) {
-      if (grid[y * gridW + ox1] == El.empty) { swap(idx, y * gridW + ox1); return; }
-      if (grid[y * gridW + ox2] == El.empty) { swap(idx, y * gridW + ox2); }
+      if (isEmptyOrGas(grid[y * gridW + ox1])) { swap(idx, y * gridW + ox1); return; }
+      if (isEmptyOrGas(grid[y * gridW + ox2])) { swap(idx, y * gridW + ox2); }
     }
   }
 
@@ -3500,6 +3591,9 @@ extension ElementBehaviors on SimulationEngine {
   // =========================================================================
 
   void simAcid(int x, int y, int idx) {
+    // Convection: hot acid rises through cold acid
+    if (tryConvection(x, y, idx, El.acid)) return;
+
     life[idx]++;
 
     if (life[idx] > SimTuning.acidLifetimeBase + rng.nextInt(SimTuning.acidLifetimeVar)) {
@@ -3619,15 +3713,15 @@ extension ElementBehaviors on SimulationEngine {
     }
 
     final by = y + gravityDir;
-    if (inBoundsY(by) && grid[by * gridW + x] == El.empty) { swap(idx, by * gridW + x); return; }
+    if (inBoundsY(by) && isEmptyOrGas(grid[by * gridW + x])) { swap(idx, by * gridW + x); return; }
 
     final dl = rng.nextBool();
     final acx1 = wrapX(dl ? x - 1 : x + 1);
     final acx2 = wrapX(dl ? x + 1 : x - 1);
-    if (inBoundsY(by) && grid[by * gridW + acx1] == El.empty) { swap(idx, by * gridW + acx1); return; }
-    if (inBoundsY(by) && grid[by * gridW + acx2] == El.empty) { swap(idx, by * gridW + acx2); return; }
-    if (grid[y * gridW + acx1] == El.empty) { swap(idx, y * gridW + acx1); return; }
-    if (grid[y * gridW + acx2] == El.empty) { swap(idx, y * gridW + acx2); }
+    if (inBoundsY(by) && isEmptyOrGas(grid[by * gridW + acx1])) { swap(idx, by * gridW + acx1); return; }
+    if (inBoundsY(by) && isEmptyOrGas(grid[by * gridW + acx2])) { swap(idx, by * gridW + acx2); return; }
+    if (isEmptyOrGas(grid[y * gridW + acx1])) { swap(idx, y * gridW + acx1); return; }
+    if (isEmptyOrGas(grid[y * gridW + acx2])) { swap(idx, y * gridW + acx2); }
   }
 
   // =========================================================================
@@ -3902,7 +3996,7 @@ extension ElementBehaviors on SimulationEngine {
   void _avalancheGranular(int x, int y, int idx) {
     final g = gravityDir;
     final by = y + g;
-    if (!inBoundsY(by) || grid[by * gridW + x] == El.empty) return;
+    if (!inBoundsY(by) || isEmptyOrGas(grid[by * gridW + x])) return;
 
     final goLeft = rng.nextBool();
     final dir1 = goLeft ? -1 : 1;
@@ -3911,26 +4005,26 @@ extension ElementBehaviors on SimulationEngine {
     for (int dirI = 0; dirI < 2; dirI++) { final dir = dirI == 0 ? dir1 : dir2;
       final sx = wrapX(x + dir);
 
-      // Standard avalanche: side empty + diagonal-below empty → slide down.
+      // Standard avalanche: side empty/gas + diagonal-below empty/gas → slide down.
       // Coulomb friction model: grains on a slope only avalanche when the
       // slope exceeds the static friction angle. A 2/3 probability gate
       // produces an effective angle of repose near 34° (real dry sand).
-      if (grid[y * gridW + sx] == El.empty &&
-          inBoundsY(by) && grid[by * gridW + sx] == El.empty) {
+      if (isEmptyOrGas(grid[y * gridW + sx]) &&
+          inBoundsY(by) && isEmptyOrGas(grid[by * gridW + sx])) {
         if (rng.nextInt(SimTuning.avalancheStandard) > 0) {
           swap(idx, by * gridW + sx);
           return;
         }
       }
 
-      // Extended slide: side empty + diagonal-below occupied →
+      // Extended slide: side empty/gas + diagonal-below occupied →
       // check 2 cells out for a step-down (models rolling on slope surface).
       // Rarer than standard avalanche due to higher activation energy.
-      if (grid[y * gridW + sx] == El.empty) {
+      if (isEmptyOrGas(grid[y * gridW + sx])) {
         final sx2 = wrapX(x + dir * 2);
-        // Roll to side if 2-out diagonal-below is empty
-        if (inBoundsY(by) && grid[by * gridW + sx2] == El.empty &&
-            grid[y * gridW + sx2] == El.empty) {
+        // Roll to side if 2-out diagonal-below is empty/gas
+        if (inBoundsY(by) && isEmptyOrGas(grid[by * gridW + sx2]) &&
+            isEmptyOrGas(grid[y * gridW + sx2])) {
           if (rng.nextInt(SimTuning.avalancheExtended) == 0) {
             swap(idx, y * gridW + sx);
             return;
@@ -4135,6 +4229,27 @@ extension ElementBehaviors on SimulationEngine {
     // Acid dissolves ants
     if (checkAdjacent(x, y, El.acid)) {
       grid[idx] = El.empty; life[idx] = 0; velY[idx] = 0; return;
+    }
+
+    // Toxic gas: chlorine/fluorine kill on prolonged exposure, trigger flee
+    if (checkAdjacentAny2(x, y, El.chlorine, El.fluorine)) {
+      _fireAlarm(x, y); // Reuse alarm to scatter nearby ants
+      // Stochastic death from toxic exposure (1/30 chance per tick)
+      if (rng.nextInt(30) == 0) {
+        grid[idx] = El.empty; life[idx] = 0; velY[idx] = 0; return;
+      }
+      // Try to flee to a non-toxic cell
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx2 = wrapX(x + dx); final ny2 = y + dy;
+          if (!inBoundsY(ny2)) continue;
+          final ni = ny2 * w + nx2;
+          if (grid[ni] == El.empty) {
+            swap(idx, ni); return;
+          }
+        }
+      }
     }
 
     // Fire/lava: flee and alarm
@@ -4732,7 +4847,8 @@ extension ElementBehaviors on SimulationEngine {
     if (checkAdjacent(x, y, El.water) && rng.nextInt(30) == 0) {
       grid[idx] = El.empty; life[idx] = 0; markDirty(x, y); return;
     }
-    // Gas physics: rises, diffuses laterally (same pattern as smoke/steam)
+    // Gas physics: rises through empty or lighter elements, diffuses laterally
+    if (tryBuoyancy(x, y, idx, El.oxygen)) return;
     final uy = y - gravityDir;
     if (inBoundsY(uy) && grid[uy * gridW + x] == El.empty) {
       swap(idx, uy * gridW + x); return;
@@ -5827,6 +5943,8 @@ extension ElementBehaviors on SimulationEngine {
   // =========================================================================
   void simHoney(int x, int y, int idx) {
     if (checkTemperatureReaction(x, y, idx, El.honey)) return;
+    // Convection: honey is very viscous, so convect rarely
+    if (frameCount % 6 == 0 && tryConvection(x, y, idx, El.honey)) return;
     // Very slow crystallization over long time
     life[idx]++;
     if (life[idx] > SimTuning.honeyCrystallizeLife && rng.nextInt(SimTuning.honeyCrystallize) == 0) {
@@ -5836,14 +5954,14 @@ extension ElementBehaviors on SimulationEngine {
     final g = gravityDir;
     final w = gridW;
     final by = y + g;
-    if (inBoundsY(by) && grid[by * w + x] == El.empty) {
+    if (inBoundsY(by) && isEmptyOrGas(grid[by * w + x])) {
       swap(idx, by * w + x); return;
     }
     // Very slow lateral spread (viscosity 6 = spread every 6th frame)
     if (frameCount % 6 == 0) {
       final dir = rng.nextBool() ? 1 : -1;
       final nx = wrapX(x + dir);
-      if (grid[y * w + nx] == El.empty) { swap(idx, y * w + nx); }
+      if (isEmptyOrGas(grid[y * w + nx])) { swap(idx, y * w + nx); }
     }
   }
 
@@ -6013,6 +6131,453 @@ extension ElementBehaviors on SimulationEngine {
   }
 
   // =========================================================================
+  // Alkaline Earth Metal — moderate water reaction, flame colors
+  // =========================================================================
+
+  /// Simulate alkaline earth metals (Be, Mg, Ca, Sr, Ba).
+  /// Radium is dispatched to simRadioactive instead.
+  /// All react with water (slower than alkali metals) producing hydrogen.
+  /// Each has distinctive fire behavior: Mg burns white, Sr red, Ba green.
+  void simAlkalineEarth(int x, int y, int idx) {
+    final el = grid[idx];
+    final w = gridW;
+
+    // --- Fire contact: element-specific flame colors ---
+    // Real chemistry: alkaline earth metal salts produce characteristic
+    // flame colors due to electron excitation. Mg burns brilliant white
+    // (used in flares), Sr red (fireworks), Ba green (fireworks).
+    if (checkAdjacent(x, y, El.fire) || checkAdjacent(x, y, El.lava)) {
+      switch (el) {
+        case El.magnesium:
+          // Mg + O₂ → MgO — brilliant white flash, produces oxide ash
+          grid[idx] = El.ash;
+          life[idx] = 0;
+          temperature[idx] = 240;
+          lightR[idx] = 255; lightG[idx] = 255; lightB[idx] = 255;
+          markDirty(x, y);
+          // Ignite neighbors — magnesium fires spread
+          for (int dy2 = -1; dy2 <= 1; dy2++) {
+            for (int dx2 = -1; dx2 <= 1; dx2++) {
+              if (dx2 == 0 && dy2 == 0) continue;
+              final nx = wrapX(x + dx2); final ny = y + dy2;
+              if (!inBoundsY(ny)) continue;
+              final ni = ny * w + nx;
+              if (grid[ni] == El.empty && rng.nextInt(3) == 0) {
+                grid[ni] = El.fire; temperature[ni] = 220; markDirty(nx, ny);
+              }
+            }
+          }
+          queueReactionFlash(x, y, 255, 255, 255, 6);
+          return;
+        case El.strontium:
+          // Sr flame test: red-orange emission (606 nm)
+          lightR[idx] = 255; lightG[idx] = 60; lightB[idx] = 20;
+          life[idx] = (life[idx] + 1).clamp(0, 255);
+          temperature[idx] = (temperature[idx] + 3).clamp(0, 255);
+          markDirty(x, y);
+          if (life[idx] > 200) {
+            grid[idx] = El.ash; life[idx] = 0; markProcessed(idx);
+            queueReactionFlash(x, y, 255, 60, 20, 4);
+            return;
+          }
+        case El.barium:
+          // Ba flame test: green emission (524 nm)
+          lightR[idx] = 40; lightG[idx] = 255; lightB[idx] = 60;
+          life[idx] = (life[idx] + 1).clamp(0, 255);
+          temperature[idx] = (temperature[idx] + 3).clamp(0, 255);
+          markDirty(x, y);
+          if (life[idx] > 200) {
+            grid[idx] = El.ash; life[idx] = 0; markProcessed(idx);
+            queueReactionFlash(x, y, 40, 255, 60, 4);
+            return;
+          }
+        case El.calcium:
+          // Ca flame test: orange-red (622 nm) — less dramatic
+          lightR[idx] = 255; lightG[idx] = 100; lightB[idx] = 30;
+          life[idx] = (life[idx] + 1).clamp(0, 255);
+          temperature[idx] = (temperature[idx] + 2).clamp(0, 255);
+          markDirty(x, y);
+          if (life[idx] > 220) {
+            grid[idx] = El.ash; life[idx] = 0; markProcessed(idx);
+            return;
+          }
+        default:
+          // Beryllium: high melt point, doesn't burn easily
+          temperature[idx] = (temperature[idx] + 1).clamp(0, 255);
+          markDirty(x, y);
+      }
+    }
+
+    // --- Water reaction: slower than alkali metals ---
+    // Real: Mg + 2H₂O → Mg(OH)₂ + H₂↑ (slow at room temp, fast when hot)
+    // Ca + 2H₂O → Ca(OH)₂ + H₂↑ (moderate rate)
+    // Be barely reacts (passivation layer)
+    if (checkAdjacent(x, y, El.water)) {
+      final reactivity = elementReactivity[el];
+      // Be has very low reactivity (~40), so it almost never reacts
+      // Ca/Sr/Ba react moderately, Mg needs heat to react well
+      int chance = 200 - reactivity; // lower = more reactive
+      if (el == El.magnesium && temperature[idx] < 160) {
+        chance += 100; // Mg is slow at room temp, faster when hot
+      }
+      if (rng.nextInt(chance.clamp(10, 400)) == 0) {
+        // Consume one adjacent water cell, produce hydrogen
+        for (int dy2 = -1; dy2 <= 1; dy2++) {
+          for (int dx2 = -1; dx2 <= 1; dx2++) {
+            if (dx2 == 0 && dy2 == 0) continue;
+            final nx = wrapX(x + dx2); final ny = y + dy2;
+            if (!inBoundsY(ny)) continue;
+            final ni = ny * w + nx;
+            if (grid[ni] == El.water) {
+              grid[ni] = El.hydrogen; markDirty(nx, ny);
+              break; // one bubble per tick
+            }
+          }
+        }
+        // Slowly consume the metal
+        life[idx] = (life[idx] + 1).clamp(0, 255);
+        if (life[idx] > 240) {
+          grid[idx] = El.stone; // hydroxide precipitate → stone-like
+          life[idx] = 0; markProcessed(idx);
+          return;
+        }
+        markDirty(x, y);
+      }
+    }
+
+    // --- Acid reaction: all alkaline earths dissolve in acid ---
+    if (checkAdjacent(x, y, El.acid)) {
+      if (rng.nextInt(6) == 0) {
+        // Consume acid, produce hydrogen
+        for (int dy2 = -1; dy2 <= 1; dy2++) {
+          for (int dx2 = -1; dx2 <= 1; dx2++) {
+            if (dx2 == 0 && dy2 == 0) continue;
+            final nx = wrapX(x + dx2); final ny = y + dy2;
+            if (!inBoundsY(ny)) continue;
+            final ni = ny * w + nx;
+            if (grid[ni] == El.acid) {
+              grid[ni] = El.hydrogen; markDirty(nx, ny);
+              break;
+            }
+          }
+        }
+        grid[idx] = El.salt; life[idx] = 0; markProcessed(idx);
+        queueReactionFlash(x, y, 200, 200, 220, 3);
+        return;
+      }
+    }
+
+    // Gravity: fall as solid
+    fallSolid(x, y, idx, el);
+  }
+
+  // =========================================================================
+  // Transition Metal — varied unique behaviors per element
+  // =========================================================================
+
+  /// Simulate transition metals with element-specific behaviors.
+  /// Gold: never corrodes. Silver: tarnishes. Tungsten: extreme melt point.
+  /// Zinc: passivation layer. Platinum: catalyst for adjacent reactions.
+  void simTransitionMetal(int x, int y, int idx) {
+    final el = grid[idx];
+    final w = gridW;
+
+    switch (el) {
+      case El.gold:
+        // Gold is nearly inert — oxidation stays at 128 (neutral)
+        // Real: Au standard electrode potential +1.52V, resists almost everything
+        oxidation[idx] = 128;
+        // Only melts at very high temp (already in properties: meltPoint 170)
+        fallSolid(x, y, idx, El.gold);
+        return;
+
+      case El.chromium:
+        // Chromium forms a tough Cr₂O₃ passivation layer — the basis of
+        // stainless steel. Oxidation rises quickly to ~145 then stops.
+        // Real: Cr₂O₃ is only 1-2 nm thick but extremely stable.
+        {
+          final ox = oxidation[idx];
+          if (ox < 145 && frameCount % 12 == 0) {
+            oxidation[idx] = ox + 1;
+            markDirty(x, y);
+          }
+          // Cap: once passivated, no further corrosion
+          if (ox > 145) oxidation[idx] = 145;
+        }
+        // Resists acid well (passivation protects it)
+        if (checkAdjacent(x, y, El.acid) && rng.nextInt(200) == 0) {
+          for (int dy2 = -1; dy2 <= 1; dy2++) {
+            for (int dx2 = -1; dx2 <= 1; dx2++) {
+              if (dx2 == 0 && dy2 == 0) continue;
+              final nx = wrapX(x + dx2); final ny = y + dy2;
+              if (!inBoundsY(ny)) continue;
+              final ni = ny * w + nx;
+              if (grid[ni] == El.acid) {
+                grid[ni] = El.empty; markDirty(nx, ny);
+                break;
+              }
+            }
+          }
+        }
+        fallSolid(x, y, idx, El.chromium);
+        return;
+
+      case El.silver:
+        // Silver tarnishes over time: Ag + H₂S → Ag₂S (black tarnish)
+        // Represented by oxidation drifting upward slowly
+        if (frameCount % 30 == 0) {
+          final ox = oxidation[idx];
+          if (ox < 180) {
+            oxidation[idx] = ox + 1;
+            markDirty(x, y);
+          }
+        }
+        // Sulfur accelerates tarnishing
+        if (checkAdjacent(x, y, El.sulfur) && frameCount % 8 == 0) {
+          final ox = oxidation[idx];
+          if (ox < 200) {
+            oxidation[idx] = ox + 3;
+            markDirty(x, y);
+          }
+        }
+        fallSolid(x, y, idx, El.silver);
+        return;
+
+      case El.tungsten:
+        // Tungsten: highest melt point of any element (3422C)
+        // In-game: melt point 255, effectively can't melt except in extreme conditions
+        // Also extremely hard — resist acid
+        if (checkAdjacent(x, y, El.acid)) {
+          // Tungsten resists acid — do nothing (very slow dissolution)
+          if (rng.nextInt(500) == 0) {
+            for (int dy2 = -1; dy2 <= 1; dy2++) {
+              for (int dx2 = -1; dx2 <= 1; dx2++) {
+                if (dx2 == 0 && dy2 == 0) continue;
+                final nx = wrapX(x + dx2); final ny = y + dy2;
+                if (!inBoundsY(ny)) continue;
+                final ni = ny * w + nx;
+                if (grid[ni] == El.acid) {
+                  grid[ni] = El.empty; markDirty(nx, ny);
+                  break;
+                }
+              }
+            }
+          }
+        }
+        // Oxidation stays very low — tungsten forms thin protective oxide
+        if (oxidation[idx] > 140) oxidation[idx] = 140;
+        fallSolid(x, y, idx, El.tungsten);
+        return;
+
+      case El.zinc:
+        // Zinc forms a protective oxide layer then stops corroding
+        // Real: Zn + O₂ → ZnO (passivation). Used for galvanizing.
+        {
+          final ox = oxidation[idx];
+          if (ox < 160 && frameCount % 20 == 0) {
+            oxidation[idx] = ox + 1; // slow passivation
+            markDirty(x, y);
+          }
+          // Once oxidation reaches ~160, it stabilizes (passivation complete)
+        }
+        // Acid reaction: Zn + 2HCl → ZnCl₂ + H₂↑
+        if (checkAdjacent(x, y, El.acid)) {
+          if (rng.nextInt(8) == 0) {
+            for (int dy2 = -1; dy2 <= 1; dy2++) {
+              for (int dx2 = -1; dx2 <= 1; dx2++) {
+                if (dx2 == 0 && dy2 == 0) continue;
+                final nx = wrapX(x + dx2); final ny = y + dy2;
+                if (!inBoundsY(ny)) continue;
+                final ni = ny * w + nx;
+                if (grid[ni] == El.acid) {
+                  grid[ni] = El.hydrogen; markDirty(nx, ny);
+                  break;
+                }
+              }
+            }
+            grid[idx] = El.salt; life[idx] = 0; markProcessed(idx);
+            queueReactionFlash(x, y, 180, 200, 220, 3);
+            return;
+          }
+        }
+        fallSolid(x, y, idx, El.zinc);
+        return;
+
+      case El.platinum:
+        // Platinum is a powerful catalyst — increases reaction rate of
+        // adjacent reactive pairs without being consumed.
+        // Real: Pt catalyzes H₂+O₂, hydrogenation, catalytic converters
+        oxidation[idx] = 128; // never corrodes (noble metal)
+        if (frameCount % 4 == 0) {
+          for (int dy2 = -1; dy2 <= 1; dy2++) {
+            for (int dx2 = -1; dx2 <= 1; dx2++) {
+              if (dx2 == 0 && dy2 == 0) continue;
+              final nx = wrapX(x + dx2); final ny = y + dy2;
+              if (!inBoundsY(ny)) continue;
+              final ni = ny * w + nx;
+              final neighbor = grid[ni];
+              // Catalyze hydrogen + oxygen → water
+              if (neighbor == El.hydrogen && checkAdjacent(nx, ny, El.oxygen)) {
+                grid[ni] = El.water; life[ni] = 100; markDirty(nx, ny);
+                queueReactionFlash(nx, ny, 200, 220, 255, 2);
+              }
+              // Catalyze organic decomposition (accelerate compost)
+              if (neighbor == El.compost && rng.nextInt(4) == 0) {
+                life[ni] = (life[ni] + 5).clamp(0, 255);
+                markDirty(nx, ny);
+              }
+            }
+          }
+        }
+        fallSolid(x, y, idx, El.platinum);
+        return;
+
+      default:
+        // Generic transition metal: just fall + default oxidation behavior
+        fallSolid(x, y, idx, el);
+        return;
+    }
+  }
+
+  // =========================================================================
+  // Noble Gas — inert, buoyant, glow when electrically excited
+  // =========================================================================
+
+  /// Simulate noble gases (He, Ne, Ar, Kr, Xe). They are chemically inert
+  /// but have distinctive physical behaviors:
+  /// - Helium: lightest gas, rises fastest, high wind sensitivity
+  /// - Neon/Argon/Krypton/Xenon: glow when near electricity (gas discharge)
+  /// - Xenon: heaviest stable noble gas, neutrally buoyant, strongest glow
+  /// - All: density-stratified buoyancy, lateral diffusion
+  void simNobleGas(int x, int y, int idx) {
+    final el = grid[idx];
+    final w = gridW;
+    final g = gravityDir;
+
+    // --- Electrical excitation: noble gases glow in electric fields ---
+    // Real physics: gas discharge tubes work by accelerating electrons through
+    // the gas. Each noble gas emits a characteristic color when its electrons
+    // return to ground state. Voltage threshold varies by gas.
+    if (el != El.helium) { // Helium doesn't visibly glow in-game
+      bool excited = false;
+      for (int dy = -1; dy <= 1 && !excited; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = wrapX(x + dx);
+          final ny = y + dy;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * w + nx;
+          final neighbor = grid[ni];
+          // Excited by lightning, high voltage, or other excited noble gas
+          if (neighbor == El.lightning ||
+              (voltage[ni].abs() > 20) ||
+              (neighbor == el && lightR[ni] > 0)) {
+            excited = true;
+            break;
+          }
+        }
+      }
+      if (excited) {
+        // Each gas has its characteristic emission spectrum
+        switch (el) {
+          case El.neon:
+            lightR[idx] = 255; lightG[idx] = 80; lightB[idx] = 30; // orange-red
+          case El.argon:
+            lightR[idx] = 160; lightG[idx] = 100; lightB[idx] = 255; // violet
+          case El.krypton:
+            lightR[idx] = 220; lightG[idx] = 230; lightB[idx] = 255; // white
+          case El.xenon:
+            lightR[idx] = 120; lightG[idx] = 140; lightB[idx] = 255; // blue-white
+          default: break;
+        }
+        // Excited gas emits light for a few frames then fades
+        life[idx] = 20; // excitation timer
+      } else if (life[idx] > 0) {
+        // Decay excitation
+        life[idx]--;
+        if (life[idx] == 0) {
+          lightR[idx] = 0; lightG[idx] = 0; lightB[idx] = 0;
+        }
+      }
+    }
+
+    // --- Argon shielding: prevents oxidation of adjacent metals ---
+    // Real physics: argon is the standard shielding gas in welding (MIG/TIG).
+    // It displaces oxygen, preventing oxide formation on hot metal surfaces.
+    if (el == El.argon && frameCount % 4 == 0) {
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = wrapX(x + dx);
+          final ny = y + dy;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * w + nx;
+          // Push oxidation toward neutral on adjacent metals
+          if (grid[ni] == El.metal || grid[ni] == El.copper) {
+            final ox = oxidation[ni];
+            if (ox > 130) oxidation[ni] = ox - 2;
+          }
+        }
+      }
+    }
+
+    // --- Gas movement: buoyancy + drift ---
+    final myDensity = elementDensity[el];
+    final grav = elementGravity[el];
+
+    // Vertical movement: rise or sink based on gravity
+    if (grav < 0) {
+      // Rising gas — try to rise through empty or lighter gas
+      final uy = y - g;
+      if (inBoundsY(uy)) {
+        final ui = uy * w + x;
+        final aboveEl = grid[ui];
+        if (aboveEl == El.empty) {
+          // Helium rises 2 cells, others 1
+          if (el == El.helium) {
+            final uy2 = y - g * 2;
+            if (inBoundsY(uy2) && grid[uy2 * w + x] == El.empty) {
+              swap(idx, uy2 * w + x);
+              return;
+            }
+          }
+          swap(idx, ui);
+          return;
+        }
+        // Buoyancy: rise through heavier gases
+        if (elementPhysicsState[aboveEl] == PhysicsState.gas.index &&
+            elementDensity[aboveEl] > myDensity) {
+          swap(idx, ui);
+          return;
+        }
+      }
+    } else if (grav > 0) {
+      // Sinking gas (xenon) — fall through empty or displace lighter gas
+      if (tryDensityDisplace(x, y, idx, el)) return;
+      final by = y + g;
+      if (inBoundsY(by) && isEmptyOrGas(grid[by * w + x])) {
+        swap(idx, by * w + x);
+        return;
+      }
+    }
+
+    // Lateral diffusion: gases spread sideways randomly
+    if (rng.nextInt(2) == 0) {
+      final dir = rng.nextBool() ? 1 : -1;
+      final nx = wrapX(x + dir);
+      final ni = y * w + nx;
+      final sideEl = grid[ni];
+      if (sideEl == El.empty) {
+        swap(idx, ni);
+      } else if (elementPhysicsState[sideEl] == PhysicsState.gas.index &&
+                 elementDensity[sideEl] > myDensity && rng.nextInt(3) == 0) {
+        // Lighter gas displaces heavier gas sideways occasionally
+        swap(idx, ni);
+      }
+    }
+  }
+
+  // =========================================================================
   // Halogen Gas — reactive, toxic to organics
   // =========================================================================
   void simHalogenGas(int x, int y, int idx) {
@@ -6148,74 +6713,205 @@ extension ElementBehaviors on SimulationEngine {
   // =========================================================================
 
   void simVapor(int x, int y, int idx) {
-    // Vapor rises and diffuses
-    final uy = y - gravityDir;
-    if (inBoundsY(uy)) {
-      // Vapor rises through empty space or lighter gases
-      if (grid[uy * gridW + x] == El.empty || grid[uy * gridW + x] == El.smoke) {
-        swap(idx, uy * gridW + x);
-        return;
+    // Vapor is water in gas phase — lighter than air, rises and condenses.
+    // Real physics: water vapor is invisible (steam you see is actually
+    // condensed micro-droplets). Vapor condenses when it cools below the
+    // dew point, or when it reaches altitude where pressure drops.
+
+    final w = gridW;
+    final g = gravityDir;
+
+    // Temperature-driven condensation: cold surfaces turn vapor back to water
+    final temp = temperature[idx];
+    if (temp < 90) {
+      // Below dew point — condense into water droplet
+      grid[idx] = El.water;
+      life[idx] = 60;
+      markProcessed(idx);
+      return;
+    }
+
+    // Condense on contact with cold solids
+    if (frameCount % 3 == 0) {
+      for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+          if (dx == 0 && dy == 0) continue;
+          final nx = wrapX(x + dx);
+          final ny = y + dy;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * w + nx;
+          final neighbor = grid[ni];
+          if (neighbor != El.empty && neighbor != El.vapor && neighbor != El.cloud &&
+              elementPhysicsState[neighbor] == PhysicsState.solid.index &&
+              temperature[ni] < 100) {
+            // Condense on the cold surface
+            grid[idx] = El.water;
+            life[idx] = 40;
+            markProcessed(idx);
+            return;
+          }
+        }
       }
     }
 
     // High altitude: transform into cloud
-    final isAtAltitude = gravityDir == 1 ? y < (gridH ~/ 8) : y > (gridH - (gridH ~/ 8));
+    final altitudeThreshold = gravityDir == 1 ? gridH ~/ 5 : gridH - (gridH ~/ 5);
+    final isAtAltitude = gravityDir == 1 ? y < altitudeThreshold : y > altitudeThreshold;
     if (isAtAltitude) {
       grid[idx] = El.cloud;
       life[idx] = 0;
+      moisture[idx] = 40; // seed cloud with some moisture
       markProcessed(idx);
       return;
     }
 
-    // Horizontal drift
+    // Rise through empty or lighter gases (buoyancy)
+    if (tryBuoyancy(x, y, idx, El.vapor)) return;
+    final uy = y - g;
+    if (inBoundsY(uy) && isEmptyOrGas(grid[uy * w + x])) {
+      swap(idx, uy * w + x);
+      return;
+    }
+
+    // Lateral drift — vapor diffuses widely
     if (rng.nextInt(2) == 0) {
       final dir = rng.nextBool() ? 1 : -1;
       final nx = wrapX(x + dir);
-      if (grid[y * gridW + nx] == El.empty) swap(idx, y * gridW + nx);
+      final ni = y * w + nx;
+      if (isEmptyOrGas(grid[ni])) swap(idx, ni);
     }
   }
 
   void simCloud(int x, int y, int idx) {
-    // Clouds drift with the wind
+    // Clouds are aggregates of condensed water vapor. They form at altitude,
+    // drift with wind as connected masses, accumulate moisture, and
+    // precipitate when saturated. Cloud physics:
+    // - Nimbus (rain): moisture > 180, produces rain/snow
+    // - Cumulus (fair weather): moisture < 120, fluffy and white
+    // - Cumulonimbus (storm): moisture > 220, lightning + heavy rain
+    final w = gridW;
+    final g = gravityDir;
+    final moist = moisture[idx];
+
+    // Count cloud neighbors (affects behavior and rendering)
+    int cloudNeighbors = 0;
+    for (int dy = -1; dy <= 1; dy++) {
+      for (int dx = -1; dx <= 1; dx++) {
+        if (dx == 0 && dy == 0) continue;
+        final nx = wrapX(x + dx);
+        final ny = y + dy;
+        if (inBoundsY(ny) && grid[ny * w + nx] == El.cloud) cloudNeighbors++;
+      }
+    }
+
+    // Store neighbor count in life for the renderer to read
+    life[idx] = cloudNeighbors;
+
+    // --- Wind drift: entire cloud formation moves together ---
     final localWind = windX2[idx];
-    if (localWind != 0 && rng.nextInt(2) == 0) {
-      final dir = localWind > 0 ? 1 : -1;
-      final nx = wrapX(x + dir);
-      if (grid[y * gridW + nx] == El.empty) {
-        swap(idx, y * gridW + nx);
+    final windDir = localWind != 0 ? (localWind > 0 ? 1 : -1) :
+                    (windForce != 0 ? (windForce > 0 ? 1 : -1) : 0);
+    if (windDir != 0 && rng.nextInt(3) == 0) {
+      final nx = wrapX(x + windDir);
+      final ni = y * w + nx;
+      if (grid[ni] == El.empty || grid[ni] == El.oxygen) {
+        swap(idx, ni);
         return;
       }
     }
 
-    // Accumulate moisture from local surroundings
-    if (frameCount % 10 == 0) {
-      moisture[idx] = (moisture[idx] + 2).clamp(0, 255);
+    // --- Moisture accumulation ---
+    // Larger clouds accumulate faster (more surface area = more condensation)
+    if (frameCount % 6 == 0) {
+      final rate = cloudNeighbors >= 4 ? 3 : (cloudNeighbors >= 2 ? 2 : 1);
+      moisture[idx] = (moist + rate).clamp(0, 255);
     }
 
-    // Precipitation check: when cloud is heavy, it condenses
-    // Threshold depends on pressure and density
-    if (moisture[idx] > 200) {
-      final t = temperature[idx];
-      // Cold clouds produce snow, warm clouds produce rain
-      if (t < 80) {
-        grid[idx] = El.snow;
-      } else {
-        grid[idx] = El.water;
-        life[idx] = 80; // moderate mass for falling droplets
-      }
-      moisture[idx] = 0;
-      markProcessed(idx);
-      return;
-    }
-
-    // Clouds occasionally merge or expand
-    if (rng.nextInt(1000) == 0) {
+    // --- Moisture sharing between adjacent clouds (equalization) ---
+    if (frameCount % 8 == 0 && cloudNeighbors > 0) {
       final dir = rng.nextBool() ? 1 : -1;
       final nx = wrapX(x + dir);
-      if (grid[y * gridW + nx] == El.empty) {
-        grid[y * gridW + nx] = El.cloud;
-        life[y * gridW + nx] = 0;
-        markDirty(nx, y);
+      final ni = y * w + nx;
+      if (grid[ni] == El.cloud) {
+        final nMoist = moisture[ni];
+        if ((moist - nMoist).abs() > 10) {
+          final avg = (moist + nMoist) ~/ 2;
+          moisture[idx] = avg;
+          moisture[ni] = avg;
+        }
+      }
+    }
+
+    // --- Precipitation: saturated clouds produce rain or snow ---
+    if (moist > 180) {
+      // Rain falls from the BOTTOM of the cloud (cell below must not be cloud)
+      final by = y + g;
+      final isBottom = !inBoundsY(by) || grid[by * w + x] != El.cloud;
+      if (isBottom && rng.nextInt(moist > 220 ? 4 : 12) == 0) {
+        final t = temperature[idx];
+        if (t < 80) {
+          // Cold: snow
+          if (inBoundsY(by) && isEmptyOrGas(grid[by * w + x])) {
+            grid[by * w + x] = El.snow;
+            markDirty(x, by);
+          }
+        } else {
+          // Warm: rain
+          if (inBoundsY(by) && isEmptyOrGas(grid[by * w + x])) {
+            grid[by * w + x] = El.water;
+            life[by * w + x] = 60;
+            markDirty(x, by);
+          }
+        }
+        moisture[idx] = (moist - 20).clamp(0, 255);
+      }
+
+      // Storm clouds (very saturated) can spawn lightning
+      if (moist > 230 && rng.nextInt(800) == 0) {
+        final ly = y + g * 2;
+        if (inBoundsY(ly) && isEmptyOrGas(grid[ly * w + x])) {
+          grid[ly * w + x] = El.lightning;
+          markDirty(x, ly);
+          lightningFlashFrames = 4;
+        }
+      }
+    }
+
+    // --- Cloud growth: vapor and moisture feed expansion ---
+    if (rng.nextInt(80) == 0 && cloudNeighbors >= 2) {
+      // Grow laterally or vertically to form larger formations
+      final dx = rng.nextInt(3) - 1;
+      final dy = rng.nextInt(2) == 0 ? 0 : (rng.nextBool() ? -1 : 1);
+      final nx = wrapX(x + dx);
+      final ny = y + dy;
+      if (inBoundsY(ny)) {
+        final ni = ny * w + nx;
+        final target = grid[ni];
+        if (target == El.empty || target == El.oxygen || target == El.vapor) {
+          grid[ni] = El.cloud;
+          moisture[ni] = moist ~/ 3; // new cells start with less moisture
+          life[ni] = 0;
+          markDirty(nx, ny);
+        }
+      }
+    }
+
+    // --- Cloud dissipation: isolated cells evaporate ---
+    if (cloudNeighbors <= 1 && moist < 40 && rng.nextInt(30) == 0) {
+      grid[idx] = El.vapor;
+      moisture[idx] = 0;
+      markProcessed(idx);
+    }
+
+    // --- Buoyancy: clouds stay at altitude, don't fall ---
+    // Clouds are lighter than surrounding air. If pushed below
+    // their natural altitude, they rise back.
+    final altFloor = gravityDir == 1 ? gridH ~/ 3 : gridH * 2 ~/ 3;
+    final tooLow = gravityDir == 1 ? y > altFloor : y < altFloor;
+    if (tooLow && rng.nextInt(4) == 0) {
+      final uy = y - g;
+      if (inBoundsY(uy) && isEmptyOrGas(grid[uy * w + x])) {
+        swap(idx, uy * w + x);
       }
     }
   }
@@ -6245,6 +6941,13 @@ extension ElementBehaviors on SimulationEngine {
   // Phosphorus — auto-ignites when adjacent to oxygen/air
   // =========================================================================
   void simPhosphorus(int x, int y, int idx) {
+    // Phosphorescence: glow in dark (low luminance)
+    if (luminance[idx] < 40) {
+      lightR[idx] = 100; lightG[idx] = 255; lightB[idx] = 80; // green glow
+    } else {
+      lightR[idx] = 0; lightG[idx] = 0; lightB[idx] = 0;
+    }
+
     // White phosphorus auto-ignites in the presence of oxygen
     if (checkAdjacent(x, y, El.oxygen) || checkAdjacent(x, y, El.empty)) {
       // Auto-ignition chance (represents exposure to air)
@@ -6261,8 +6964,302 @@ extension ElementBehaviors on SimulationEngine {
       temperature[idx] = 230; markDirty(x, y);
       return;
     }
+    // Spontaneous ignition at high temperature
+    if (temperature[idx] > 228) {
+      grid[idx] = El.fire; life[idx] = 0;
+      temperature[idx] = 230; markDirty(x, y);
+      queueReactionFlash(x, y, 255, 255, 150, 3);
+      return;
+    }
     // Fall as granular
     fallGranular(x, y, idx, El.phosphorus);
+  }
+
+  // =========================================================================
+  // Post-Transition Metals — Al, Ga, In, Sn, Tl, Bi
+  // =========================================================================
+  void simPostTransition(int x, int y, int idx) {
+    final el = grid[idx];
+    final w = gridW;
+
+    // Gallium melts at near body temperature (~29C real, mapped to ~40 above base)
+    if (el == El.gallium) {
+      if (temperature[idx] > 138) {
+        grid[idx] = El.mercury; markDirty(x, y);
+        return;
+      }
+      // Melts from warm neighbors (body heat simulation)
+      for (int dy2 = -1; dy2 <= 1; dy2++) {
+        for (int dx2 = -1; dx2 <= 1; dx2++) {
+          if (dx2 == 0 && dy2 == 0) continue;
+          final nx = wrapX(x + dx2); final ny = y + dy2;
+          if (!inBoundsY(ny)) continue;
+          if (temperature[ny * w + nx] > 140 && grid[ny * w + nx] != El.empty) {
+            grid[idx] = El.mercury; markDirty(x, y);
+            return;
+          }
+        }
+      }
+    }
+
+    // Aluminum: protective oxide layer — oxidation caps at ~150, then stops
+    if (el == El.aluminum) {
+      final ox = oxidation[idx];
+      if (ox < 150 && checkAdjacent(x, y, El.water) && rng.nextInt(200) == 0) {
+        oxidation[idx] = (ox + 5).clamp(0, 255);
+        markDirty(x, y);
+      }
+      // Acid dissolves the oxide layer
+      if (checkAdjacent(x, y, El.acid) && rng.nextInt(30) == 0) {
+        oxidation[idx] = (ox - 20).clamp(0, 255);
+        if (ox < 20) {
+          grid[idx] = El.empty; markDirty(x, y);
+          return;
+        }
+      }
+    }
+
+    // Tin: solder — when hot and adjacent to two metals, bonds them
+    if (el == El.tin && temperature[idx] > 178) {
+      int metalCount = 0;
+      for (int dy2 = -1; dy2 <= 1; dy2++) {
+        for (int dx2 = -1; dx2 <= 1; dx2++) {
+          if (dx2 == 0 && dy2 == 0) continue;
+          final nx = wrapX(x + dx2); final ny = y + dy2;
+          if (!inBoundsY(ny)) continue;
+          final n = grid[ny * w + nx];
+          if (n == El.metal || n == El.copper || n == El.aluminum ||
+              n == El.gold || n == El.silver || n == El.zinc) {
+            metalCount++;
+          }
+        }
+      }
+      if (metalCount >= 2 && rng.nextInt(10) == 0) {
+        life[idx] = 255; // marks as "soldered"
+        temperature[idx] = 128;
+        markDirty(x, y);
+      }
+    }
+
+    // Bismuth: rainbow oxide tint — cycle oxidation for visual iridescence
+    if (el == El.bismuth) {
+      if (frameCount % 4 == 0) {
+        oxidation[idx] = (oxidation[idx] + 1) % 256;
+        markDirty(x, y);
+      }
+      // Slightly radioactive — very slow damage to adjacent organics
+      if (frameCount % 60 == 0) {
+        for (int dy2 = -1; dy2 <= 1; dy2++) {
+          for (int dx2 = -1; dx2 <= 1; dx2++) {
+            if (dx2 == 0 && dy2 == 0) continue;
+            final nx = wrapX(x + dx2); final ny = y + dy2;
+            if (!inBoundsY(ny)) continue;
+            final ni = ny * w + nx;
+            if ((elCategory[grid[ni]] & ElCat.organic) != 0 && rng.nextInt(50) == 0) {
+              life[ni] = (life[ni] - 1).clamp(0, 255);
+              markDirty(nx, ny);
+            }
+          }
+        }
+      }
+    }
+
+    if (checkTemperatureReaction(x, y, idx, el)) return;
+    fallSolid(x, y, idx, el);
+  }
+
+  // =========================================================================
+  // Metalloids — B, Ge, As, Sb, Te (Si has its own simSilicon)
+  // =========================================================================
+  void simMetalloid(int x, int y, int idx) {
+    final el = grid[idx];
+    final w = gridW;
+
+    // Boron: extremely hard, at extreme heat + sand -> borosilicate glass
+    if (el == El.boron) {
+      if (temperature[idx] > 200) {
+        for (int dy2 = -1; dy2 <= 1; dy2++) {
+          for (int dx2 = -1; dx2 <= 1; dx2++) {
+            if (dx2 == 0 && dy2 == 0) continue;
+            final nx = wrapX(x + dx2); final ny = y + dy2;
+            if (!inBoundsY(ny)) continue;
+            final ni = ny * w + nx;
+            if (grid[ni] == El.sand && rng.nextInt(15) == 0) {
+              grid[ni] = El.glass; markDirty(nx, ny);
+              grid[idx] = El.glass; markDirty(x, y);
+              queueReactionFlash(x, y, 200, 255, 200, 3);
+              return;
+            }
+          }
+        }
+      }
+    }
+
+    // Arsenic: toxic to adjacent life, sublimes at high temp
+    if (el == El.arsenic) {
+      if (frameCount % 6 == 0) {
+        for (int dy2 = -1; dy2 <= 1; dy2++) {
+          for (int dx2 = -1; dx2 <= 1; dx2++) {
+            if (dx2 == 0 && dy2 == 0) continue;
+            final nx = wrapX(x + dx2); final ny = y + dy2;
+            if (!inBoundsY(ny)) continue;
+            final ni = ny * w + nx;
+            final neighbor = grid[ni];
+            if ((neighbor == El.plant || neighbor == El.seed ||
+                neighbor == El.flower || neighbor == El.vine ||
+                neighbor == El.ant || neighbor == El.moss ||
+                neighbor == El.algae || neighbor == El.fungus) &&
+                rng.nextInt(8) == 0) {
+              life[ni] = (life[ni] - 3).clamp(0, 255);
+              if (life[ni] <= 0) {
+                grid[ni] = El.ash; markDirty(nx, ny);
+              }
+            }
+          }
+        }
+      }
+      // Sublimation at high temp (skips liquid phase)
+      if (temperature[idx] > 208) {
+        grid[idx] = El.smoke; markDirty(x, y);
+        return;
+      }
+    }
+
+    // Antimony: brittle — shatters when hit by high-momentum impact
+    if (el == El.antimony) {
+      final ay = y - gravityDir;
+      if (inBoundsY(ay)) {
+        final ai = ay * w + x;
+        if (grid[ai] != El.empty && velY[ai] >= 2) {
+          grid[idx] = El.empty; markDirty(x, y);
+          final fragments = 2 + rng.nextInt(2);
+          for (int f = 0; f < fragments; f++) {
+            final fx = wrapX(x + rng.nextInt(5) - 2);
+            final fy = y + rng.nextInt(2);
+            if (inBoundsY(fy)) {
+              final fi = fy * w + fx;
+              if (grid[fi] == El.empty) {
+                grid[fi] = El.antimony; velY[fi] = 1;
+                markDirty(fx, fy);
+              }
+            }
+          }
+          queueReactionFlash(x, y, 180, 180, 200, 2);
+          return;
+        }
+      }
+    }
+
+    // Tellurium: toxic, produces smoke wisps near organics
+    if (el == El.tellurium && frameCount % 10 == 0) {
+      for (int dy2 = -1; dy2 <= 1; dy2++) {
+        for (int dx2 = -1; dx2 <= 1; dx2++) {
+          if (dx2 == 0 && dy2 == 0) continue;
+          final nx = wrapX(x + dx2); final ny = y + dy2;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * w + nx;
+          if ((elCategory[grid[ni]] & ElCat.organic) != 0 && rng.nextInt(12) == 0) {
+            life[ni] = (life[ni] - 1).clamp(0, 255);
+            final wy = y - gravityDir;
+            if (inBoundsY(wy) && grid[wy * w + x] == El.empty) {
+              grid[wy * w + x] = El.smoke; markDirty(x, wy);
+            }
+          }
+        }
+      }
+    }
+
+    // Germanium: semiconductor — conducts when hot
+    if (el == El.germanium && temperature[idx] > 150 && charge[idx].abs() > 10) {
+      conductElectricity(x, y);
+    }
+
+    if (checkTemperatureReaction(x, y, idx, el)) return;
+    fallSolid(x, y, idx, el);
+  }
+
+  // =========================================================================
+  // Nitrogen — inert gas, displaces oxygen, extinguishes fire
+  // =========================================================================
+  void simNitrogen(int x, int y, int idx) {
+    final w = gridW;
+
+    // Nitrogen is inert — main interaction is displacing oxygen and smothering fire
+    if (frameCount % 3 == 0) {
+      for (int dy2 = -1; dy2 <= 1; dy2++) {
+        for (int dx2 = -1; dx2 <= 1; dx2++) {
+          if (dx2 == 0 && dy2 == 0) continue;
+          final nx = wrapX(x + dx2); final ny = y + dy2;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * w + nx;
+          final neighbor = grid[ni];
+          // Displace oxygen
+          if (neighbor == El.oxygen && rng.nextInt(6) == 0) {
+            swap(idx, ni);
+            return;
+          }
+          // Extinguish fire by consuming adjacent oxygen
+          if (neighbor == El.fire) {
+            for (int fy = -1; fy <= 1; fy++) {
+              for (int fx = -1; fx <= 1; fx++) {
+                final ox = wrapX(x + fx); final oy = y + fy;
+                if (!inBoundsY(oy)) continue;
+                final oi = oy * w + ox;
+                if (grid[oi] == El.oxygen && rng.nextInt(4) == 0) {
+                  grid[oi] = El.nitrogen; markDirty(ox, oy);
+                  grid[ni] = El.smoke; markDirty(nx, ny);
+                  return;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Rise as gas
+    final uy = y - gravityDir;
+    if (inBoundsY(uy) && grid[uy * w + x] == El.empty) {
+      swap(idx, uy * w + x);
+    } else if (rng.nextInt(2) == 0) {
+      final dir = rng.nextBool() ? 1 : -1;
+      final sx = wrapX(x + dir);
+      if (grid[y * w + sx] == El.empty) {
+        swap(idx, y * w + sx);
+      }
+    }
+  }
+
+  // =========================================================================
+  // Carbon (Diamond) — hardest material, inert solid
+  // =========================================================================
+  void simCarbon(int x, int y, int idx) {
+    fallSolid(x, y, idx, El.carbon);
+  }
+
+  // =========================================================================
+  // Selenium — photosensitive, conductivity varies with light
+  // =========================================================================
+  void simSelenium(int x, int y, int idx) {
+    final lum = luminance[idx];
+    if (lum > 80 && charge[idx].abs() > 5) {
+      conductElectricity(x, y);
+    }
+    if (temperature[idx] > 160) {
+      for (int dy2 = -1; dy2 <= 1; dy2++) {
+        for (int dx2 = -1; dx2 <= 1; dx2++) {
+          if (dx2 == 0 && dy2 == 0) continue;
+          final nx = wrapX(x + dx2); final ny = y + dy2;
+          if (!inBoundsY(ny)) continue;
+          final ni = ny * gridW + nx;
+          if ((elCategory[grid[ni]] & ElCat.organic) != 0 && rng.nextInt(15) == 0) {
+            life[ni] = (life[ni] - 2).clamp(0, 255);
+          }
+        }
+      }
+    }
+    if (checkTemperatureReaction(x, y, idx, El.selenium)) return;
+    fallSolid(x, y, idx, El.selenium);
   }
 }
 
@@ -6344,16 +7341,39 @@ void simulateElement(SimulationEngine e, int el, int x, int y, int idx) {
     case El.cloud: e.simCloud(x, y, idx);
     case El.silicon: e.simSilicon(x, y, idx);
     // -- Periodic Table: Family dispatch --
-    // -- Periodic Table: Family dispatch --
-    // Noble gases and nitrogen fall through to default for universal gravity
+    // Noble gases: inert with gas discharge glow, density stratification
+    case El.helium: case El.neon: case El.argon:
+    case El.krypton: case El.xenon:
+      e.simNobleGas(x, y, idx);
     case El.radon: e.simRadioactive(x, y, idx);
     case El.lithium: case El.sodium: case El.potassium:
     case El.rubidium: case El.cesium: case El.francium:
       e.simAlkaliMetal(x, y, idx);
+    // Alkaline earth metals: moderate water reaction, flame colors
+    case El.beryllium: case El.magnesium: case El.calcium:
+    case El.strontium: case El.barium:
+      e.simAlkalineEarth(x, y, idx);
+    // Transition metals with unique behaviors
+    case El.gold: case El.silver: case El.tungsten:
+    case El.zinc: case El.platinum: case El.chromium:
+      e.simTransitionMetal(x, y, idx);
     case El.mercury: e.simLiquidMetal(x, y, idx);
     case El.fluorine: case El.chlorine:
       e.simHalogenGas(x, y, idx);
     case El.phosphorus: e.simPhosphorus(x, y, idx);
+    // Post-transition metals
+    case El.aluminum: case El.gallium: case El.indium:
+    case El.tin: case El.thallium: case El.bismuth:
+      e.simPostTransition(x, y, idx);
+    // Metalloids (silicon has its own dispatch above)
+    case El.boron: case El.germanium: case El.arsenic:
+    case El.antimony: case El.tellurium:
+      e.simMetalloid(x, y, idx);
+    // Nonmetals
+    case El.nitrogen: e.simNitrogen(x, y, idx);
+    case El.carbon: e.simCarbon(x, y, idx);
+    case El.selenium: e.simSelenium(x, y, idx);
+    // Actinides / radioactives
     case El.thorium: case El.plutonium:
     case El.radium: case El.americium:
       e.simRadioactive(x, y, idx);
@@ -6375,16 +7395,39 @@ void simulateElement(SimulationEngine e, int el, int x, int y, int idx) {
         if (state == PhysicsState.granular || state == PhysicsState.powder) {
           e.fallGranular(x, y, idx, el);
         } else if (state == PhysicsState.liquid) {
-          // Liquid: fall + spread
+          // Liquid: fall through empty or gas
           final by = y + e.gravityDir;
-          if (e.inBoundsY(by) && e.grid[by * e.gridW + x] == El.empty) {
+          if (e.inBoundsY(by) && e.isEmptyOrGas(e.grid[by * e.gridW + x])) {
             e.swap(idx, by * e.gridW + x);
           }
         } else if (grav < 0) {
-          // Gas: rise
+          // Gas: rise through empty, buoy through heavier gas
           final uy = y - e.gravityDir;
-          if (e.inBoundsY(uy) && e.grid[uy * e.gridW + x] == El.empty) {
-            e.swap(idx, uy * e.gridW + x);
+          if (e.inBoundsY(uy)) {
+            final aboveEl = e.grid[uy * e.gridW + x];
+            if (aboveEl == El.empty) {
+              e.swap(idx, uy * e.gridW + x);
+            } else if (elementPhysicsState[aboveEl] == PhysicsState.gas.index &&
+                       elementDensity[aboveEl] > elementDensity[el]) {
+              e.swap(idx, uy * e.gridW + x);
+            }
+          }
+          // Lateral drift when can't rise
+          if (e.grid[idx] == el && e.rng.nextInt(2) == 0) {
+            final dir = e.rng.nextBool() ? 1 : -1;
+            final nx = e.wrapX(x + dir);
+            if (e.grid[y * e.gridW + nx] == El.empty) {
+              e.swap(idx, y * e.gridW + nx);
+            }
+          }
+        } else if (grav > 0 && state == PhysicsState.gas) {
+          // Heavy gas: sink through empty or lighter gas
+          e.tryDensityDisplace(x, y, idx, el);
+          if (e.grid[idx] == el) {
+            final by = y + e.gravityDir;
+            if (e.inBoundsY(by) && e.isEmptyOrGas(e.grid[by * e.gridW + x])) {
+              e.swap(idx, by * e.gridW + x);
+            }
           }
         }
         // Solids with grav > 0 but no support: fall

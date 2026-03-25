@@ -606,6 +606,24 @@ class Colony {
         _deadAntsQueue.add(ant);
         return;
       }
+      // Toxic gas damage (lightweight: current cell only).
+      if (element == El.chlorine || element == El.fluorine) {
+        ant.energy -= 0.003;
+        ant.toxicGasTicks++;
+        if (ant.toxicGasTicks >= Ant.toxicGasThreshold) {
+          ant.kill(DeathCause.poisoned);
+          _deadAntsQueue.add(ant);
+          return;
+        }
+      } else if (element == El.radon) {
+        ant.energy -= 0.001;
+        ant.toxicGasTicks++;
+        if (ant.toxicGasTicks >= Ant.toxicGasThreshold) {
+          ant.kill(DeathCause.poisoned);
+          _deadAntsQueue.add(ant);
+          return;
+        }
+      }
 
       if (ant.y < sim.gridH - 1) {
         final below = sim.grid[(ant.y + 1) * sim.gridW + ant.x];

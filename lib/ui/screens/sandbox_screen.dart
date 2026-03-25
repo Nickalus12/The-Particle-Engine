@@ -5,26 +5,19 @@ import '../../game/particle_engine_game.dart';
 import '../../models/game_state.dart';
 import '../../simulation/world_gen/world_config.dart';
 import '../theme/colors.dart';
+import '../widgets/element_bottom_bar.dart';
 
-/// Hosts the [GameWidget] with Flame's overlay system for the two-state HUD.
+/// Hosts the [GameWidget] with the element bar integrated into the layout.
 ///
-/// All HUD elements (element palette, toolbar, minimap, colony inspector,
-/// observation hint, back button) are registered as Flame overlays via
-/// [ParticleEngineGame.overlayBuilders] and managed through
-/// [game.overlays.add/remove].
+/// The bottom bar sits BELOW the game viewport in a Column, so it never
+/// covers the simulation grid. Other HUD elements (toolbar, minimap, colony
+/// inspector, observation hint, back button) remain as Flame overlays.
 ///
 /// Two modes:
 /// - **Observation mode**: near-zero UI (observation hint + back button).
-/// - **Creation mode**: full toolkit (palette + toolbar + minimap).
+/// - **Creation mode**: full toolkit (bottom bar + toolbar + minimap).
 ///
-/// Mode transitions are driven by [ParticleEngineGame.enterCreationMode] and
-/// [ParticleEngineGame.exitCreationMode], keeping all overlay management
-/// within Flame's overlay system.
-///
-/// Accepts optional parameters for world creation or loading:
-/// - [worldConfig] + [isBlankCanvas] — create a new world (procedural or blank)
-/// - [loadState] — restore a previously saved world
-/// - Neither — starts with a default blank world
+/// The bottom bar visibility is driven by [ParticleEngineGame.showBottomBar].
 class SandboxScreen extends StatefulWidget {
   const SandboxScreen({
     super.key,
@@ -72,13 +65,36 @@ class _SandboxScreenState extends State<SandboxScreen> {
         onPointerDown: _game.onPointerDown,
         onPointerMove: _game.onPointerMove,
         onPointerUp: _game.onPointerUp,
-        child: GameWidget<ParticleEngineGame>(
-          game: _game,
-          overlayBuilderMap: ParticleEngineGame.overlayBuilders,
-          // Start in observation mode: show hint and back button.
-          initialActiveOverlays: const [
-            ParticleEngineGame.overlayObservationHint,
-            ParticleEngineGame.overlayBackButton,
+        child: Column(
+          children: [
+            // Game viewport fills available space above the bottom bar.
+            Expanded(
+              child: GameWidget<ParticleEngineGame>(
+                game: _game,
+                overlayBuilderMap: ParticleEngineGame.overlayBuilders,
+                initialActiveOverlays: const [
+                  ParticleEngineGame.overlayObservationHint,
+                  ParticleEngineGame.overlayBackButton,
+                ],
+              ),
+            ),
+            // Bottom bar slides in/out below the game, never overlapping.
+            ValueListenableBuilder<bool>(
+              valueListenable: _game.showBottomBar,
+              builder: (context, visible, _) {
+                return AnimatedSlide(
+                  offset: visible ? Offset.zero : const Offset(0, 1),
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOutCubic,
+                  child: visible
+                      ? ElementBottomBar(
+                          game: _game,
+                          onInteraction: _game.notifyHudInteraction,
+                        )
+                      : const SizedBox.shrink(),
+                );
+              },
+            ),
           ],
         ),
       ),

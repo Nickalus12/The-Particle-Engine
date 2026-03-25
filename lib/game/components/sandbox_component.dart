@@ -42,8 +42,8 @@ class SandboxComponent extends PositionComponent
   final Stopwatch _updateStopwatch = Stopwatch();
 
   /// Last grid position painted at, for Bresenham line interpolation.
-  int? _lastPaintX;
-  int? _lastPaintY;
+  int? lastPaintX;
+  int? lastPaintY;
 
   // ---------------------------------------------------------------------------
   // Lifecycle
@@ -151,16 +151,18 @@ class SandboxComponent extends PositionComponent
 
   @override
   void onTapDown(TapDownEvent event) {
-    _lastPaintX = null;
-    _lastPaintY = null;
+    lastPaintX = null;
+    lastPaintY = null;
+    colonySpawnedThisGesture = false;
     paintAt(event.localPosition);
   }
 
   @override
   void onDragStart(DragStartEvent event) {
     super.onDragStart(event);
-    _lastPaintX = null;
-    _lastPaintY = null;
+    lastPaintX = null;
+    lastPaintY = null;
+    colonySpawnedThisGesture = false;
     paintAt(event.localPosition);
   }
 
@@ -172,8 +174,9 @@ class SandboxComponent extends PositionComponent
   @override
   void onDragEnd(DragEndEvent event) {
     super.onDragEnd(event);
-    _lastPaintX = null;
-    _lastPaintY = null;
+    lastPaintX = null;
+    lastPaintY = null;
+    colonySpawnedThisGesture = false;
   }
 
   void paintAt(Vector2 position) {
@@ -183,20 +186,20 @@ class SandboxComponent extends PositionComponent
     final cy = (position.y / cellSize).floor();
 
     // Bresenham line from last paint position to current for gap-free strokes.
-    if (_lastPaintX != null && _lastPaintY != null) {
-      final x0 = _lastPaintX!;
-      final y0 = _lastPaintY!;
+    if (lastPaintX != null && lastPaintY != null) {
+      final x0 = lastPaintX!;
+      final y0 = lastPaintY!;
       if (x0 != cx || y0 != cy) {
         _paintLine(x0, y0, cx, cy);
-        _lastPaintX = cx;
-        _lastPaintY = cy;
+        lastPaintX = cx;
+        lastPaintY = cy;
         return;
       }
     }
 
     _paintCell(cx, cy);
-    _lastPaintX = cx;
-    _lastPaintY = cy;
+    lastPaintX = cx;
+    lastPaintY = cy;
   }
 
   /// Paint along a Bresenham line from (x0,y0) to (x1,y1), skipping (x0,y0)
@@ -237,6 +240,10 @@ class SandboxComponent extends PositionComponent
     }
   }
 
+  /// Whether a colony was already spawned during this drag gesture.
+  /// Prevents click-and-hold from spawning dozens of colonies.
+  bool colonySpawnedThisGesture = false;
+
   /// Paint a single brush stamp at grid position (cx, cy).
   void _paintCell(int cx, int cy) {
     final isEraser = selectedElement == El.eraser || selectedElement == El.empty;
@@ -276,6 +283,9 @@ class SandboxComponent extends PositionComponent
     // place a SINGLE colony at the tap position. The colony spawns entity-based
     // ants naturally from its food stores. Much more performant and realistic.
     if (paintEl == El.ant) {
+      // Only spawn one colony per gesture — prevents hold-to-freeze
+      if (colonySpawnedThisGesture) return;
+      colonySpawnedThisGesture = true;
       // Undo the grid painting — don't fill cells with El.ant
       for (var dy2 = -brushSize; dy2 <= brushSize; dy2++) {
         for (var dx2 = -brushSize; dx2 <= brushSize; dx2++) {
@@ -291,18 +301,17 @@ class SandboxComponent extends PositionComponent
           }
         }
       }
-      // Find the ground surface below the tap point — colony should land on terrain
+      // Find the ground surface below the tap point — colony should land on terrain.
+      // Skip empty and ALL gas cells (oxygen, CO2, noble gases, etc.)
       var nestY = cy;
       for (var scanY = cy; scanY < simulation.gridH - 1; scanY++) {
         final belowIdx = (scanY + 1) * gridW + simulation.wrapX(cx);
         final belowEl = grid[belowIdx];
-        // Found solid ground: place colony on the surface
-        if (belowEl != El.empty && belowEl != El.smoke && belowEl != El.steam &&
-            belowEl != El.oxygen && belowEl != El.hydrogen && belowEl != El.co2) {
+        // Found solid/liquid/granular ground
+        if (!simulation.isEmptyOrGas(belowEl)) {
           nestY = scanY;
           break;
         }
-        // Reached bottom of world
         if (scanY == simulation.gridH - 2) {
           nestY = scanY;
         }

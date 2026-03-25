@@ -174,6 +174,15 @@ EL_FIRE = 7
 EL_WOOD = 8
 EL_LAVA = 9
 EL_COMPOST = 10  # treated as organic matter for worms
+EL_SMOKE = 11
+EL_ACID = 14
+EL_METHANE = 20
+EL_CO2 = 22      # suffocation hazard in enclosed spaces
+
+# Hazardous elements that creatures should avoid
+TOXIC_ELEMENTS = {EL_ACID, EL_LAVA, EL_FIRE}
+GAS_HAZARDS = {EL_SMOKE, EL_METHANE, EL_CO2}
+ALL_HAZARDS = TOXIC_ELEMENTS | GAS_HAZARDS
 
 
 # ===================================================================
@@ -458,6 +467,10 @@ class CreatureState:
         "offspring_count", "idle_ticks", "schooling_ticks",
         "sync_ticks", "evasions", "danger_ticks_no_flee",
         "phase", "last_flash",
+        # --- New: gas/environment awareness ---
+        "gas_exposure_ticks", "gas_evasions", "toxic_damage_taken",
+        "temperature_sensed", "temp_comfort_ticks", "temp_danger_ticks",
+        "total_energy_spent", "total_energy_gained",
     )
 
     def __init__(self, x: int, y: int, energy: float):
@@ -487,6 +500,48 @@ class CreatureState:
         self.danger_ticks_no_flee = 0
         self.phase = 0.0
         self.last_flash = 0
+        # --- New: gas/environment awareness ---
+        self.gas_exposure_ticks = 0
+        self.gas_evasions = 0
+        self.toxic_damage_taken = 0.0
+        self.temperature_sensed = 0
+        self.temp_comfort_ticks = 0
+        self.temp_danger_ticks = 0
+        self.total_energy_spent = 0.0
+        self.total_energy_gained = 0.0
+
+
+def _environmental_fitness_bonus(state: CreatureState) -> float:
+    """Common environmental awareness bonus applied to all species.
+
+    Rewards gas avoidance, temperature comfort, and resource efficiency.
+    """
+    bonus = 0.0
+
+    # Gas avoidance: reward creatures that detect and evade toxic gases
+    if state.gas_evasions > 0:
+        bonus += 4.0 * state.gas_evasions
+    # Penalize prolonged gas exposure (should have fled)
+    bonus -= 1.0 * state.gas_exposure_ticks
+    # Penalize toxic damage taken (should have avoided)
+    bonus -= 2.0 * state.toxic_damage_taken
+
+    # Temperature sensing: reward staying in comfort zone
+    if state.temp_comfort_ticks > 0:
+        bonus += 0.02 * state.temp_comfort_ticks
+    # Penalize time in dangerous temperatures
+    bonus -= 0.1 * state.temp_danger_ticks
+
+    # Resource efficiency: ratio of energy gained to energy spent
+    if state.total_energy_spent > 0:
+        efficiency = state.total_energy_gained / state.total_energy_spent
+        # Efficiency > 1.0 means net positive — reward proportionally
+        if efficiency > 1.0:
+            bonus += min(efficiency * 3.0, 15.0)
+        elif efficiency > 0.5:
+            bonus += efficiency * 1.0  # modest reward for break-even
+
+    return bonus
 
 
 def compute_fitness_worm(state: CreatureState) -> float:
@@ -496,6 +551,7 @@ def compute_fitness_worm(state: CreatureState) -> float:
     f += 0.01 * state.age
     f += 8.0 * state.offspring_count
     f -= 0.05 * state.idle_ticks
+    f += _environmental_fitness_bonus(state)
     return max(0.0, f)
 
 
@@ -505,6 +561,7 @@ def compute_fitness_beetle(state: CreatureState) -> float:
     f += 3.0 * state.evasions        # predator evasion successes
     f += 15.0 * state.offspring_count
     f -= 2.0 * state.danger_ticks_no_flee
+    f += _environmental_fitness_bonus(state)
     return max(0.0, f)
 
 
@@ -514,6 +571,7 @@ def compute_fitness_spider(state: CreatureState) -> float:
     f += 12.0 * state.prey_consumed
     f += 3.0 * state.web_catches
     f += 25.0 * state.offspring_count
+    f += _environmental_fitness_bonus(state)
     return max(0.0, f)
 
 
@@ -522,6 +580,7 @@ def compute_fitness_fish(state: CreatureState) -> float:
     f += 5.0 * state.food_collected   # algae consumed
     f += 0.5 * state.schooling_ticks
     f += 12.0 * state.offspring_count
+    f += _environmental_fitness_bonus(state)
     return max(0.0, f)
 
 
@@ -531,6 +590,7 @@ def compute_fitness_bee(state: CreatureState) -> float:
     f += 5.0 * state.honey_deposited
     f += 2.0 * state.seeds_carried
     f += 10.0 * state.offspring_count
+    f += _environmental_fitness_bonus(state)
     return max(0.0, f)
 
 
@@ -539,6 +599,7 @@ def compute_fitness_firefly(state: CreatureState) -> float:
     f += 1.0 * state.sync_ticks
     f += 3.0 * state.food_collected
     f += 8.0 * state.offspring_count
+    f += _environmental_fitness_bonus(state)
     return max(0.0, f)
 
 
@@ -548,6 +609,7 @@ def compute_fitness_ant(state: CreatureState) -> float:
     f += 3.0 * state.food_collected    # finding food
     f += 0.01 * state.age              # survival
     f -= 0.03 * state.idle_ticks
+    f += _environmental_fitness_bonus(state)
     return max(0.0, f)
 
 
@@ -596,6 +658,60 @@ def _sense_radius(grid, cx, cy, radius, element):
                 if grid[ny, nx] == element:
                     count += 1
     return count
+
+
+def _sense_hazards(grid, cx, cy, radius=3):
+    """Count hazardous cells (gas + toxic) near creature. Returns (gas_count, toxic_count)."""
+    h, w = grid.shape
+    gas_count = 0
+    toxic_count = 0
+    for dy in range(-radius, radius + 1):
+        for dx in range(-radius, radius + 1):
+            nx, ny = cx + dx, cy + dy
+            if 0 <= nx < w and 0 <= ny < h:
+                el = int(grid[ny, nx])
+                if el in GAS_HAZARDS:
+                    gas_count += 1
+                if el in TOXIC_ELEMENTS:
+                    toxic_count += 1
+    return gas_count, toxic_count
+
+
+def _update_environmental_state(state, grid, temperature_grid=None):
+    """Update creature's environmental awareness tracking each tick.
+
+    Call this once per tick in each creature evaluator after movement.
+    """
+    el_here = _get_el(grid, state.x, state.y)
+
+    # Gas exposure tracking
+    gas_nearby, toxic_nearby = _sense_hazards(grid, state.x, state.y, 2)
+    if gas_nearby > 0 or toxic_nearby > 0:
+        state.gas_exposure_ticks += 1
+
+    # Toxic damage from standing in hazardous cells
+    if el_here in TOXIC_ELEMENTS:
+        damage = 0.05
+        state.toxic_damage_taken += damage
+        state.energy -= damage
+
+    # Gas damage (suffocation from CO2, methane inhalation)
+    if el_here in GAS_HAZARDS:
+        damage = 0.02
+        state.toxic_damage_taken += damage
+        state.energy -= damage
+
+    # Temperature comfort (simplified: use grid position as proxy)
+    # In a full sim, temperature_grid would be available
+    if temperature_grid is not None:
+        h, w = temperature_grid.shape
+        if 0 <= state.y < h and 0 <= state.x < w:
+            temp = int(temperature_grid[state.y, state.x])
+            state.temperature_sensed = temp
+            if 80 <= temp <= 170:  # comfort zone
+                state.temp_comfort_ticks += 1
+            elif temp > 200 or temp < 30:  # danger zone
+                state.temp_danger_ticks += 1
 
 
 def _nearest_element(grid, cx, cy, element, max_dist=20):
@@ -654,9 +770,16 @@ def evaluate_worm(net_fn, env: dict, max_steps: int = 400, rng=None) -> Creature
         want_eat = np.tanh(outputs[2]) > 0.0
         want_dig = np.tanh(outputs[3]) > 0.0
 
+        # Check for gas hazards before moving — track evasion
         nx = _clamp(state.x + dx, 0, sz - 1)
         ny = _clamp(state.y + dy, 0, sz - 1)
         target_el = _get_el(grid, nx, ny)
+
+        # Gas evasion: if target cell is hazardous but creature changes direction
+        if target_el in ALL_HAZARDS and (dx != 0 or dy != 0):
+            state.gas_evasions += 1
+            # Don't move into hazard — override movement
+            nx, ny = state.x, state.y
 
         if dx == 0 and dy == 0:
             state.idle_ticks += 1
@@ -666,26 +789,41 @@ def evaluate_worm(net_fn, env: dict, max_steps: int = 400, rng=None) -> Creature
                 grid[ny, nx] = EL_EMPTY
                 state.dirt_aerated += 1
                 state.x, state.y = nx, ny
-                state.energy -= 0.003
+                cost = 0.003
+                state.energy -= cost
+                state.total_energy_spent += cost
             elif target_el in (EL_EMPTY, EL_COMPOST):
                 state.x, state.y = nx, ny
-                state.energy -= 0.002
+                cost = 0.002
+                state.energy -= cost
+                state.total_energy_spent += cost
             elif target_el == EL_WATER:
-                state.energy -= 0.01  # water is dangerous
+                cost = 0.01
+                state.energy -= cost  # water is dangerous
+                state.total_energy_spent += cost
                 state.x, state.y = nx, ny
 
         # Eat compost at current position
         if want_eat and _get_el(grid, state.x, state.y) == EL_COMPOST:
             grid[state.y, state.x] = EL_EMPTY
             state.compost_consumed += 1
-            state.energy = min(1.0, state.energy + 0.15)
+            gain = 0.15
+            state.energy = min(1.0, state.energy + gain)
+            state.total_energy_gained += gain
 
         # Offspring chance when well-fed
         if state.energy > 0.8 and tick % 50 == 0:
             state.offspring_count += 1
-            state.energy -= 0.3
+            cost = 0.3
+            state.energy -= cost
+            state.total_energy_spent += cost
 
-        state.energy -= 0.001  # base cost
+        base_cost = 0.001
+        state.energy -= base_cost
+        state.total_energy_spent += base_cost
+
+        # Environmental awareness tracking
+        _update_environmental_state(state, grid)
 
     return state
 
@@ -750,22 +888,37 @@ def evaluate_beetle(net_fn, env: dict, max_steps: int = 500,
         ny = _clamp(state.y + dy, 0, sz - 1)
         target_el = _get_el(grid, nx, ny)
 
+        # Gas evasion check
+        if target_el in ALL_HAZARDS:
+            state.gas_evasions += 1
+            nx, ny = state.x, state.y
+
         if target_el in (EL_EMPTY, EL_SEED, EL_PLANT):
             state.x, state.y = nx, ny
-            state.energy -= 0.002
+            cost = 0.002
+            state.energy -= cost
+            state.total_energy_spent += cost
 
         # Eat food
         el_here = _get_el(grid, state.x, state.y)
         if want_eat and el_here in (EL_SEED, EL_PLANT):
             grid[state.y, state.x] = EL_EMPTY
             state.food_collected += 1
-            state.energy = min(1.0, state.energy + 0.12)
+            gain = 0.12
+            state.energy = min(1.0, state.energy + gain)
+            state.total_energy_gained += gain
 
         if state.energy > 0.85 and tick % 60 == 0:
             state.offspring_count += 1
-            state.energy -= 0.3
+            cost = 0.3
+            state.energy -= cost
+            state.total_energy_spent += cost
 
-        state.energy -= 0.001
+        base_cost = 0.001
+        state.energy -= base_cost
+        state.total_energy_spent += base_cost
+
+        _update_environmental_state(state, grid)
 
     return state
 
@@ -867,9 +1020,15 @@ def evaluate_spider(net_fn, env: dict, max_steps: int = 500,
 
         if state.energy > 0.9 and tick % 80 == 0:
             state.offspring_count += 1
-            state.energy -= 0.35
+            cost = 0.35
+            state.energy -= cost
+            state.total_energy_spent += cost
 
-        state.energy -= 0.001
+        base_cost = 0.001
+        state.energy -= base_cost
+        state.total_energy_spent += base_cost
+
+        _update_environmental_state(state, grid)
 
     return state
 
@@ -941,13 +1100,21 @@ def evaluate_fish(net_fn, env: dict, max_steps: int = 500,
         if want_eat and _get_el(grid, state.x, state.y) == EL_PLANT:
             grid[state.y, state.x] = EL_WATER
             state.food_collected += 1
-            state.energy = min(1.0, state.energy + 0.1)
+            gain = 0.1
+            state.energy = min(1.0, state.energy + gain)
+            state.total_energy_gained += gain
 
         if state.energy > 0.85 and tick % 70 == 0:
             state.offspring_count += 1
-            state.energy -= 0.25
+            cost = 0.25
+            state.energy -= cost
+            state.total_energy_spent += cost
 
-        state.energy -= 0.0008
+        base_cost = 0.0008
+        state.energy -= base_cost
+        state.total_energy_spent += base_cost
+
+        _update_environmental_state(state, grid)
 
     return state
 
@@ -1030,9 +1197,15 @@ def evaluate_bee(net_fn, env: dict, max_steps: int = 600, rng=None) -> CreatureS
 
         if state.energy > 0.8 and tick % 80 == 0:
             state.offspring_count += 1
-            state.energy -= 0.3
+            cost = 0.3
+            state.energy -= cost
+            state.total_energy_spent += cost
 
-        state.energy -= 0.001
+        base_cost = 0.001
+        state.energy -= base_cost
+        state.total_energy_spent += base_cost
+
+        _update_environmental_state(state, grid)
 
     return state
 
@@ -1115,9 +1288,15 @@ def evaluate_firefly(net_fn, env: dict, max_steps: int = 400,
 
         if state.energy > 0.8 and tick % 60 == 0:
             state.offspring_count += 1
-            state.energy -= 0.3
+            cost = 0.3
+            state.energy -= cost
+            state.total_energy_spent += cost
 
-        state.energy -= 0.001
+        base_cost = 0.001
+        state.energy -= base_cost
+        state.total_energy_spent += base_cost
+
+        _update_environmental_state(state, grid)
 
     return state
 
@@ -1201,7 +1380,11 @@ def evaluate_ant(net_fn, env: dict, max_steps: int = 600, rng=None) -> CreatureS
         if tick % 10 == 0:
             pheromone_grid *= 0.95
 
-        state.energy -= 0.001
+        base_cost = 0.001
+        state.energy -= base_cost
+        state.total_energy_spent += base_cost
+
+        _update_environmental_state(state, grid)
 
     return state
 

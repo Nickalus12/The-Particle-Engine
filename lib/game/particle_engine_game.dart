@@ -13,7 +13,6 @@ import 'package:flutter/services.dart';
 import '../models/game_state.dart';
 import '../simulation/world_gen/world_config.dart';
 import '../ui/widgets/colony_inspector.dart';
-import '../ui/widgets/element_bottom_bar.dart';
 import '../ui/widgets/element_palette.dart';
 import '../ui/widgets/hud_icon_badge.dart';
 import '../ui/widgets/periodic_table_overlay.dart';
@@ -47,10 +46,8 @@ class ParticleEngineGame extends FlameGame
     this.gridHeight = 180,
     this.cellSize = 4.0,
   }) : super(
-          camera: CameraComponent.withFixedResolution(
-            width: gridWidth * cellSize,
-            height: gridHeight * cellSize,
-          ),
+          // MaxViewport fills the entire window. Wrapping copies fill extra width.
+          camera: CameraComponent(),
           world: SandboxWorld(),
         );
 
@@ -61,10 +58,10 @@ class ParticleEngineGame extends FlameGame
   /// Logical pixels per grid cell.
   final double cellSize;
 
-  /// Computed camera resolution width.
+  /// Computed world width in game coordinates.
   double get cameraWidth => gridWidth * cellSize;
 
-  /// Computed camera resolution height.
+  /// Computed world height in game coordinates.
   double get cameraHeight => gridHeight * cellSize;
 
   /// Configuration for procedural world generation (null = default).
@@ -82,22 +79,45 @@ class ParticleEngineGame extends FlameGame
   /// Typed accessor for the sandbox world.
   SandboxWorld get sandboxWorld => world as SandboxWorld;
 
+  /// Notifier for the bottom bar visibility (observed by SandboxScreen layout).
+  final ValueNotifier<bool> showBottomBar = ValueNotifier<bool>(false);
+
   // -- Camera configuration ---------------------------------------------------
 
-  /// Fill letterbox bars with the day-sky colour instead of black.
-  /// This is the area outside the fixed-resolution viewport when the window
-  /// aspect ratio doesn't match 16:9.
+  /// Base zoom level: scales the world height to fill the screen vertically.
+  /// Computed from the actual window size in [onGameResize].
+  double _baseZoom = 1.0;
+
   @override
   Color backgroundColor() => const Color(0xFF4888C8);
 
-  /// Minimum zoom — at 1.0 the world fills the fixed-resolution viewport exactly.
-  static const double minZoom = 1.0;
+  /// Minimum zoom — world fills the screen at this level.
+  double get minZoom => _baseZoom;
 
-  /// Maximum zoom level — close enough to see individual cells clearly.
-  static const double maxZoom = 6.0;
+  /// Maximum zoom — close enough to see individual cells clearly.
+  double get maxZoom => _baseZoom * 6.0;
 
   /// Default zoom level.
-  static const double defaultZoom = 1.0;
+  double get defaultZoom => _baseZoom;
+
+  @override
+  void onGameResize(Vector2 size) {
+    super.onGameResize(size);
+    // Fit the world height to the screen so the full vertical extent
+    // (sky to ground) is always visible. Horizontal wrapping seamlessly
+    // fills any extra width — on a 16:9 monitor this is an exact fit.
+    final newBase = size.y / cameraHeight;
+    if ((_baseZoom - newBase).abs() > 0.001) {
+      final wasBase = camera.viewfinder.zoom <= _baseZoom + 0.01;
+      _baseZoom = newBase;
+      if (wasBase) {
+        camera.viewfinder.zoom = _baseZoom;
+      } else {
+        camera.viewfinder.zoom =
+            camera.viewfinder.zoom.clamp(minZoom, maxZoom);
+      }
+    }
+  }
 
   // -- Day/night cycle --------------------------------------------------------
 
@@ -148,7 +168,7 @@ class ParticleEngineGame extends FlameGame
 
     camera.viewfinder.anchor = Anchor.center;
     camera.viewfinder.position = Vector2(cameraWidth / 2, cameraHeight / 2);
-    camera.viewfinder.zoom = 1.0;
+    camera.viewfinder.zoom = _baseZoom;
 
     // On desktop, start in creation mode so the HUD is visible immediately.
     if (isDesktop) {
@@ -197,13 +217,20 @@ class ParticleEngineGame extends FlameGame
   void onScaleStart(ScaleStartInfo info) {
     _startZoom = camera.viewfinder.zoom;
     _pointerCount = info.pointerCount;
+    // Single finger: forward to sandbox for painting
+    if (_pointerCount == 1) {
+      sandboxWorld.sandboxComponent.colonySpawnedThisGesture = false;
+      _paintFromScreenPosition(info.raw.focalPoint);
+    }
   }
 
   @override
   void onScaleUpdate(ScaleUpdateInfo info) {
-    // Only handle two-finger gestures for camera control.
-    // Single-finger gestures are handled by SandboxComponent for drawing.
-    if (_pointerCount < 2) return;
+    if (_pointerCount < 2) {
+      // Single finger: forward continuous drag to sandbox for painting
+      _paintFromScreenPosition(info.raw.focalPoint);
+      return;
+    }
 
     final currentScale = info.scale.global;
     if (!currentScale.isIdentity()) {
@@ -220,11 +247,22 @@ class ParticleEngineGame extends FlameGame
 
   @override
   void onScaleEnd(ScaleEndInfo info) {
-    // Single-finger tap (no drag) enters creation mode.
     if (_pointerCount == 1) {
       enterCreationMode();
+      // Reset paint interpolation state
+      sandboxWorld.sandboxComponent.lastPaintX = null;
+      sandboxWorld.sandboxComponent.lastPaintY = null;
     }
     _pointerCount = 0;
+  }
+
+  /// Convert a screen-space position to world coordinates and paint.
+  void _paintFromScreenPosition(Offset screenPos) {
+    // Convert screen position to world coordinates via the camera
+    final worldPos = camera.viewfinder.transform.globalToLocal(
+      Vector2(screenPos.dx, screenPos.dy),
+    );
+    sandboxWorld.sandboxComponent.paintAt(worldPos);
   }
 
   // ---------------------------------------------------------------------------
@@ -367,29 +405,17 @@ class ParticleEngineGame extends FlameGame
   // ---------------------------------------------------------------------------
 
   /// Keep the camera bounded.
-  /// Horizontal: wraps when zoomed in (>= 1.5x) so scrolling past the right
-  /// edge shows the left side seamlessly. At lower zoom the whole world fits
-  /// on screen, so X is clamped instead to avoid jitter.
+  /// Horizontal: always wraps — the 3-copy rendering fills any extra width.
   /// Vertical: always clamped (no vertical wrapping — ground/sky are fixed).
   void clampCameraPosition() {
     final zoom = camera.viewfinder.zoom;
-    final halfW = cameraWidth / (2.0 * zoom);
     final halfH = cameraHeight / (2.0 * zoom);
 
     final pos = camera.viewfinder.position;
 
-    // -- Horizontal --
-    double x;
-    if (zoom >= 1.5) {
-      // Wrap X into [0, cameraWidth) for seamless horizontal scrolling.
-      x = pos.x % cameraWidth;
-      if (x < 0) x += cameraWidth;
-    } else {
-      // At low zoom the entire world is visible — clamp to avoid jitter.
-      final minX = halfW;
-      final maxX = cameraWidth - halfW;
-      x = minX < maxX ? pos.x.clamp(minX, maxX) : cameraWidth / 2;
-    }
+    // -- Horizontal: always wrap for seamless scrolling --
+    double x = pos.x % cameraWidth;
+    if (x < 0) x += cameraWidth;
 
     // -- Vertical (always clamped) --
     final minY = halfH;
@@ -414,8 +440,8 @@ class ParticleEngineGame extends FlameGame
   static const String overlayPeriodicTable = 'periodic_table';
 
   /// All creation-mode overlays shown/hidden as a group.
+  /// Note: overlayBottomBar is managed via showBottomBar notifier, not overlays.
   static const List<String> _creationOverlays = [
-    overlayBottomBar,
     overlayToolbar,
   ];
 
@@ -444,6 +470,7 @@ class ParticleEngineGame extends FlameGame
     for (final key in _creationOverlays) {
       overlays.add(key);
     }
+    showBottomBar.value = true;
     _resetAutoHideTimer();
   }
 
@@ -455,6 +482,7 @@ class ParticleEngineGame extends FlameGame
     for (final key in _creationOverlays) {
       overlays.remove(key);
     }
+    showBottomBar.value = false;
     overlays.add(overlayObservationHint);
   }
 
@@ -492,10 +520,6 @@ class ParticleEngineGame extends FlameGame
   static Map<String, OverlayWidgetBuilder<ParticleEngineGame>> get
       overlayBuilders => {
             overlayPalette: (context, game) => ElementPalette(
-                  game: game,
-                  onInteraction: game.notifyHudInteraction,
-                ),
-            overlayBottomBar: (context, game) => ElementBottomBar(
                   game: game,
                   onInteraction: game.notifyHudInteraction,
                 ),

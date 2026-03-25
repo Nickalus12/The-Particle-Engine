@@ -216,12 +216,12 @@ class _ToolBarState extends State<ToolBar>
     return SlideTransition(
       position: _slideAnimation,
       child: Align(
-        alignment: Alignment.centerRight,
+        alignment: Alignment.centerLeft,
         child: Padding(
-          padding: const EdgeInsets.only(right: 6, top: 8, bottom: 8),
+          padding: const EdgeInsets.only(left: 6, top: 8, bottom: 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Collapse/expand toggle
               _CollapseToggle(
