@@ -119,6 +119,12 @@ It is the handoff source for compaction, agent coordination, and follow-on R&D.
   - `gpu_electrical_benchmark.py` now pins explicit voltage sources, uses gentler attenuation/decay so long conductive paths do not collapse immediately, and frees CuPy memory pools between benchmarks
   - `training_system.py` now uses a lock file to prevent overlapping runs and writes live per-step logs like `gpu_validation.log`
   - orphaned remote validation processes were cleared and a clean single `cloud_foundation` run was relaunched
+  - the user created a ThunderCompute snapshot after the stabilized run so the repaired VM state can be reused
+- Latest live cloud outcome:
+  - validation completed and advanced the pipeline into `staged_optimizer.py`
+  - conservation is materially improved and now passes mass, charge, closed-energy, and oxidation checks
+  - electrical still finishes with only 4/9 passes and needs deeper model work
+  - `gpu_chemistry_optimizer.py` starts but currently fails under CUDA multiprocessing initialization, so chemistry/worldgen artifact production is still blocked by GPU worker architecture rather than launch/setup issues
 
 ## Planned Follow-On R&D
 - After the foundation pass is stable, launch a second R&D lane focused on new improvement vectors:
