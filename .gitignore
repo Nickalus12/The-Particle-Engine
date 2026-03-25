@@ -62,3 +62,4 @@ research/cloud/.thundercompute.env
 research/cloud/.github.env
 research/cloud/last_training_plan.json
 research/cloud/training_system_summary.json
+research/cloud/pipeline_summary.json
