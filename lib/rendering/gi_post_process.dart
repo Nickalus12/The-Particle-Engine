@@ -9,14 +9,15 @@ import '../simulation/simulation_engine.dart';
 /// GPU-accelerated post-processing pipeline for Radiance Cascades 2D Global
 /// Illumination, dual Kawase bloom, and ACES filmic tone mapping.
 ///
-/// This component loads 7 fragment shader programs and orchestrates a
+/// This component loads 8 fragment shader programs and orchestrates a
 /// multi-pass rendering pipeline each frame:
 ///   1. Build occluder + emitter maps from the simulation grid (CPU)
 ///   2. JFA: seed + 9 ping-pong flood-fill passes
 ///   3. Distance field from JFA
 ///   4. Radiance Cascades: 4 cascade levels (coarse to fine)
-///   5. Bloom: 4 downsample + 4 upsample passes (dual Kawase)
-///   6. Tone map: composite scene + GI + bloom with ACES + day/night grading
+///   5. Water composite: refraction/tint/foam over scene
+///   6. Bloom: 4 downsample + 4 upsample passes (dual Kawase)
+///   7. Tone map: composite scene + GI + bloom with ACES + day/night grading
 ///
 /// The luminance array on the [SimulationEngine] is updated every 8 frames
 /// from the final GI result so the simulation layer can use light levels
@@ -45,6 +46,18 @@ class GIPostProcess extends Component {
   /// Tone mapping exposure multiplier.
   double exposure = 0.8;
 
+  /// Water composite toggle.
+  bool waterEnabled = true;
+
+  /// Water refraction distortion strength.
+  double waterRefractionStrength = 0.9;
+
+  /// Water edge highlight strength.
+  double waterFresnelStrength = 0.85;
+
+  /// Water foam accent strength.
+  double waterFoamStrength = 0.75;
+
   /// Day/night transition value (0.0 = day, 1.0 = night).
   double dayNightT = 0.0;
 
@@ -56,6 +69,7 @@ class GIPostProcess extends Component {
   ui.FragmentProgram? _radianceCascadeProg;
   ui.FragmentProgram? _bloomDownProg;
   ui.FragmentProgram? _bloomUpProg;
+  ui.FragmentProgram? _waterCompositeProg;
   ui.FragmentProgram? _tonemapProg;
 
   bool _shadersLoaded = false;
@@ -70,6 +84,7 @@ class GIPostProcess extends Component {
   /// Pixel buffers for CPU-built occluder and emitter maps.
   late Uint8List _occluderPixels;
   late Uint8List _emitterPixels;
+  late Uint8List _waterDataPixels;
 
   /// Frame counter for throttled luminance readback.
   int _frameCount = 0;
@@ -100,6 +115,7 @@ class GIPostProcess extends Component {
 
     _occluderPixels = Uint8List(_gridW * _gridH * 4);
     _emitterPixels = Uint8List(_gridW * _gridH * 4);
+    _waterDataPixels = Uint8List(_gridW * _gridH * 4);
 
     await _loadShaders();
   }
@@ -112,6 +128,7 @@ class GIPostProcess extends Component {
     _radianceCascadeProg = null;
     _bloomDownProg = null;
     _bloomUpProg = null;
+    _waterCompositeProg = null;
     _tonemapProg = null;
     _shadersLoaded = false;
     super.onRemove();
@@ -126,6 +143,7 @@ class GIPostProcess extends Component {
         ui.FragmentProgram.fromAsset('assets/shaders/radiance_cascade.frag'),
         ui.FragmentProgram.fromAsset('assets/shaders/bloom_downsample.frag'),
         ui.FragmentProgram.fromAsset('assets/shaders/bloom_upsample.frag'),
+        ui.FragmentProgram.fromAsset('assets/shaders/water_composite.frag'),
         ui.FragmentProgram.fromAsset('assets/shaders/tonemap.frag'),
       ]);
 
@@ -135,7 +153,8 @@ class GIPostProcess extends Component {
       _radianceCascadeProg = results[3];
       _bloomDownProg = results[4];
       _bloomUpProg = results[5];
-      _tonemapProg = results[6];
+      _waterCompositeProg = results[6];
+      _tonemapProg = results[7];
 
       _shadersLoaded = true;
     } catch (e) {
@@ -229,6 +248,37 @@ class GIPostProcess extends Component {
     }
   }
 
+  /// Build water data map:
+  /// R,G = flow vector encoded to [0,255]
+  /// B = depth proxy from pressure
+  /// A = water mask (255 for water, 0 otherwise)
+  void _buildWaterDataMap() {
+    final grid = simulation.grid;
+    final velX = simulation.velX;
+    final velY = simulation.velY;
+    final pressure = simulation.pressure;
+    final px = _waterDataPixels;
+    final total = _gridW * _gridH;
+
+    for (int i = 0; i < total; i++) {
+      final pi4 = i * 4;
+      if (grid[i] == El.water) {
+        final fx = (velX[i] + 128).clamp(0, 255);
+        final fy = (velY[i] + 128).clamp(0, 255);
+        final depth = (pressure[i] * 8).clamp(0, 255);
+        px[pi4] = fx;
+        px[pi4 + 1] = fy;
+        px[pi4 + 2] = depth;
+        px[pi4 + 3] = 255;
+      } else {
+        px[pi4] = 128;
+        px[pi4 + 1] = 128;
+        px[pi4 + 2] = 0;
+        px[pi4 + 3] = 0;
+      }
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Full post-processing pipeline
   // ---------------------------------------------------------------------------
@@ -246,9 +296,11 @@ class GIPostProcess extends Component {
     // Step 1: Build CPU maps from simulation grid.
     _buildOccluderMap();
     _buildEmitterMap();
+    _buildWaterDataMap();
 
     final occluderImage = await _imageFromPixels(_occluderPixels, _gridW, _gridH);
     final emitterImage = await _imageFromPixels(_emitterPixels, _gridW, _gridH);
+    final waterDataImage = await _imageFromPixels(_waterDataPixels, _gridW, _gridH);
 
     final resolution = Float64List.fromList([_gridW.toDouble(), _gridH.toDouble()]);
 
@@ -282,9 +334,20 @@ class GIPostProcess extends Component {
     distField.dispose();
     emitterImage.dispose();
 
-    // Step 6: Bloom — downsample chain.
+    // Step 6: Water composite — refract/tint the base scene through water flow.
+    final waterComposited = waterEnabled
+        ? await _runWaterComposite(
+            sceneImage,
+            waterDataImage,
+            resolution,
+            _frameCount.toDouble() / 60.0,
+          )
+        : sceneImage;
+    waterDataImage.dispose();
+
+    // Step 7: Bloom — downsample chain.
     final bloomChain = <ui.Image>[];
-    ui.Image bloomSrc = sceneImage;
+    ui.Image bloomSrc = waterComposited;
     int bw = _gridW;
     int bh = _gridH;
 
@@ -305,7 +368,7 @@ class GIPostProcess extends Component {
     for (int i = _bloomPasses - 2; i >= 0; i--) {
       final dstW = i > 0 ? bloomChain[i - 1].width : _gridW;
       final dstH = i > 0 ? bloomChain[i - 1].height : _gridH;
-      final dst = i > 0 ? bloomChain[i - 1] : sceneImage;
+      final dst = i > 0 ? bloomChain[i - 1] : waterComposited;
       final srcTexelW = 1.0 / bloomChain[i + 1].width;
       final srcTexelH = 1.0 / bloomChain[i + 1].height;
 
@@ -330,14 +393,17 @@ class GIPostProcess extends Component {
       bloomChain[i].dispose();
     }
 
-    // Step 7: Tone map — composite scene + GI + bloom.
+    // Step 8: Tone map — composite scene + GI + bloom.
     final finalImage = await _runTonemap(
-      sceneImage, giResult, bloomResult, resolution,
+      waterComposited, giResult, bloomResult, resolution,
     );
     giResult.dispose();
     bloomResult.dispose();
+    if (!identical(waterComposited, sceneImage)) {
+      waterComposited.dispose();
+    }
 
-    // Step 8: Readback luminance to engine every 8 frames.
+    // Step 9: Readback luminance to engine every 8 frames.
     if (_frameCount % 8 == 0) {
       await _readbackLuminance(finalImage);
     }
@@ -424,6 +490,24 @@ class GIPostProcess extends Component {
     shader.setFloat(5, isFirstPass);
     shader.setImageSampler(0, source);
     return _renderShader(shader, outW.ceil(), outH.ceil());
+  }
+
+  Future<ui.Image> _runWaterComposite(
+    ui.Image scene,
+    ui.Image waterData,
+    Float64List resolution,
+    double timeSec,
+  ) async {
+    final shader = _waterCompositeProg!.fragmentShader();
+    shader.setFloat(0, resolution[0]);
+    shader.setFloat(1, resolution[1]);
+    shader.setFloat(2, timeSec);
+    shader.setFloat(3, waterRefractionStrength);
+    shader.setFloat(4, waterFresnelStrength);
+    shader.setFloat(5, waterFoamStrength);
+    shader.setImageSampler(0, scene);
+    shader.setImageSampler(1, waterData);
+    return _renderShader(shader, _gridW, _gridH);
   }
 
   Future<ui.Image> _runBloomUpsample(

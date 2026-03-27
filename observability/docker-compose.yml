@@ -1,0 +1,22 @@
+services:
+  lgtm:
+    image: grafana/otel-lgtm:latest
+    container_name: particle-engine-lgtm
+    ports:
+      - "3000:3000"  # Grafana UI
+      - "4317:4317"  # OTLP gRPC
+      - "4318:4318"  # OTLP HTTP
+      - "9090:9090"  # Prometheus query API
+      - "3100:3100"  # Loki API
+      - "3200:3200"  # Tempo API
+    volumes:
+      - ./data:/data
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./grafana/provisioning:/otel-lgtm/grafana/conf/provisioning:ro
+      - ./grafana/dashboards:/otel-lgtm/grafana/conf/dashboards:ro
+    environment:
+      - ENABLE_LOGS_ALL=true
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    restart: unless-stopped

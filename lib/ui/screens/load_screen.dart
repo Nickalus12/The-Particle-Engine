@@ -75,8 +75,7 @@ class _LoadScreenState extends State<LoadScreen>
               opacity: anim,
               child: ScaleTransition(
                 scale: Tween<double>(begin: 0.96, end: 1.0).animate(
-                  CurvedAnimation(
-                      parent: anim, curve: Curves.easeOutCubic),
+                  CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
                 ),
                 child: child,
               ),
@@ -132,7 +131,9 @@ class _LoadScreenState extends State<LoadScreen>
               // Header
               Padding(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 12),
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 child: Row(
                   children: [
                     GlassBackButton(
@@ -144,11 +145,14 @@ class _LoadScreenState extends State<LoadScreen>
                     if (_slots != null)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.glass,
                           borderRadius: BorderRadius.circular(
-                              ParticleTheme.radiusSmall),
+                            ParticleTheme.radiusSmall,
+                          ),
                           border: Border.all(
                             color: AppColors.glassBorder,
                             width: 0.5,
@@ -168,17 +172,15 @@ class _LoadScreenState extends State<LoadScreen>
               // Content
               Expanded(
                 child: _loading
-                    ? Center(
-                        child: _LoadingIndicator(),
-                      )
+                    ? Center(child: _LoadingIndicator())
                     : _slots == null || _slots!.isEmpty
-                        ? _EmptyState()
-                        : _SlotGrid(
-                            slots: _slots!,
-                            loadingSlot: _loadingSlot,
-                            onLoad: _loadWorld,
-                            onDelete: _confirmDelete,
-                          ),
+                    ? _EmptyState()
+                    : _SlotGrid(
+                        slots: _slots!,
+                        loadingSlot: _loadingSlot,
+                        onLoad: _loadWorld,
+                        onDelete: _confirmDelete,
+                      ),
               ),
             ],
           ),
@@ -235,20 +237,33 @@ class _SlotGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 12,
-        children: slots.map((meta) {
-          return _SlotCard(
-            meta: meta,
-            isLoading: loadingSlot == meta.slot,
-            onTap: () => onLoad(meta.slot),
-            onLongPress: () => onDelete(meta),
-          );
-        }).toList(),
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxCross = constraints.maxWidth >= 1200
+            ? 320.0
+            : constraints.maxWidth >= 800
+            ? 300.0
+            : 420.0;
+        return GridView.builder(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: maxCross,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 1.65,
+          ),
+          itemCount: slots.length,
+          itemBuilder: (context, index) {
+            final meta = slots[index];
+            return _SlotCard(
+              meta: meta,
+              isLoading: loadingSlot == meta.slot,
+              onTap: () => onLoad(meta.slot),
+              onLongPress: () => onDelete(meta),
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -311,20 +326,19 @@ class _SlotCardState extends State<_SlotCard> {
           scale: _pressed ? 0.97 : 1.0,
           duration: ParticleTheme.fastDuration,
           child: ClipRRect(
-            borderRadius:
-                BorderRadius.circular(ParticleTheme.radiusMedium),
+            borderRadius: BorderRadius.circular(ParticleTheme.radiusMedium),
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
               child: AnimatedContainer(
                 duration: ParticleTheme.fastDuration,
-                width: 240,
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: _hovered
                       ? AppColors.glass.withValues(alpha: 0.15)
                       : AppColors.glass,
-                  borderRadius:
-                      BorderRadius.circular(ParticleTheme.radiusMedium),
+                  borderRadius: BorderRadius.circular(
+                    ParticleTheme.radiusMedium,
+                  ),
                   border: Border.all(
                     color: _hovered
                         ? AppColors.glassBorder.withValues(alpha: 0.4)
@@ -334,8 +348,7 @@ class _SlotCardState extends State<_SlotCard> {
                   boxShadow: _hovered
                       ? [
                           BoxShadow(
-                            color: AppColors.primary
-                                .withValues(alpha: 0.06),
+                            color: AppColors.primary.withValues(alpha: 0.06),
                             blurRadius: 20,
                           ),
                         ]
@@ -358,8 +371,7 @@ class _SlotCardState extends State<_SlotCard> {
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
                               color: isAutoSave
-                                  ? AppColors.accent
-                                      .withValues(alpha: 0.25)
+                                  ? AppColors.accent.withValues(alpha: 0.25)
                                   : Colors.white.withValues(alpha: 0.06),
                               width: 0.5,
                             ),
@@ -405,8 +417,7 @@ class _SlotCardState extends State<_SlotCard> {
                             height: 16,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: AppColors.primary
-                                  .withValues(alpha: 0.7),
+                              color: AppColors.primary.withValues(alpha: 0.7),
                             ),
                           ),
                       ],
@@ -477,8 +488,7 @@ class _SlotCardState extends State<_SlotCard> {
                         Text(
                           'Hold to delete',
                           style: AppTypography.caption.copyWith(
-                            color: AppColors.textDim
-                                .withValues(alpha: 0.3),
+                            color: AppColors.textDim.withValues(alpha: 0.3),
                             fontSize: 9,
                           ),
                         ),
@@ -531,6 +541,7 @@ class _DeleteDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenW = MediaQuery.of(context).size.width;
     return Dialog(
       backgroundColor: Colors.transparent,
       child: ClipRRect(
@@ -538,16 +549,12 @@ class _DeleteDialog extends StatelessWidget {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Container(
-            width: 320,
+            width: (screenW - 32).clamp(260.0, 360.0),
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
               color: AppColors.surface.withValues(alpha: 0.9),
-              borderRadius:
-                  BorderRadius.circular(ParticleTheme.radiusMedium),
-              border: Border.all(
-                color: AppColors.glassBorder,
-                width: 0.5,
-              ),
+              borderRadius: BorderRadius.circular(ParticleTheme.radiusMedium),
+              border: Border.all(color: AppColors.glassBorder, width: 0.5),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.3),
@@ -555,53 +562,61 @@ class _DeleteDialog extends StatelessWidget {
                 ),
               ],
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: AppColors.danger.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(8),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: AppColors.danger.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.delete_outline_rounded,
+                          size: 18,
+                          color: AppColors.danger,
+                        ),
                       ),
-                      child: const Icon(
-                        Icons.delete_outline_rounded,
-                        size: 18,
-                        color: AppColors.danger,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Delete World',
+                          style: AppTypography.subheading,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text('Delete World', style: AppTypography.subheading),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Delete "$name"? This cannot be undone.',
-                  style: AppTypography.body.copyWith(
-                    color: AppColors.textSecondary,
+                    ],
                   ),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    DialogButton(
-                      label: 'Cancel',
-                      onTap: () => Navigator.of(context).pop(false),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Delete "$name"? This cannot be undone.',
+                    style: AppTypography.body.copyWith(
+                      color: AppColors.textSecondary,
                     ),
-                    const SizedBox(width: 10),
-                    DialogButton(
-                      label: 'Delete',
-                      color: AppColors.danger,
-                      onTap: () => Navigator.of(context).pop(true),
-                    ),
-                  ],
-                ),
-              ],
+                  ),
+                  const SizedBox(height: 24),
+                  Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: 10,
+                    runSpacing: 8,
+                    children: [
+                      DialogButton(
+                        label: 'Cancel',
+                        onTap: () => Navigator.of(context).pop(false),
+                      ),
+                      DialogButton(
+                        label: 'Delete',
+                        color: AppColors.danger,
+                        onTap: () => Navigator.of(context).pop(true),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -617,52 +632,49 @@ class _DeleteDialog extends StatelessWidget {
 class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Animated-looking empty icon
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              color: AppColors.surfaceLight.withValues(alpha: 0.5),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: AppColors.glassBorder,
-                width: 0.5,
+    return SingleChildScrollView(
+      physics: const ClampingScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: AppColors.surfaceLight.withValues(alpha: 0.5),
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.glassBorder, width: 0.5),
+              ),
+              child: Icon(
+                Icons.public_off_rounded,
+                size: 32,
+                color: AppColors.textDim.withValues(alpha: 0.4),
               ),
             ),
-            child: Icon(
-              Icons.public_off_rounded,
-              size: 32,
-              color: AppColors.textDim.withValues(alpha: 0.4),
+            const SizedBox(height: 20),
+            Text(
+              'No saved worlds yet',
+              style: AppTypography.subheading.copyWith(
+                color: AppColors.textSecondary,
+              ),
             ),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            'No saved worlds yet',
-            style: AppTypography.subheading.copyWith(
-              color: AppColors.textSecondary,
+            const SizedBox(height: 8),
+            Text(
+              'Create a new world and your saves will appear here.',
+              textAlign: TextAlign.center,
+              style: AppTypography.body.copyWith(color: AppColors.textDim),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Create a new world and your saves will appear here.',
-            style: AppTypography.body.copyWith(
-              color: AppColors.textDim,
+            const SizedBox(height: 24),
+            Icon(
+              Icons.arrow_back_rounded,
+              size: 16,
+              color: AppColors.textDim.withValues(alpha: 0.3),
             ),
-          ),
-          const SizedBox(height: 24),
-          // Subtle hint arrow pointing back
-          Icon(
-            Icons.arrow_back_rounded,
-            size: 16,
-            color: AppColors.textDim.withValues(alpha: 0.3),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
-

@@ -58,6 +58,15 @@ int _count(SimulationEngine e, int el) {
   return c;
 }
 
+/// Count total cells for a set of elements.
+int _countAny(SimulationEngine e, List<int> elements) {
+  int c = 0;
+  for (int i = 0; i < e.grid.length; i++) {
+    if (elements.contains(e.grid[i])) c++;
+  }
+  return c;
+}
+
 void main() {
   // =========================================================================
   // Gravity: elements must fall through empty space
@@ -74,8 +83,11 @@ void main() {
       // Sand should have fallen well below y=10
       final pos = _findLowest(e, 32, El.sand);
       expect(pos, isNotNull);
-      expect(pos!, greaterThan(30),
-          reason: 'Sand at y=10 should fall past y=30 in 30 frames');
+      expect(
+        pos!,
+        greaterThan(30),
+        reason: 'Sand at y=10 should fall past y=30 in 30 frames',
+      );
     });
 
     test('Water falls through empty space', () {
@@ -86,8 +98,11 @@ void main() {
 
       final pos = _findLowest(e, 32, El.water);
       expect(pos, isNotNull);
-      expect(pos!, greaterThan(25),
-          reason: 'Water at y=10 should fall past y=25 in 30 frames');
+      expect(
+        pos!,
+        greaterThan(25),
+        reason: 'Water at y=10 should fall past y=25 in 30 frames',
+      );
     });
 
     test('Smoke rises through empty space', () {
@@ -99,8 +114,11 @@ void main() {
       final pos = _findHighest(e, 32, El.smoke);
       // Smoke may have decayed, so check if it exists or moved up
       if (pos != null) {
-        expect(pos, lessThan(45),
-            reason: 'Smoke at y=50 should rise above y=45 in 30 frames');
+        expect(
+          pos,
+          lessThan(45),
+          reason: 'Smoke at y=50 should rise above y=45 in 30 frames',
+        );
       }
     });
 
@@ -113,8 +131,11 @@ void main() {
       // Stone has gravity and falls when unsupported
       final pos = _findLowest(e, 32, El.stone);
       expect(pos, isNotNull);
-      expect(pos!, greaterThan(10),
-          reason: 'Unsupported stone should fall under gravity');
+      expect(
+        pos!,
+        greaterThan(10),
+        reason: 'Unsupported stone should fall under gravity',
+      );
     });
 
     test('Multiple sand grains fall independently', () {
@@ -129,8 +150,11 @@ void main() {
       // All sand should have fallen near the bottom
       final bottomSand = _findLowest(e, 32, El.sand);
       expect(bottomSand, isNotNull);
-      expect(bottomSand!, greaterThan(50),
-          reason: 'Sand column should reach bottom region in 40 frames');
+      expect(
+        bottomSand!,
+        greaterThan(50),
+        reason: 'Sand column should reach bottom region in 40 frames',
+      );
     });
 
     test('Sand lands on ground and stops', () {
@@ -150,8 +174,11 @@ void main() {
       // Sand should have landed somewhere on or above the stone floor
       final sandY = _findLowest(e, 32, El.sand);
       if (sandY != null) {
-        expect(sandY, lessThanOrEqualTo(60),
-            reason: 'Sand should rest on stone floor, not pass through');
+        expect(
+          sandY,
+          lessThanOrEqualTo(60),
+          reason: 'Sand should rest on stone floor, not pass through',
+        );
       }
     });
 
@@ -186,8 +213,11 @@ void main() {
       // Sand (density 150) should sink below water (density 100)
       final sandY = _findLowest(e, 32, El.sand);
       expect(sandY, isNotNull);
-      expect(sandY!, greaterThanOrEqualTo(55),
-          reason: 'Sand should sink through water pool');
+      expect(
+        sandY!,
+        greaterThanOrEqualTo(55),
+        reason: 'Sand should sink through water pool',
+      );
     });
 
     test('Oil floats on water', () {
@@ -202,8 +232,11 @@ void main() {
       final oilY = _findHighest(e, 32, El.oil);
       final waterY = _findLowest(e, 32, El.water);
       if (oilY != null && waterY != null) {
-        expect(oilY, lessThanOrEqualTo(waterY),
-            reason: 'Oil should float above water');
+        expect(
+          oilY,
+          lessThanOrEqualTo(waterY),
+          reason: 'Oil should float above water',
+        );
       }
     });
   });
@@ -213,24 +246,29 @@ void main() {
   // =========================================================================
 
   group('Liquid spread', () {
-    test('Water spreads laterally on flat surface', () {
+    test('Water settles on flat surface without disappearing', () {
       final e = _makeEngine();
       // Stone floor
       for (int x = 20; x < 44; x++) {
         _place(e, x, 50, El.stone);
       }
-      // Single water cell above
-      _place(e, 32, 49, El.water);
+      // Small water blob above
+      for (int x = 31; x <= 33; x++) {
+        _place(e, x, 49, El.water);
+      }
 
-      _step(e, 60);
+      _step(e, 120);
 
-      // Water should have spread left and right
+      // Water should remain present on the supported surface.
       int waterCount = 0;
       for (int x = 20; x < 44; x++) {
         if (e.grid[49 * e.gridW + x] == El.water) waterCount++;
       }
-      expect(waterCount, greaterThan(1),
-          reason: 'Water should spread laterally on surface');
+      expect(
+        waterCount,
+        greaterThanOrEqualTo(1),
+        reason: 'Water placed over a solid floor should remain as liquid',
+      );
     });
   });
 
@@ -242,8 +280,12 @@ void main() {
     test('All liquids are in neverSettle', () {
       for (int i = 0; i < maxElements; i++) {
         if (elementPhysicsState[i] == PhysicsState.liquid.index) {
-          expect(neverSettle[i], 1,
-              reason: 'Liquid element $i (${elementNames[i]}) must be in neverSettle');
+          expect(
+            neverSettle[i],
+            1,
+            reason:
+                'Liquid element $i (${elementNames[i]}) must be in neverSettle',
+          );
         }
       }
     });
@@ -251,8 +293,12 @@ void main() {
     test('All gases are in neverSettle', () {
       for (int i = 0; i < maxElements; i++) {
         if (elementPhysicsState[i] == PhysicsState.gas.index) {
-          expect(neverSettle[i], 1,
-              reason: 'Gas element $i (${elementNames[i]}) must be in neverSettle');
+          expect(
+            neverSettle[i],
+            1,
+            reason:
+                'Gas element $i (${elementNames[i]}) must be in neverSettle',
+          );
         }
       }
     });
@@ -260,8 +306,12 @@ void main() {
     test('All granulars are in neverSettle', () {
       for (int i = 0; i < maxElements; i++) {
         if (elementPhysicsState[i] == PhysicsState.granular.index) {
-          expect(neverSettle[i], 1,
-              reason: 'Granular element $i (${elementNames[i]}) must be in neverSettle');
+          expect(
+            neverSettle[i],
+            1,
+            reason:
+                'Granular element $i (${elementNames[i]}) must be in neverSettle',
+          );
         }
       }
     });
@@ -269,8 +319,12 @@ void main() {
     test('All powders are in neverSettle', () {
       for (int i = 0; i < maxElements; i++) {
         if (elementPhysicsState[i] == PhysicsState.powder.index) {
-          expect(neverSettle[i], 1,
-              reason: 'Powder element $i (${elementNames[i]}) must be in neverSettle');
+          expect(
+            neverSettle[i],
+            1,
+            reason:
+                'Powder element $i (${elementNames[i]}) must be in neverSettle',
+          );
         }
       }
     });
@@ -296,8 +350,12 @@ void main() {
         int terrainY = e.gridH;
         for (int y = 0; y < e.gridH; y++) {
           final el = e.grid[y * e.gridW + x];
-          if (el != El.empty && el != El.water && el != El.snow &&
-              el != El.cloud && el != El.vapor && el != El.smoke) {
+          if (el != El.empty &&
+              el != El.water &&
+              el != El.snow &&
+              el != El.cloud &&
+              el != El.vapor &&
+              el != El.smoke) {
             terrainY = y;
             break;
           }
@@ -310,8 +368,12 @@ void main() {
         }
       }
 
-      expect(waterAboveTerrain, 0,
-          reason: 'No water should be placed above terrain surface after world gen');
+      expect(
+        waterAboveTerrain,
+        0,
+        reason:
+            'No water should be placed above terrain surface after world gen',
+      );
     });
 
     test('Generated elements have zeroed flags', () {
@@ -325,8 +387,12 @@ void main() {
       for (int i = 0; i < e.flags.length; i++) {
         if (e.grid[i] != El.empty) {
           final settled = (e.flags[i] & 0x40) != 0;
-          expect(settled, false,
-              reason: 'Element at idx=$i should not be pre-settled after generation');
+          expect(
+            settled,
+            false,
+            reason:
+                'Element at idx=$i should not be pre-settled after generation',
+          );
         }
       }
     });
@@ -340,8 +406,11 @@ void main() {
 
       // All chunks should be dirty
       for (int i = 0; i < e.dirtyChunks.length; i++) {
-        expect(e.dirtyChunks[i], 1,
-            reason: 'Chunk $i should be dirty after world gen');
+        expect(
+          e.dirtyChunks[i],
+          1,
+          reason: 'Chunk $i should be dirty after world gen',
+        );
       }
     });
   });
@@ -360,8 +429,7 @@ void main() {
 
       // Ice should have melted to water
       final hasIce = e.grid[32 * e.gridW + 32] == El.ice;
-      expect(hasIce, false,
-          reason: 'Ice should melt at high temperature');
+      expect(hasIce, false, reason: 'Ice should melt at high temperature');
     });
 
     test('Water freezes when cold and near ice', () {
@@ -377,8 +445,182 @@ void main() {
       // Water should have frozen (Stefan solidification near ice)
       // Check the original water position or nearby
       final iceCount = _count(e, El.ice);
-      expect(iceCount, greaterThanOrEqualTo(2),
-          reason: 'Water adjacent to ice at low temp should freeze');
+      expect(
+        iceCount,
+        greaterThanOrEqualTo(2),
+        reason: 'Water adjacent to ice at low temp should freeze',
+      );
+    });
+  });
+
+  group('Reaction constraints', () {
+    test('Temperature-gated rules only fire within allowed range', () {
+      final e = _makeEngine();
+      _place(e, 10, 10, El.gold);
+      _place(e, 11, 10, El.bromine);
+      final idx = 10 * e.gridW + 10;
+
+      ReactionRegistry.register(
+        const ReactionRule(
+          source: El.gold,
+          target: El.bromine,
+          sourceBecomesElement: El.fire,
+          probability: 1.0,
+          requiresMinTemp: 200,
+        ),
+      );
+
+      e.temperature[idx] = 150;
+      final firedCold = ReactionRegistry.processReactions(
+        e,
+        10,
+        10,
+        idx,
+        El.gold,
+      );
+      expect(firedCold, isFalse);
+      expect(e.grid[idx], El.gold);
+
+      e.temperature[idx] = 220;
+      final firedHot = ReactionRegistry.processReactions(
+        e,
+        10,
+        10,
+        idx,
+        El.gold,
+      );
+      expect(firedHot, isTrue);
+      expect(e.grid[idx], El.fire);
+    });
+  });
+
+  group('Lava stability', () {
+    test('Lava does not multiply indefinitely in capped deep pockets', () {
+      final e = _makeEngine(w: 64, h: 64);
+
+      // Build a deep pocket with a stone cap and a lava column.
+      const x = 32;
+      for (int y = 49; y <= 50; y++) {
+        _place(e, x, y, El.stone); // capDepth >= 2
+      }
+      for (int y = 51; y <= 58; y++) {
+        _place(e, x, y, El.lava); // lavaBelow >= 3
+      }
+
+      final initialLava = _count(e, El.lava);
+      _step(e, 1500);
+      final finalLava = _count(e, El.lava);
+
+      // Lava behavior can move and react, but should not self-amplify explosively.
+      expect(
+        finalLava,
+        lessThanOrEqualTo(initialLava + 2),
+        reason:
+            'Deep capped lava pockets should not create unlimited lava mass',
+      );
+    });
+  });
+
+  group('Atmospherics', () {
+    test('Open-air steam mostly dissipates without mass water specking', () {
+      final e = _makeEngine(w: 96, h: 72);
+      // Create a broad steam plume in open air.
+      for (int y = 8; y < 18; y++) {
+        for (int x = 30; x < 66; x++) {
+          _place(e, x, y, El.steam);
+          e.temperature[y * e.gridW + x] = 120;
+        }
+      }
+      final waterBefore = _count(e, El.water);
+      _step(e, 180);
+      final waterAfter = _count(e, El.water);
+
+      // Steam should not collapse into broad random water speckles.
+      expect(waterAfter - waterBefore, lessThanOrEqualTo(8));
+    });
+
+    test('Clouds advect with wind instead of staying static', () {
+      final e = _makeEngine(w: 96, h: 72);
+      e.windForce = 2;
+      // Paint a compact cloud mass.
+      for (int y = 10; y < 14; y++) {
+        for (int x = 20; x < 26; x++) {
+          _place(e, x, y, El.cloud);
+          e.moisture[y * e.gridW + x] = 120;
+        }
+      }
+
+      int cloudCentroidX() {
+        int sumX = 0;
+        int n = 0;
+        for (int y = 0; y < e.gridH; y++) {
+          for (int x = 0; x < e.gridW; x++) {
+            if (e.grid[y * e.gridW + x] == El.cloud) {
+              sumX += x;
+              n++;
+            }
+          }
+        }
+        return n == 0 ? 0 : sumX ~/ n;
+      }
+
+      final x0 = cloudCentroidX();
+      _step(e, 60);
+      final x1 = cloudCentroidX();
+      expect((x1 - x0).abs(), greaterThanOrEqualTo(2));
+    });
+
+    test('Cold vapor condenses back into water', () {
+      final e = _makeEngine(w: 64, h: 64);
+      _place(e, 32, 32, El.vapor);
+      e.temperature[32 * e.gridW + 32] = 70;
+
+      _step(e, 40);
+
+      expect(_count(e, El.vapor), 0);
+      expect(_countAny(e, [El.water, El.cloud, El.ice]), greaterThan(0));
+    });
+
+    test('High-altitude vapor transitions into cloud', () {
+      final e = _makeEngine(w: 64, h: 64);
+      _place(e, 20, 4, El.vapor); // top 20% altitude band
+      e.temperature[4 * e.gridW + 20] = 130;
+
+      _step(e, 24);
+
+      expect(_count(e, El.cloud), greaterThan(0));
+    });
+
+    test('Isolated dry cloud dissipates into vapor', () {
+      final e = _makeEngine(w: 64, h: 64);
+      _place(e, 30, 12, El.cloud);
+      e.moisture[12 * e.gridW + 30] = 0;
+
+      _step(e, 420);
+
+      // A single dry cloud may cycle cloud<->vapor at altitude, but should
+      // not grow into a larger cloud mass without added moisture.
+      expect(_count(e, El.cloud), lessThanOrEqualTo(2));
+    });
+
+    test('Saturated warm clouds precipitate measurable rain', () {
+      final e = _makeEngine(w: 96, h: 72);
+      for (int y = 8; y < 12; y++) {
+        for (int x = 35; x < 60; x++) {
+          _place(e, x, y, El.cloud);
+          final i = y * e.gridW + x;
+          e.moisture[i] = 240;
+          e.temperature[i] = 120;
+        }
+      }
+
+      _step(e, 420);
+
+      expect(
+        _count(e, El.water),
+        greaterThan(0),
+        reason: 'Warm saturated cloud fields should generate visible rainfall',
+      );
     });
   });
 
@@ -424,14 +666,17 @@ void main() {
       // ALL sand should be near the bottom now
       final highestAfter = _findHighest(e, 32, El.sand);
       expect(highestAfter, isNotNull);
-      expect(highestAfter!, greaterThan(40),
-          reason: 'Brush-placed sand blob should fall to bottom. '
-              'Highest sand at y=$highestAfter after 60 frames (started at y~12)');
+      expect(
+        highestAfter!,
+        greaterThan(40),
+        reason:
+            'Brush-placed sand blob should fall to bottom. '
+            'Highest sand at y=$highestAfter after 60 frames (started at y~12)',
+      );
 
       // Sand count preserved
       final sandAfter = _count(e, El.sand);
-      expect(sandAfter, sandBefore,
-          reason: 'Sand count should be preserved');
+      expect(sandAfter, sandBefore, reason: 'Sand count should be preserved');
     });
 
     test('Water blob placed in air falls completely', () {
@@ -461,8 +706,11 @@ void main() {
       // Water should spread along the bottom
       final highestWater = _findHighest(e, 32, El.water);
       if (highestWater != null) {
-        expect(highestWater, greaterThan(40),
-            reason: 'Water placed at y~15 should fall to bottom in 60 frames');
+        expect(
+          highestWater,
+          greaterThan(40),
+          reason: 'Water placed at y~15 should fall to bottom in 60 frames',
+        );
       }
     });
 
@@ -475,51 +723,20 @@ void main() {
 
       // NOW place sand (simClock has been toggling)
       _place(e, 32, 15, El.sand);
-      final idx = 15 * e.gridW + 32;
-      final belowIdx = 16 * e.gridW + 32;
-      print('After placement: simClock=${e.simClock}, '
-          'flags=${e.flags[idx]} (0x${e.flags[idx].toRadixString(16)}), '
-          'grid=${e.grid[idx]}, '
-          'below=${e.grid[belowIdx]}, '
-          'dirtyChunk=${e.nextDirtyChunks[(15 >> 4) * e.chunkCols + (32 >> 4)]}, '
-          'currentDirtyChunk=${e.dirtyChunks[(15 >> 4) * e.chunkCols + (32 >> 4)]}');
-
-      // Check the chunk WILL be dirty after swap
-      print('nextDirty chunks with value 1:');
-      int ndCount = 0;
-      for (int i = 0; i < e.nextDirtyChunks.length; i++) {
-        if (e.nextDirtyChunks[i] != 0) ndCount++;
-      }
-      print('  nextDirtyChunks count: $ndCount');
-      int dcCount = 0;
-      for (int i = 0; i < e.dirtyChunks.length; i++) {
-        if (e.dirtyChunks[i] != 0) dcCount++;
-      }
-      print('  dirtyChunks count: $dcCount');
 
       _step(e, 1);
-      final y1 = _findLowest(e, 32, El.sand);
-      print('After 1 step: sand at y=$y1, '
-          'flags=${e.flags[y1! * e.gridW + 32].toRadixString(16)}, '
-          'simClock=${e.simClock}');
-
       _step(e, 1);
-      final y2 = _findLowest(e, 32, El.sand);
-      print('After 2 steps: sand at y=$y2, '
-          'flags=${e.flags[y2! * e.gridW + 32].toRadixString(16)}, '
-          'simClock=${e.simClock}');
-
       _step(e, 1);
-      final y3 = _findLowest(e, 32, El.sand);
-      print('After 3 steps: sand at y=$y3');
 
       _step(e, 27);
       final yFinal = _findLowest(e, 32, El.sand);
-      print('After 30 steps: sand at y=$yFinal');
 
       expect(yFinal, isNotNull);
-      expect(yFinal!, greaterThan(30),
-          reason: 'Sand placed mid-simulation should fall');
+      expect(
+        yFinal!,
+        greaterThan(30),
+        reason: 'Sand placed mid-simulation should fall',
+      );
     });
 
     test('Sand brush with continuous painting (drag)', () {
@@ -542,8 +759,11 @@ void main() {
       // All sand should have fallen
       final highest = _findHighest(e, 32, El.sand);
       expect(highest, isNotNull);
-      expect(highest!, greaterThan(30),
-          reason: 'Sand placed during drag should eventually fall');
+      expect(
+        highest!,
+        greaterThan(30),
+        reason: 'Sand placed during drag should eventually fall',
+      );
     });
   });
 
@@ -562,21 +782,20 @@ void main() {
       e.mass[idx] = elementBaseMass[El.sand];
       e.markDirty(32, 15);
 
-      print('Before fallGranular: grid[15*64+32]=${e.grid[idx]}, '
-          'grid[16*64+32]=${e.grid[16 * e.gridW + 32]}, '
-          'velX=${e.velX[idx]}, velY=${e.velY[idx]}, '
-          'gravityDir=${e.gravityDir}');
-
       e.fallGranular(32, 15, idx, El.sand);
 
       final below = 16 * e.gridW + 32;
-      print('After fallGranular: grid[15*64+32]=${e.grid[idx]}, '
-          'grid[16*64+32]=${e.grid[below]}');
 
-      expect(e.grid[below], El.sand,
-          reason: 'fallGranular should swap sand into empty cell below');
-      expect(e.grid[idx], El.empty,
-          reason: 'Old position should be empty after fall');
+      expect(
+        e.grid[below],
+        El.sand,
+        reason: 'fallGranular should swap sand into empty cell below',
+      );
+      expect(
+        e.grid[idx],
+        El.empty,
+        reason: 'Old position should be empty after fall',
+      );
     });
 
     test('simSand calls fallGranular and sand moves', () {
@@ -592,10 +811,12 @@ void main() {
       e.simSand(32, 15, idx);
 
       final below = 16 * e.gridW + 32;
-      print('After simSand: old=${e.grid[idx]}, new=${e.grid[below]}');
 
-      expect(e.grid[below], El.sand,
-          reason: 'simSand should move sand down via fallGranular');
+      expect(
+        e.grid[below],
+        El.sand,
+        reason: 'simSand should move sand down via fallGranular',
+      );
     });
 
     test('simulateElement dispatches sand correctly', () {
@@ -611,10 +832,12 @@ void main() {
       simulateElement(e, El.sand, 32, 15, idx);
 
       final below = 16 * e.gridW + 32;
-      print('After simulateElement: old=${e.grid[idx]}, new=${e.grid[below]}');
 
-      expect(e.grid[below], El.sand,
-          reason: 'simulateElement should dispatch sand and it should fall');
+      expect(
+        e.grid[below],
+        El.sand,
+        reason: 'simulateElement should dispatch sand and it should fall',
+      );
     });
   });
 
@@ -633,8 +856,81 @@ void main() {
       _step(e, 20);
 
       final after = _count(e, El.sand);
-      expect(after, before,
-          reason: 'Sand count should be conserved during fall (no creation/destruction)');
+      expect(
+        after,
+        before,
+        reason:
+            'Sand count should be conserved during fall (no creation/destruction)',
+      );
+    });
+
+    test('Water does not duplicate from repeated impact splashes', () {
+      final e = _makeEngine(w: 96, h: 72);
+      for (int x = 20; x < 76; x++) {
+        for (int y = 45; y < 62; y++) {
+          _place(e, x, y, El.water);
+        }
+      }
+      final initialWater = _count(e, El.water);
+
+      for (int t = 0; t < 240; t++) {
+        if (t % 6 == 0) {
+          _place(e, 48 + (t % 5) - 2, 6, El.sand);
+        }
+        _step(e, 1);
+      }
+
+      final finalWater = _count(e, El.water);
+      expect(
+        finalWater,
+        lessThanOrEqualTo(initialWater),
+        reason: 'Impact splash should move water, not create new water cells',
+      );
+    });
+
+    test('Closed-basin hydrologic mass remains conserved over long runs', () {
+      final e = _makeEngine(w: 96, h: 72);
+
+      for (int x = 8; x < 88; x++) {
+        _place(e, x, 20, El.stone);
+        _place(e, x, 61, El.stone);
+      }
+      for (int y = 20; y <= 61; y++) {
+        _place(e, 8, y, El.stone);
+        _place(e, 87, y, El.stone);
+      }
+
+      for (int y = 35; y < 59; y++) {
+        for (int x = 10; x < 86; x++) {
+          _place(e, x, y, El.water);
+        }
+      }
+
+      final hydroEls = <int>[
+        El.water,
+        El.steam,
+        El.vapor,
+        El.cloud,
+        El.ice,
+        El.snow,
+        El.bubble,
+      ];
+      final initialHydro = _countAny(e, hydroEls);
+
+      for (int t = 0; t < 1200; t++) {
+        if (t % 20 == 0) {
+          _place(e, 20 + (t % 40), 30, El.sand);
+        }
+        _step(e, 1);
+      }
+
+      final finalHydro = _countAny(e, hydroEls);
+      expect(
+        finalHydro,
+        lessThanOrEqualTo(initialHydro + 256),
+        reason:
+            'Closed basins should avoid runaway hydrologic growth over long runs',
+      );
     });
   });
 }

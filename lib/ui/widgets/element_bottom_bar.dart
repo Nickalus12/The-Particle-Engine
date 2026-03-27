@@ -21,6 +21,18 @@ class ElementBottomBar extends StatefulWidget {
   final ParticleEngineGame game;
   final VoidCallback? onInteraction;
 
+  static double estimatedHeightFor(MediaQueryData media) {
+    final compact = media.size.height < 760;
+    final ultraCompact = media.size.height < 680;
+    final bottomInset = media.padding.bottom;
+    final tabsHeight = compact ? 38.0 : 42.0;
+    final accentLineHeight = compact ? 1.0 : 1.5;
+    final stripHeight = (compact || ultraCompact) ? 66.0 : 76.0;
+    final innerVertical = compact ? 8.0 : 12.0;
+    final outerBottom = 8 + (bottomInset > 0 ? bottomInset * 0.35 : 0);
+    return tabsHeight + accentLineHeight + stripHeight + innerVertical + outerBottom;
+  }
+
   @override
   State<ElementBottomBar> createState() => _ElementBottomBarState();
 }
@@ -45,13 +57,13 @@ class _ElementBottomBarState extends State<ElementBottomBar>
       vsync: this,
       duration: ParticleTheme.normalDuration,
     );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 1),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _slideController,
-      curve: ParticleTheme.defaultCurve,
-    ));
+    _slideAnimation = Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _slideController,
+            curve: ParticleTheme.defaultCurve,
+          ),
+        );
     _slideController.forward();
 
     _iconAnimController = AnimationController(
@@ -68,9 +80,10 @@ class _ElementBottomBarState extends State<ElementBottomBar>
       vsync: this,
       duration: const Duration(milliseconds: 200),
     );
-    _selectScale = Tween<double>(begin: 1.0, end: 1.15).animate(
-      CurvedAnimation(parent: _selectBounce, curve: Curves.elasticOut),
-    );
+    _selectScale = Tween<double>(
+      begin: 1.0,
+      end: 1.15,
+    ).animate(CurvedAnimation(parent: _selectBounce, curve: Curves.elasticOut));
   }
 
   @override
@@ -122,13 +135,22 @@ class _ElementBottomBarState extends State<ElementBottomBar>
   @override
   Widget build(BuildContext context) {
     final elements = _elementsForCategory(_activeCategory);
+    final media = MediaQuery.of(context);
+    final compact = media.size.height < 760;
+    final ultraCompact = media.size.height < 680;
+    final bottomInset = media.padding.bottom;
 
     return SlideTransition(
       position: _slideAnimation,
       child: Align(
         alignment: Alignment.bottomCenter,
         child: Padding(
-          padding: const EdgeInsets.only(left: 8, right: 8, bottom: 8),
+          key: const ValueKey('element_bottom_bar_container'),
+          padding: EdgeInsets.only(
+            left: 8,
+            right: 8,
+            bottom: 8 + (bottomInset > 0 ? bottomInset * 0.35 : 0),
+          ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(ParticleTheme.radiusLarge),
             child: BackdropFilter(
@@ -144,11 +166,13 @@ class _ElementBottomBarState extends State<ElementBottomBar>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     // Category tabs
-                    _buildCategoryTabs(),
+                    _buildCategoryTabs(compact: compact),
                     // Colored accent line below tabs
                     Container(
-                      height: 1.5,
-                      margin: const EdgeInsets.symmetric(horizontal: 12),
+                      height: compact ? 1.0 : 1.5,
+                      margin: EdgeInsets.symmetric(
+                        horizontal: compact ? 8 : 12,
+                      ),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
@@ -160,7 +184,10 @@ class _ElementBottomBarState extends State<ElementBottomBar>
                       ),
                     ),
                     // Element tiles
-                    _buildElementStrip(elements),
+                    _buildElementStrip(
+                      elements,
+                      compact: compact || ultraCompact,
+                    ),
                   ],
                 ),
               ),
@@ -171,22 +198,23 @@ class _ElementBottomBarState extends State<ElementBottomBar>
     );
   }
 
-  Widget _buildCategoryTabs() {
+  Widget _buildCategoryTabs({required bool compact}) {
+    final tabHeight = compact ? 38.0 : 42.0;
     return SizedBox(
-      height: 42,
+      height: tabHeight,
       child: Row(
         children: [
-          const SizedBox(width: 6),
+          SizedBox(width: compact ? 4 : 6),
           // Selected element preview
-          _buildSelectedPreview(),
-          const SizedBox(width: 4),
+          _buildSelectedPreview(compact: compact),
+          SizedBox(width: compact ? 2 : 4),
           // Vertical divider
           Container(
             width: 0.5,
-            height: 24,
+            height: compact ? 20 : 24,
             color: Colors.white.withValues(alpha: 0.1),
           ),
-          const SizedBox(width: 4),
+          SizedBox(width: compact ? 2 : 4),
           // Category tabs
           Expanded(
             child: ListView(
@@ -205,14 +233,15 @@ class _ElementBottomBarState extends State<ElementBottomBar>
             ),
           ),
           // Observe button
-          _buildObserveButton(),
-          const SizedBox(width: 6),
+          _buildObserveButton(compact: compact),
+          SizedBox(width: compact ? 4 : 6),
         ],
       ),
     );
   }
 
-  Widget _buildSelectedPreview() {
+  Widget _buildSelectedPreview({required bool compact}) {
+    final tile = compact ? 30.0 : 34.0;
     final color = ElementPalette.colorForId(_selectedElId);
     return AnimatedBuilder(
       animation: Listenable.merge([_glowController, _selectBounce]),
@@ -224,8 +253,8 @@ class _ElementBottomBarState extends State<ElementBottomBar>
             return Transform.scale(
               scale: _selectScale.value,
               child: Container(
-                width: 34,
-                height: 34,
+                width: tile,
+                height: tile,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(8),
                   boxShadow: [
@@ -240,8 +269,11 @@ class _ElementBottomBarState extends State<ElementBottomBar>
                   borderRadius: BorderRadius.circular(8),
                   child: CustomPaint(
                     painter: VectorElementIcon(
-                        _selectedElId, color, _iconAnimController.value),
-                    size: const Size(34, 34),
+                      _selectedElId,
+                      color,
+                      _iconAnimController.value,
+                    ),
+                    size: Size(tile, tile),
                   ),
                 ),
               ),
@@ -252,12 +284,13 @@ class _ElementBottomBarState extends State<ElementBottomBar>
     );
   }
 
-  Widget _buildObserveButton() {
+  Widget _buildObserveButton({required bool compact}) {
+    final size = compact ? 28.0 : 32.0;
     return GestureDetector(
       onTap: () => widget.game.exitCreationMode(),
       child: Container(
-        width: 32,
-        height: 32,
+        width: size,
+        height: size,
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(8),
@@ -266,26 +299,29 @@ class _ElementBottomBarState extends State<ElementBottomBar>
             width: 0.5,
           ),
         ),
-        child: const Icon(
+        child: Icon(
           Icons.visibility_rounded,
-          size: 16,
+          size: compact ? 14 : 16,
           color: AppColors.textDim,
         ),
       ),
     );
   }
 
-  Widget _buildElementStrip(List<int> elements) {
+  Widget _buildElementStrip(List<int> elements, {required bool compact}) {
     return SizedBox(
-      height: 76,
+      height: compact ? 66 : 76,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 6 : 8,
+          vertical: compact ? 4 : 6,
+        ),
         itemCount: elements.length,
         itemBuilder: (context, index) {
           final elId = elements[index];
           return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 3),
+            padding: EdgeInsets.symmetric(horizontal: compact ? 2 : 3),
             child: _ElementTile(
               elId: elId,
               isSelected: elId == _selectedElId,
@@ -294,6 +330,7 @@ class _ElementBottomBarState extends State<ElementBottomBar>
               categoryColor: _activeCategory.color,
               iconAnimController: _iconAnimController,
               glowController: _glowController,
+              compact: compact,
               onTap: () => _select(elId),
               onLongPressStart: (details) {
                 _showInfoCard(context, elId, details.globalPosition);
@@ -348,8 +385,8 @@ class _CategoryTabState extends State<_CategoryTab> {
             color: isActive
                 ? cat.color.withValues(alpha: 0.2)
                 : _hovered
-                    ? Colors.white.withValues(alpha: 0.06)
-                    : Colors.transparent,
+                ? Colors.white.withValues(alpha: 0.06)
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
             border: isActive
                 ? Border.all(
@@ -397,6 +434,7 @@ class _ElementTile extends StatefulWidget {
     required this.categoryColor,
     required this.iconAnimController,
     required this.glowController,
+    required this.compact,
     required this.onTap,
     required this.onLongPressStart,
   });
@@ -408,6 +446,7 @@ class _ElementTile extends StatefulWidget {
   final Color categoryColor;
   final AnimationController iconAnimController;
   final AnimationController glowController;
+  final bool compact;
   final VoidCallback onTap;
   final void Function(LongPressStartDetails) onLongPressStart;
 
@@ -422,6 +461,10 @@ class _ElementTileState extends State<_ElementTile> {
   Widget build(BuildContext context) {
     final isSelected = widget.isSelected;
     final color = widget.color;
+    final outerW = widget.compact ? 50.0 : 56.0;
+    final outerH = widget.compact ? 56.0 : 64.0;
+    final iconBox = widget.compact ? 38.0 : 44.0;
+    final labelSize = widget.compact ? 7.0 : 8.0;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -445,35 +488,36 @@ class _ElementTileState extends State<_ElementTile> {
             return Transform.scale(
               scale: scale,
               child: SizedBox(
-                width: 56,
-                height: 64,
+                width: outerW,
+                height: outerH,
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     // Icon container
                     Container(
-                      width: 44,
-                      height: 44,
+                      width: iconBox,
+                      height: iconBox,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(10),
                         color: isSelected
                             ? color.withValues(alpha: 0.12)
                             : _hovered
-                                ? Colors.white.withValues(alpha: 0.06)
-                                : Colors.white.withValues(alpha: 0.03),
+                            ? Colors.white.withValues(alpha: 0.06)
+                            : Colors.white.withValues(alpha: 0.03),
                         border: Border.all(
                           color: isSelected
                               ? color.withValues(alpha: 0.7)
                               : _hovered
-                                  ? color.withValues(alpha: 0.25)
-                                  : Colors.white.withValues(alpha: 0.06),
+                              ? color.withValues(alpha: 0.25)
+                              : Colors.white.withValues(alpha: 0.06),
                           width: isSelected ? 1.5 : 0.5,
                         ),
                         boxShadow: [
                           if (isSelected) ...[
                             BoxShadow(
                               color: color.withValues(
-                                  alpha: 0.15 + glowT * 0.2),
+                                alpha: 0.15 + glowT * 0.2,
+                              ),
                               blurRadius: 10 + glowT * 6,
                               spreadRadius: glowT,
                             ),
@@ -487,25 +531,25 @@ class _ElementTileState extends State<_ElementTile> {
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(8.5),
                         child: CustomPaint(
-                          painter: VectorElementIcon(
-                            widget.elId, color, phase),
-                          size: const Size(44, 44),
+                          painter: VectorElementIcon(widget.elId, color, phase),
+                          size: Size(iconBox, iconBox),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    SizedBox(height: widget.compact ? 1 : 2),
                     // Label
                     Text(
                       widget.name,
                       style: AppTypography.caption.copyWith(
-                        fontSize: 8,
-                        fontWeight:
-                            isSelected ? FontWeight.w700 : FontWeight.w500,
+                        fontSize: labelSize,
+                        fontWeight: isSelected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
                         color: isSelected
                             ? color
                             : _hovered
-                                ? AppColors.textPrimary
-                                : AppColors.textSecondary,
+                            ? AppColors.textPrimary
+                            : AppColors.textSecondary,
                       ),
                       overflow: TextOverflow.ellipsis,
                       maxLines: 1,

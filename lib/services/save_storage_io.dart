@@ -31,6 +31,16 @@ class SaveStorage {
     await file.writeAsString(value);
   }
 
+  Future<void> writeAtomic(String name, String value) async {
+    final file = await _file(name);
+    final tmp = File('${file.path}.tmp');
+    await tmp.writeAsString(value, flush: true);
+    if (await file.exists()) {
+      await file.delete();
+    }
+    await tmp.rename(file.path);
+  }
+
   Future<String?> read(String name) async {
     final file = await _file(name);
     if (!await file.exists()) return null;

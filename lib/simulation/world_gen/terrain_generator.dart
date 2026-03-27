@@ -21,70 +21,63 @@ class TerrainGenerator {
   /// coordinate of the terrain surface at that X position.
   /// Lower Y = higher elevation (screen coordinates).
   static List<int> generateHeightmap(WorldConfig config) {
-    final noise = SimplexNoise(config.seed);
-    final noise2 = SimplexNoise(config.seed + 100);
-    final noise3 = SimplexNoise(config.seed + 200);
+    final continentalNoise = SimplexNoise(config.seed);
+    final macroNoise = SimplexNoise(config.seed + 100);
+    final ridgeNoise = SimplexNoise(config.seed + 200);
+    final detailNoise = SimplexNoise(config.seed + 300);
+    final humidityNoise = SimplexNoise(config.seed + 400);
     final heightmap = List<int>.filled(config.width, 0);
 
-    final baseHeight = (config.height * 0.38).round();
-    final terrainAmplitude = config.height * 0.18 * config.terrainScale;
+    final baseHeight = (config.height * 0.39).round();
+    final terrainAmplitude = config.height * (0.12 + config.terrainScale * 0.10);
 
     for (var x = 0; x < config.width; x++) {
       final nx = x / config.width;
-
-      // --- Macro shape: large rolling hills (low frequency) ---
-      final macro = noise.octaveNoise2D(
-        nx * 3.0,
-        0.0,
+      final continental = continentalNoise.octaveNoise2D(
+        nx * 1.6,
+        0.15,
         octaves: 3,
-        persistence: 0.5,
+        persistence: 0.55,
         lacunarity: 2.0,
       );
-
-      // --- Medium detail: ridges and valleys (medium frequency) ---
-      final medium = noise2.octaveNoise2D(
-        nx * 8.0,
-        0.5,
-        octaves: 2,
-        persistence: 0.4,
-        lacunarity: 2.0,
+      final macro = macroNoise.octaveNoise2D(
+        nx * 4.0,
+        0.6,
+        octaves: 3,
+        persistence: 0.48,
+        lacunarity: 2.1,
       );
-
-      // --- Micro detail: small bumps and roughness (high frequency) ---
-      final micro = noise3.octaveNoise2D(
-        nx * 20.0,
-        1.0,
+      final ridges = 1.0 - ridgeNoise.noise2D(nx * 7.0, 1.7).abs();
+      final detail = detailNoise.octaveNoise2D(
+        nx * 16.0,
+        2.2,
         octaves: 2,
-        persistence: 0.3,
-        lacunarity: 2.5,
+        persistence: 0.35,
+        lacunarity: 2.6,
       );
+      final humidity = (humidityNoise.noise2D(nx * 3.4, 4.3) + 1.0) * 0.5;
 
-      final combined = macro * 0.65 + medium * 0.25 + micro * 0.10;
+      double heightSignal =
+          continental * 0.34 + macro * 0.33 + (ridges - 0.5) * 0.24 + detail * 0.09;
 
-      // --- Plateau effect: flatten near certain elevations ---
-      final plateauNoise = noise.noise2D(nx * 2.0, 3.0);
-      double height = combined;
-      if (plateauNoise > 0.3) {
-        final steps = 4.0;
-        final quantized = (combined * steps).roundToDouble() / steps;
-        final blend = ((plateauNoise - 0.3) / 0.3).clamp(0.0, 1.0);
-        height = combined * (1.0 - blend) + quantized * blend;
+      // Wetter worlds get broader valleys so surface water can read as part of
+      // the terrain instead of isolated post-placed pockets.
+      final basinStrength = (config.waterLevel * 0.18 + config.vegetation * 0.08) * humidity;
+      heightSignal -= basinStrength;
+
+      // High-energy worlds should read craggier rather than simply taller.
+      if (config.terrainScale > 1.2) {
+        heightSignal += (ridges - 0.5) * 0.18 * (config.terrainScale - 1.0);
       }
 
-      // --- Ridge effect: sharp peaks at noise extremes ---
-      final ridgeNoise = noise2.noise2D(nx * 5.0, 2.0);
-      if (ridgeNoise.abs() < 0.15) {
-        final ridgeStrength = 1.0 - (ridgeNoise.abs() / 0.15);
-        height += ridgeStrength * 0.25 * config.terrainScale;
-      }
-
-      heightmap[x] = (baseHeight + height * terrainAmplitude).round().clamp(
-            5,
-            config.height - 20,
-          );
+      heightmap[x] = (baseHeight + heightSignal * terrainAmplitude)
+          .round()
+          .clamp(5, config.height - 20);
     }
 
-    // --- Preset-specific shaping ---
+    _smoothHeightmap(heightmap, config);
+    _carveHydrologyBasins(heightmap, config);
+
     if (_isIslandConfig(config)) {
       _applyIslandFalloff(heightmap, config);
     } else if (_isCanyonConfig(config)) {
@@ -93,6 +86,7 @@ class TerrainGenerator {
       _applyUndergroundShape(heightmap, config);
     }
 
+    _smoothHeightmap(heightmap, config, passes: 1);
     return heightmap;
   }
 
@@ -108,6 +102,49 @@ class TerrainGenerator {
   static bool _isUndergroundConfig(WorldConfig config) =>
       config.caveDensity >= 0.6 && config.vegetation <= 0.1 &&
       config.terrainScale < 1.0;
+
+  static void _smoothHeightmap(
+    List<int> heightmap,
+    WorldConfig config, {
+    int passes = 2,
+  }) {
+    for (var pass = 0; pass < passes; pass++) {
+      final copy = List<int>.from(heightmap);
+      for (var x = 1; x < heightmap.length - 1; x++) {
+        final left = copy[x - 1];
+        final center = copy[x];
+        final right = copy[x + 1];
+        final smoothed = ((left + center * 2 + right) / 4).round();
+        final maxDelta = config.terrainScale > 1.6 ? 4 : 3;
+        heightmap[x] = smoothed.clamp(center - maxDelta, center + maxDelta);
+      }
+    }
+  }
+
+  static void _carveHydrologyBasins(List<int> heightmap, WorldConfig config) {
+    if (config.waterLevel < 0.20) return;
+
+    final basinNoise = SimplexNoise(config.seed + 450);
+    final minSpan = (config.width / 18).round().clamp(6, 20);
+
+    for (var x = minSpan; x < config.width - minSpan; x++) {
+      final basinSignal = (basinNoise.noise2D(x / 14.0, 1.3) + 1.0) * 0.5;
+      if (basinSignal < 0.62) continue;
+
+      final radius = (minSpan * (0.8 + basinSignal * 0.9)).round();
+      final depth = (config.height * (0.015 + config.waterLevel * 0.035) * basinSignal).round();
+
+      for (var dx = -radius; dx <= radius; dx++) {
+        final nx = x + dx;
+        if (nx <= 1 || nx >= config.width - 2) continue;
+        final normalized = 1.0 - (dx.abs() / radius);
+        final carve = (depth * normalized * normalized).round();
+        heightmap[nx] = (heightmap[nx] + carve).clamp(5, config.height - 12);
+      }
+
+      x += radius ~/ 2;
+    }
+  }
 
   static void _applyIslandFalloff(List<int> heightmap, WorldConfig config) {
     final center = config.width / 2.0;
@@ -176,51 +213,41 @@ class TerrainGenerator {
   }
 
   /// Fill the grid with geologically realistic terrain layers.
-  ///
-  /// Stratigraphy (top to bottom at each column):
-  /// 1. Empty (sky) -- above heightmap
-  /// 2. Compost -- thin decomposed organic layer under surface
-  /// 3. Dirt (topsoil) -- variable depth, thicker in meadows
-  /// 4. Clay transition -- between dirt and stone, near water bodies
-  /// 5. Stone -- bulk underground
-  /// 6. Deep stone (bedrock) -- bottom 5 cells, indestructible
-  ///
-  /// The compost and clay layers are new additions that create more
-  /// geologically realistic stratigraphy and feed the chemistry system.
   static GridData fillLayers(WorldConfig config, List<int> heightmap) {
     final data = GridData.empty(config.width, config.height);
-    final noise = SimplexNoise(config.seed + 300);
+    final soilNoise = SimplexNoise(config.seed + 500);
     final clayNoise = SimplexNoise(config.seed + 310);
+    final moistureNoise = SimplexNoise(config.seed + 320);
 
     for (var x = 0; x < config.width; x++) {
       final surfaceY = heightmap[x];
-      final dirtD = _dirtDepth(x, config, noise);
-      // Compost: thin organic layer just under surface.
-      final compostD = (1 + (config.compostDepth * (config.compostMaxCells - 1) *
-          ((noise.noise2D(x / 12.0, 2.0) + 1) * 0.5))).round().clamp(0, config.compostMaxCells);
-      // Clay transition between dirt and stone.
-      final clayD = (config.clayNearWater * config.clayMaxCells *
-          ((clayNoise.noise2D(x / 15.0, 0.0) + 1) * 0.5)).round().clamp(0, config.clayMaxCells);
+      final left = heightmap[(x - 1).clamp(0, config.width - 1)];
+      final right = heightmap[(x + 1).clamp(0, config.width - 1)];
+      final slope = (right - left).abs();
+      final localLowland = ((surfaceY / config.height) - 0.25).clamp(0.0, 1.0);
+      final wetness = ((moistureNoise.noise2D(x / 18.0, 0.7) + 1.0) * 0.5) * 0.6 +
+          config.waterLevel * 0.4;
+
+      final dirtD = _dirtDepth(x, config, soilNoise, wetness, slope);
+      final compostD = (config.compostDepth * config.compostMaxCells * (0.45 + wetness * 0.9) * (slope > 7 ? 0.35 : 1.0))
+          .round()
+          .clamp(0, config.compostMaxCells);
+      final clayD = (config.clayNearWater * config.clayMaxCells * (0.35 + localLowland * 0.75 + wetness * 0.35) *
+              ((clayNoise.noise2D(x / 15.0, 0.0) + 1) * 0.5))
+          .round()
+          .clamp(0, config.clayMaxCells + 1);
+      final exposedStoneDepth = slope > 9 ? 2 : slope > 6 ? 1 : 0;
 
       for (var y = 0; y < config.height; y++) {
-        if (y < surfaceY) {
-          // Sky -- already El.empty (0).
-          continue;
-        }
+        if (y < surfaceY) continue;
 
         final depth = y - surfaceY;
-
-        if (depth < compostD && config.compostDepth > 0) {
-          // Compost layer: decomposed organics right under surface.
+        if (depth < compostD && config.compostDepth > 0 && slope < 8) {
           data.set(x, y, El.compost);
-        } else if (depth < dirtD) {
+        } else if (depth < dirtD - exposedStoneDepth) {
           data.set(x, y, El.dirt);
         } else if (depth < dirtD + clayD) {
-          // Clay transition between dirt and stone.
-          data.set(x, y, El.clay);
-        } else if (y >= config.height - 5) {
-          // Bedrock boundary.
-          data.set(x, y, El.stone);
+          data.set(x, y, slope > 10 ? El.stone : El.clay);
         } else {
           data.set(x, y, El.stone);
         }
@@ -230,12 +257,20 @@ class TerrainGenerator {
     return data;
   }
 
-  /// Variable dirt depth per column using noise for organic variation.
-  /// Uses config.dirtDepthBase and config.dirtDepthVariance instead of
-  /// hardcoded values so Optuna can tune per-preset dirt profiles.
-  static int _dirtDepth(int x, WorldConfig config, SimplexNoise noise) {
+  /// Variable dirt depth per column using noise plus biome-aware wetness and slope.
+  static int _dirtDepth(
+    int x,
+    WorldConfig config,
+    SimplexNoise noise,
+    double wetness,
+    int slope,
+  ) {
     final n = noise.noise2D(x / 20.0, config.seed * 0.01);
-    final normalized = (n + 1.0) * 0.5; // 0..1
-    return (config.dirtDepthBase + normalized * config.dirtDepthVariance).round();
+    final normalized = (n + 1.0) * 0.5;
+    final slopePenalty = slope > 10 ? 0.45 : slope > 6 ? 0.75 : 1.0;
+    final depth = (config.dirtDepthBase + normalized * config.dirtDepthVariance) *
+        (0.78 + wetness * 0.45) *
+        slopePenalty;
+    return depth.round().clamp(2, (config.dirtDepthBase + config.dirtDepthVariance).round() + 2);
   }
 }

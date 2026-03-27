@@ -24,17 +24,22 @@ enum BrushMode {
 /// Right-side collapsible vertical tool panel with brush controls,
 /// simulation toggles, and world actions.
 class ToolBar extends StatefulWidget {
-  const ToolBar({super.key, required this.game, this.onInteraction});
+  const ToolBar({
+    super.key,
+    required this.game,
+    this.onInteraction,
+    this.reservedBottom = 0,
+  });
 
   final ParticleEngineGame game;
   final VoidCallback? onInteraction;
+  final double reservedBottom;
 
   @override
   State<ToolBar> createState() => _ToolBarState();
 }
 
-class _ToolBarState extends State<ToolBar>
-    with TickerProviderStateMixin {
+class _ToolBarState extends State<ToolBar> with TickerProviderStateMixin {
   int _brushSize = 3;
   BrushMode _brushMode = BrushMode.circle;
   bool _isPaused = false;
@@ -54,13 +59,13 @@ class _ToolBarState extends State<ToolBar>
       vsync: this,
       duration: ParticleTheme.normalDuration,
     );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(1, 0),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _slideController,
-      curve: ParticleTheme.defaultCurve,
-    ));
+    _slideAnimation = Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _slideController,
+            curve: ParticleTheme.defaultCurve,
+          ),
+        );
     _slideController.forward();
 
     _collapseController = AnimationController(
@@ -134,18 +139,22 @@ class _ToolBarState extends State<ToolBar>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Cancel',
-                style: AppTypography.button
-                    .copyWith(color: AppColors.textSecondary)),
+            child: Text(
+              'Cancel',
+              style: AppTypography.button.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
           ),
           TextButton(
             onPressed: () {
               widget.game.sandboxWorld.clearWorld();
               Navigator.pop(ctx);
             },
-            child: Text('Clear',
-                style:
-                    AppTypography.button.copyWith(color: AppColors.danger)),
+            child: Text(
+              'Clear',
+              style: AppTypography.button.copyWith(color: AppColors.danger),
+            ),
           ),
         ],
       ),
@@ -213,157 +222,224 @@ class _ToolBarState extends State<ToolBar>
 
   @override
   Widget build(BuildContext context) {
-    return SlideTransition(
-      position: _slideAnimation,
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Padding(
-          padding: const EdgeInsets.only(left: 6, top: 8, bottom: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Collapse/expand toggle
-              _CollapseToggle(
-                collapsed: _collapsed,
-                onTap: _toggleCollapse,
-              ),
-              const SizedBox(height: 4),
-              // Main panel
-              SizeTransition(
-                sizeFactor: CurvedAnimation(
-                  parent: _collapseController,
-                  curve: Curves.easeOutCubic,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final safe = MediaQuery.of(context).padding;
+        final availableHeight =
+            (constraints.maxHeight -
+                    safe.top -
+                    safe.bottom -
+                    widget.reservedBottom -
+                    8)
+                .clamp(240.0, double.infinity)
+                .toDouble();
+        final compact = availableHeight < 620;
+        final ultraCompact = availableHeight < 520;
+        final panelWidth = ultraCompact ? 62.0 : (compact ? 68.0 : 72.0);
+        final iconButtonSize = ultraCompact ? 40.0 : (compact ? 44.0 : 48.0);
+        final iconSize = ultraCompact ? 16.0 : (compact ? 18.0 : 19.0);
+        final collapseSize = ultraCompact ? 28.0 : 30.0;
+        final collapseIconSize = ultraCompact ? 14.0 : 16.0;
+        final verticalPadding = ultraCompact ? 5.0 : 8.0;
+        final panelGap = ultraCompact ? 1.0 : 2.0;
+        final dividerVertical = ultraCompact ? 2.0 : 3.0;
+        final panelMaxHeight = (availableHeight - collapseSize - 8)
+            .clamp(80.0, availableHeight)
+            .toDouble();
+
+        return SlideTransition(
+          position: _slideAnimation,
+          child: SafeArea(
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: Padding(
+                key: const ValueKey('tool_bar_container'),
+                padding: EdgeInsets.only(
+                  left: 6,
+                  top: 4,
+                  bottom: 4 + widget.reservedBottom,
                 ),
-                axisAlignment: -1.0,
-                child: ClipRRect(
-                  borderRadius:
-                      BorderRadius.circular(ParticleTheme.radiusLarge),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                    child: Container(
-                      width: 72,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Color(0xE0141B28),
-                            Color(0xD10A0F18),
-                          ],
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: availableHeight),
+                  child: SingleChildScrollView(
+                    physics: const ClampingScrollPhysics(),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _CollapseToggle(
+                          collapsed: _collapsed,
+                          onTap: _toggleCollapse,
+                          size: collapseSize,
+                          iconSize: collapseIconSize,
                         ),
-                        borderRadius: BorderRadius.circular(ParticleTheme.radiusLarge),
-                        border: Border.all(
-                          color: AppColors.panelBorder,
-                          width: 0.5,
+                        const SizedBox(height: 4),
+                        SizeTransition(
+                          sizeFactor: CurvedAnimation(
+                            parent: _collapseController,
+                            curve: Curves.easeOutCubic,
+                          ),
+                          axisAlignment: -1.0,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxHeight: panelMaxHeight,
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(
+                                ParticleTheme.radiusLarge,
+                              ),
+                              child: BackdropFilter(
+                                filter: ImageFilter.blur(
+                                  sigmaX: 24,
+                                  sigmaY: 24,
+                                ),
+                                child: Container(
+                                  width: panelWidth,
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [
+                                        Color(0xE0141B28),
+                                        Color(0xD10A0F18),
+                                      ],
+                                    ),
+                                    borderRadius: BorderRadius.circular(
+                                      ParticleTheme.radiusLarge,
+                                    ),
+                                    border: Border.all(
+                                      color: AppColors.panelBorder,
+                                      width: 0.5,
+                                    ),
+                                    boxShadow: const [
+                                      BoxShadow(
+                                        color: Color(0x40000000),
+                                        blurRadius: 24,
+                                        offset: Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  padding: EdgeInsets.symmetric(
+                                    vertical: verticalPadding,
+                                  ),
+                                  child: SingleChildScrollView(
+                                    physics: const ClampingScrollPhysics(),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        _BrushSizeButton(
+                                          size: _brushSize,
+                                          onTap: _cycleBrushSize,
+                                          width: iconButtonSize,
+                                          height: ultraCompact ? 32 : 36,
+                                        ),
+                                        SizedBox(height: panelGap),
+                                        _ToolIcon(
+                                          icon: _brushMode.icon,
+                                          onTap: _cycleBrushMode,
+                                          tooltip: _brushMode.label,
+                                          accent: const Color(0xFF7EE3FF),
+                                          motif: HudBadgeMotif.streak,
+                                          size: iconButtonSize,
+                                          iconSize: iconSize,
+                                        ),
+                                        _divider(vertical: dividerVertical),
+                                        _PausePlayIcon(
+                                          isPaused: _isPaused,
+                                          onTap: _togglePause,
+                                          size: iconButtonSize,
+                                          iconSize: iconSize + 1,
+                                        ),
+                                        SizedBox(height: panelGap),
+                                        _DayNightIcon(
+                                          isNight: _isNight,
+                                          onTap: _toggleDayNight,
+                                          size: iconButtonSize,
+                                          iconSize: iconSize,
+                                        ),
+                                        _divider(vertical: dividerVertical),
+                                        _ToolIcon(
+                                          icon: Icons.vibration_rounded,
+                                          onTap: _shake,
+                                          tooltip: 'Shake',
+                                          accent: const Color(0xFFFFA35C),
+                                          motif: HudBadgeMotif.streak,
+                                          size: iconButtonSize,
+                                          iconSize: iconSize,
+                                        ),
+                                        SizedBox(height: panelGap),
+                                        _ToolIcon(
+                                          icon: Icons.science_rounded,
+                                          onTap: _openPeriodicTable,
+                                          tooltip: 'Periodic Table',
+                                          iconColor: const Color(0xFF80B0E0),
+                                          accent: const Color(0xFF80B0E0),
+                                          motif: HudBadgeMotif.orbit,
+                                          size: iconButtonSize,
+                                          iconSize: iconSize,
+                                        ),
+                                        SizedBox(height: panelGap),
+                                        _ToolIcon(
+                                          icon: Icons.save_outlined,
+                                          onTap: () =>
+                                              unawaited(_saveWorld(context)),
+                                          tooltip: 'Save World',
+                                          iconColor: const Color(0xFF80D0A8),
+                                          accent: const Color(0xFF80D0A8),
+                                          motif: HudBadgeMotif.lattice,
+                                          size: iconButtonSize,
+                                          iconSize: iconSize,
+                                        ),
+                                        SizedBox(height: panelGap),
+                                        _ToolIcon(
+                                          icon: Icons.delete_outline_rounded,
+                                          onTap: () => _clearGrid(context),
+                                          tooltip: 'Clear',
+                                          iconColor: AppColors.danger,
+                                          accent: AppColors.danger,
+                                          motif: HudBadgeMotif.pulse,
+                                          size: iconButtonSize,
+                                          iconSize: iconSize,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0x40000000),
-                            blurRadius: 24,
-                            offset: Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // -- Brush --
-                          _BrushSizeButton(
-                            size: _brushSize,
-                            onTap: _cycleBrushSize,
-                          ),
-                          const SizedBox(height: 2),
-                          _ToolIcon(
-                            icon: _brushMode.icon,
-                            onTap: _cycleBrushMode,
-                            tooltip: _brushMode.label,
-                            accent: const Color(0xFF7EE3FF),
-                            motif: HudBadgeMotif.streak,
-                          ),
-                          _divider(),
-                          // -- Simulation --
-                          _PausePlayIcon(
-                            isPaused: _isPaused,
-                            onTap: _togglePause,
-                          ),
-                          const SizedBox(height: 2),
-                          _DayNightIcon(
-                            isNight: _isNight,
-                            onTap: _toggleDayNight,
-                          ),
-                          _divider(),
-                          // -- Actions --
-                          _ToolIcon(
-                            icon: Icons.vibration_rounded,
-                            onTap: _shake,
-                            tooltip: 'Shake',
-                            accent: const Color(0xFFFFA35C),
-                            motif: HudBadgeMotif.streak,
-                          ),
-                          const SizedBox(height: 2),
-                          _ToolIcon(
-                            icon: Icons.science_rounded,
-                            onTap: _openPeriodicTable,
-                            tooltip: 'Periodic Table',
-                            iconColor: const Color(0xFF80B0E0),
-                            accent: const Color(0xFF80B0E0),
-                            motif: HudBadgeMotif.orbit,
-                          ),
-                          const SizedBox(height: 2),
-                          _ToolIcon(
-                            icon: Icons.save_outlined,
-                            onTap: () => unawaited(_saveWorld(context)),
-                            tooltip: 'Save World',
-                            iconColor: const Color(0xFF80D0A8),
-                            accent: const Color(0xFF80D0A8),
-                            motif: HudBadgeMotif.lattice,
-                          ),
-                          const SizedBox(height: 2),
-                          _ToolIcon(
-                            icon: Icons.delete_outline_rounded,
-                            onTap: () => _clearGrid(context),
-                            tooltip: 'Clear',
-                            iconColor: AppColors.danger,
-                            accent: AppColors.danger,
-                            motif: HudBadgeMotif.pulse,
-                          ),
-                        ],
-                      ),
+                      ],
                     ),
                   ),
                 ),
               ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
-  Widget _divider() => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 8),
-        child: Container(
-          height: 0.5,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Colors.white.withValues(alpha: 0.0),
-                Colors.white.withValues(alpha: 0.10),
-                Colors.white.withValues(alpha: 0.0),
-              ],
-            ),
-          ),
+  Widget _divider({double vertical = 3}) => Padding(
+    padding: EdgeInsets.symmetric(vertical: vertical, horizontal: 8),
+    child: Container(
+      height: 0.5,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.white.withValues(alpha: 0.0),
+            Colors.white.withValues(alpha: 0.10),
+            Colors.white.withValues(alpha: 0.0),
+          ],
         ),
-      );
+      ),
+    ),
+  );
 }
 
 class _SaveRequest {
-  const _SaveRequest({
-    required this.slot,
-    required this.name,
-  });
+  const _SaveRequest({required this.slot, required this.name});
 
   final int slot;
   final String? name;
@@ -402,48 +478,54 @@ class _SaveWorldDialogState extends State<_SaveWorldDialog> {
     );
 
     return AlertDialog(
+      scrollable: true,
       backgroundColor: AppColors.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(ParticleTheme.radiusMedium),
       ),
       title: Text('Save World', style: AppTypography.heading),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          DropdownButtonFormField<int>(
-            value: _slot,
-            decoration: const InputDecoration(labelText: 'Slot'),
-            items: slots
-                .map(
-                  (slot) => DropdownMenuItem<int>(
-                    value: slot,
-                    child: Text('Slot $slot'),
-                  ),
-                )
-                .toList(),
-            onChanged: (value) {
-              if (value != null) {
-                setState(() => _slot = value);
-              }
-            },
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _nameController,
-            decoration: const InputDecoration(
-              labelText: 'Name',
-              hintText: 'Optional',
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DropdownButtonFormField<int>(
+              initialValue: _slot,
+              decoration: const InputDecoration(labelText: 'Slot'),
+              items: slots
+                  .map(
+                    (slot) => DropdownMenuItem<int>(
+                      value: slot,
+                      child: Text('Slot $slot'),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _slot = value);
+                }
+              },
             ),
-          ),
-        ],
+            const SizedBox(height: 12),
+            TextField(
+              controller: _nameController,
+              decoration: const InputDecoration(
+                labelText: 'Name',
+                hintText: 'Optional',
+              ),
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: Text(
             'Cancel',
-            style: AppTypography.button.copyWith(color: AppColors.textSecondary),
+            style: AppTypography.button.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
         ),
         TextButton(
@@ -451,10 +533,7 @@ class _SaveWorldDialogState extends State<_SaveWorldDialog> {
             final trimmed = _nameController.text.trim();
             Navigator.pop(
               context,
-              _SaveRequest(
-                slot: _slot,
-                name: trimmed.isEmpty ? null : trimmed,
-              ),
+              _SaveRequest(slot: _slot, name: trimmed.isEmpty ? null : trimmed),
             );
           },
           child: Text(
@@ -469,20 +548,29 @@ class _SaveWorldDialogState extends State<_SaveWorldDialog> {
 
 /// Small pill-shaped toggle to collapse/expand the toolbar.
 class _CollapseToggle extends StatelessWidget {
-  const _CollapseToggle({required this.collapsed, required this.onTap});
+  const _CollapseToggle({
+    required this.collapsed,
+    required this.onTap,
+    this.size = 30,
+    this.iconSize = 16,
+  });
   final bool collapsed;
   final VoidCallback onTap;
+  final double size;
+  final double iconSize;
 
   @override
   Widget build(BuildContext context) {
     return HudIconBadge(
-      icon: collapsed ? Icons.chevron_left_rounded : Icons.chevron_right_rounded,
+      icon: collapsed
+          ? Icons.chevron_left_rounded
+          : Icons.chevron_right_rounded,
       onTap: onTap,
       tooltip: collapsed ? 'Expand toolbar' : 'Collapse toolbar',
       accent: const Color(0xFF74A8F5),
       motif: HudBadgeMotif.orbit,
-      size: 30,
-      iconSize: 16,
+      size: size,
+      iconSize: iconSize,
     );
   }
 }
@@ -496,6 +584,8 @@ class _ToolIcon extends StatefulWidget {
     this.iconColor,
     this.accent = const Color(0xFF74A8F5),
     this.motif = HudBadgeMotif.orbit,
+    this.size = 48,
+    this.iconSize = 19,
   });
 
   final IconData icon;
@@ -504,6 +594,8 @@ class _ToolIcon extends StatefulWidget {
   final Color? iconColor;
   final Color accent;
   final HudBadgeMotif motif;
+  final double size;
+  final double iconSize;
 
   @override
   State<_ToolIcon> createState() => _ToolIconState();
@@ -518,8 +610,8 @@ class _ToolIconState extends State<_ToolIcon> {
       tooltip: widget.tooltip,
       accent: widget.accent,
       motif: widget.motif,
-      size: 48,
-      iconSize: 19,
+      size: widget.size,
+      iconSize: widget.iconSize,
       shape: BoxShape.rectangle,
       borderRadius: BorderRadius.circular(12),
       iconColor: widget.iconColor,
@@ -529,9 +621,16 @@ class _ToolIconState extends State<_ToolIcon> {
 
 /// Compact pause/play icon.
 class _PausePlayIcon extends StatelessWidget {
-  const _PausePlayIcon({required this.isPaused, required this.onTap});
+  const _PausePlayIcon({
+    required this.isPaused,
+    required this.onTap,
+    this.size = 48,
+    this.iconSize = 21,
+  });
   final bool isPaused;
   final VoidCallback onTap;
+  final double size;
+  final double iconSize;
 
   @override
   Widget build(BuildContext context) {
@@ -543,8 +642,8 @@ class _PausePlayIcon extends StatelessWidget {
       accent: color,
       motif: HudBadgeMotif.pulse,
       active: true,
-      size: 48,
-      iconSize: 21,
+      size: size,
+      iconSize: iconSize,
       shape: BoxShape.rectangle,
       borderRadius: BorderRadius.circular(12),
     );
@@ -553,9 +652,16 @@ class _PausePlayIcon extends StatelessWidget {
 
 /// Compact day/night toggle icon.
 class _DayNightIcon extends StatelessWidget {
-  const _DayNightIcon({required this.isNight, required this.onTap});
+  const _DayNightIcon({
+    required this.isNight,
+    required this.onTap,
+    this.size = 48,
+    this.iconSize = 19,
+  });
   final bool isNight;
   final VoidCallback onTap;
+  final double size;
+  final double iconSize;
 
   @override
   Widget build(BuildContext context) {
@@ -567,8 +673,8 @@ class _DayNightIcon extends StatelessWidget {
       accent: color,
       motif: isNight ? HudBadgeMotif.orbit : HudBadgeMotif.streak,
       active: true,
-      size: 48,
-      iconSize: 19,
+      size: size,
+      iconSize: iconSize,
       shape: BoxShape.rectangle,
       borderRadius: BorderRadius.circular(12),
     );
@@ -577,10 +683,17 @@ class _DayNightIcon extends StatelessWidget {
 
 /// Visual brush size indicator that shows a filled circle proportional to size.
 class _BrushSizeButton extends StatelessWidget {
-  const _BrushSizeButton({required this.size, required this.onTap});
+  const _BrushSizeButton({
+    required this.size,
+    required this.onTap,
+    this.width = 48,
+    this.height = 36,
+  });
 
   final int size;
   final VoidCallback onTap;
+  final double width;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
@@ -590,16 +703,13 @@ class _BrushSizeButton extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          width: 48,
-          height: 36,
+          width: width,
+          height: height,
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                Color(0x331FC7FF),
-                Color(0x140A0F18),
-              ],
+              colors: [Color(0x331FC7FF), Color(0x140A0F18)],
             ),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
@@ -616,10 +726,7 @@ class _BrushSizeButton extends StatelessWidget {
               gradient: const LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFFEAF8FF),
-                  Color(0xFF81D8FF),
-                ],
+                colors: [Color(0xFFEAF8FF), Color(0xFF81D8FF)],
               ),
               boxShadow: [
                 BoxShadow(
@@ -628,10 +735,7 @@ class _BrushSizeButton extends StatelessWidget {
                   spreadRadius: 1,
                 ),
               ],
-              border: Border.all(
-                color: AppColors.textPrimary,
-                width: 1,
-              ),
+              border: Border.all(color: AppColors.textPrimary, width: 1),
             ),
           ),
         ),

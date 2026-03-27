@@ -312,6 +312,11 @@ class Ant {
         _executeMovement(sim, action.dx, action.dy);
       }
     }
+    if (species != CreatureSpecies.bee &&
+        species != CreatureSpecies.fish &&
+        y == _prevY) {
+      _applyGravity(sim);
+    }
     _executeFoodActions(sim, action);
     _executeDig(sim, action);
     _executeSpeciesAbility(sim, action);
@@ -619,7 +624,14 @@ class Ant {
 
   /// Validate and execute a movement action.
   void _executeMovement(SimulationEngine sim, int dx, int dy) {
-    if (dx == 0 && dy == 0) return;
+    if (dx == 0 && dy == 0) {
+      // Even when the brain chooses to idle, grounded creatures must still
+      // obey gravity in unsupported air pockets.
+      if (species != CreatureSpecies.bee && species != CreatureSpecies.fish) {
+        _applyGravity(sim);
+      }
+      return;
+    }
 
     final targetX = sim.wrapX(x + dx);
     final targetY = y + dy;
@@ -632,6 +644,9 @@ class Ant {
     if (!_isPassableForMe(targetElement)) {
       // Try to walk on top of solid elements (climbing). Fish don't climb.
       if (species != CreatureSpecies.fish && _tryClimb(sim, dx, dy)) return;
+      if (species != CreatureSpecies.bee && species != CreatureSpecies.fish) {
+        _applyGravity(sim);
+      }
       return;
     }
 

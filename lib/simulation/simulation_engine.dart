@@ -86,6 +86,16 @@ class SimulationEngine {
   /// Per-cell pressure (0-255). Computed from liquid column height above.
   late Uint8List pressure;
 
+  /// Hydrodynamics v2: smoothed per-cell momentum proxy for liquids.
+  late Uint8List hydroMomentumV2;
+
+  /// Hydrodynamics v2: turbulence scalar (0-255) from local velocity shear.
+  late Uint8List hydroTurbulenceV2;
+
+  /// Hydrodynamics v2: pressure equalization history (0-255), higher means
+  /// recently pressure-imbalanced and should seek lateral relief.
+  late Uint8List hydroPressureEqV2;
+
   // -- Pheromone grids (dual pheromone system for ant AI) --------------------
 
   late Uint8List pheroFood;
@@ -259,6 +269,9 @@ class SimulationEngine {
     temperature.fillRange(0, totalCells, 128); // neutral
 
     pressure = Uint8List(totalCells);
+    hydroMomentumV2 = Uint8List(totalCells);
+    hydroTurbulenceV2 = Uint8List(totalCells);
+    hydroPressureEqV2 = Uint8List(totalCells);
 
     chunkCols = (gridW + 15) ~/ 16;
     chunkRows = (gridH + 15) ~/ 16;
@@ -300,6 +313,7 @@ class SimulationEngine {
     luminance = Uint8List(totalCells);
     momentum = Uint8List(totalCells);
     cellAge = Uint8List(totalCells);
+    chunkMap = Int32List(totalCells);
 
     colonyX = -1;
     colonyY = -1;
@@ -321,6 +335,9 @@ class SimulationEngine {
     velY.fillRange(0, velY.length, 0);
     temperature.fillRange(0, temperature.length, 128);
     pressure.fillRange(0, pressure.length, 0);
+    hydroMomentumV2.fillRange(0, hydroMomentumV2.length, 0);
+    hydroTurbulenceV2.fillRange(0, hydroTurbulenceV2.length, 0);
+    hydroPressureEqV2.fillRange(0, hydroPressureEqV2.length, 0);
     pheroFood.fillRange(0, pheroFood.length, 0);
     pheroHome.fillRange(0, pheroHome.length, 0);
     charge.fillRange(0, charge.length, 0);
@@ -344,6 +361,7 @@ class SimulationEngine {
     luminance.fillRange(0, luminance.length, 0);
     momentum.fillRange(0, momentum.length, 0);
     cellAge.fillRange(0, cellAge.length, 0);
+    chunkMap.fillRange(0, chunkMap.length, 0);
     colonyX = -1;
     colonyY = -1;
     markAllDirty();
@@ -365,6 +383,9 @@ class SimulationEngine {
       'flags': Uint8List.fromList(flags),
       'temperature': Uint8List.fromList(temperature),
       'pressure': Uint8List.fromList(pressure),
+      'hydroMomentumV2': Uint8List.fromList(hydroMomentumV2),
+      'hydroTurbulenceV2': Uint8List.fromList(hydroTurbulenceV2),
+      'hydroPressureEqV2': Uint8List.fromList(hydroPressureEqV2),
       'pheroFood': Uint8List.fromList(pheroFood),
       'pheroHome': Uint8List.fromList(pheroHome),
       'charge': Int8List.fromList(charge),
@@ -409,6 +430,17 @@ class SimulationEngine {
     _restoreTyped<Uint8List>(flags, snapshot['flags'], 0);
     _restoreTyped<Uint8List>(temperature, snapshot['temperature'], 128);
     _restoreTyped<Uint8List>(pressure, snapshot['pressure'], 0);
+    _restoreTyped<Uint8List>(hydroMomentumV2, snapshot['hydroMomentumV2'], 0);
+    _restoreTyped<Uint8List>(
+      hydroTurbulenceV2,
+      snapshot['hydroTurbulenceV2'],
+      0,
+    );
+    _restoreTyped<Uint8List>(
+      hydroPressureEqV2,
+      snapshot['hydroPressureEqV2'],
+      0,
+    );
     _restoreTyped<Uint8List>(pheroFood, snapshot['pheroFood'], 0);
     _restoreTyped<Uint8List>(pheroHome, snapshot['pheroHome'], 0);
     _restoreTyped<Int8List>(charge, snapshot['charge'], 0);
@@ -442,7 +474,11 @@ class SimulationEngine {
   }
 
   /// Restore a typed list field from snapshot data, falling back to [fallback].
-  static void _restoreTyped<T extends List<int>>(T target, dynamic saved, int fallback) {
+  static void _restoreTyped<T extends List<int>>(
+    T target,
+    dynamic saved,
+    int fallback,
+  ) {
     if (saved != null && saved is T) {
       target.setAll(0, saved);
     } else {
@@ -459,7 +495,12 @@ class SimulationEngine {
   void queueReactionFlash(int x, int y, int r, int g, int b, int count) {
     if (reactionFlashes.length < 20) {
       final f = Int32List(6);
-      f[0] = x; f[1] = y; f[2] = r; f[3] = g; f[4] = b; f[5] = count;
+      f[0] = x;
+      f[1] = y;
+      f[2] = r;
+      f[3] = g;
+      f[4] = b;
+      f[5] = count;
       reactionFlashes.add(f);
     }
   }
@@ -479,6 +520,9 @@ class SimulationEngine {
     final tmpCharge = charge[a];
     final tmpOx = oxidation[a];
     final tmpMoist = moisture[a];
+    final tmpHydroMomentum = hydroMomentumV2[a];
+    final tmpHydroTurb = hydroTurbulenceV2[a];
+    final tmpHydroEq = hydroPressureEqV2[a];
     final tmpVolt = voltage[a];
     final tmpPH = pH[a];
     final tmpDissolved = dissolvedType[a];
@@ -495,6 +539,9 @@ class SimulationEngine {
     charge[a] = charge[b];
     oxidation[a] = oxidation[b];
     moisture[a] = moisture[b];
+    hydroMomentumV2[a] = hydroMomentumV2[b];
+    hydroTurbulenceV2[a] = hydroTurbulenceV2[b];
+    hydroPressureEqV2[a] = hydroPressureEqV2[b];
     voltage[a] = voltage[b];
     pH[a] = pH[b];
     dissolvedType[a] = dissolvedType[b];
@@ -511,6 +558,9 @@ class SimulationEngine {
     charge[b] = tmpCharge;
     oxidation[b] = tmpOx;
     moisture[b] = tmpMoist;
+    hydroMomentumV2[b] = tmpHydroMomentum;
+    hydroTurbulenceV2[b] = tmpHydroTurb;
+    hydroPressureEqV2[b] = tmpHydroEq;
     voltage[b] = tmpVolt;
     pH[b] = tmpPH;
     dissolvedType[b] = tmpDissolved;
@@ -536,8 +586,7 @@ class SimulationEngine {
   }
 
   @pragma('vm:prefer-inline')
-  bool inBounds(int x, int y) =>
-      x >= 0 && x < gridW && y >= 0 && y < gridH;
+  bool inBounds(int x, int y) => x >= 0 && x < gridW && y >= 0 && y < gridH;
 
   /// Vertical-only bounds check (x always wraps, so only y matters).
   @pragma('vm:prefer-inline')
@@ -567,10 +616,18 @@ class SimulationEngine {
     final rows = chunkRows;
     if (ly == 0 && cy > 0) nd[(cy - 1) * cols + cx] = 1;
     if (ly == 15 && cy < rows - 1) nd[(cy + 1) * cols + cx] = 1;
-    if (lx == 0 && ly == 0 && cy > 0) nd[(cy - 1) * cols + ((cx - 1 + cols) % cols)] = 1;
-    if (lx == 15 && ly == 0 && cy > 0) nd[(cy - 1) * cols + ((cx + 1) % cols)] = 1;
-    if (lx == 0 && ly == 15 && cy < rows - 1) nd[(cy + 1) * cols + ((cx - 1 + cols) % cols)] = 1;
-    if (lx == 15 && ly == 15 && cy < rows - 1) nd[(cy + 1) * cols + ((cx + 1) % cols)] = 1;
+    if (lx == 0 && ly == 0 && cy > 0) {
+      nd[(cy - 1) * cols + ((cx - 1 + cols) % cols)] = 1;
+    }
+    if (lx == 15 && ly == 0 && cy > 0) {
+      nd[(cy - 1) * cols + ((cx + 1) % cols)] = 1;
+    }
+    if (lx == 0 && ly == 15 && cy < rows - 1) {
+      nd[(cy + 1) * cols + ((cx - 1 + cols) % cols)] = 1;
+    }
+    if (lx == 15 && ly == 15 && cy < rows - 1) {
+      nd[(cy + 1) * cols + ((cx + 1) % cols)] = 1;
+    }
   }
 
   /// Mark all chunks dirty (used on reset, clear, undo, etc.)
@@ -653,9 +710,11 @@ class SimulationEngine {
 
       // High-pressure gas found — give it velocity toward the opening
       // and reduce its pressure (energy is spent on movement).
-      velX[ni] = -dx; // Push toward the opening (opposite of neighbor direction)
+      velX[ni] =
+          -dx; // Push toward the opening (opposite of neighbor direction)
       velY[ni] = -dy;
-      pressure[ni] = (pressure[ni] * 128) >> 8; // Halve pressure on decompression
+      pressure[ni] =
+          (pressure[ni] * 128) >> 8; // Halve pressure on decompression
       flags[ni] &= 0x80; // Unsettle so it moves immediately
       markDirty(nx, ny);
     }
@@ -673,6 +732,11 @@ class SimulationEngine {
     charge[idx] = 0;
     oxidation[idx] = 128;
     moisture[idx] = 0;
+    pressure[idx] = 0;
+    support[idx] = 0;
+    hydroMomentumV2[idx] = 0;
+    hydroTurbulenceV2[idx] = 0;
+    hydroPressureEqV2[idx] = 0;
     voltage[idx] = 0;
     sparkTimer[idx] = 0;
     pH[idx] = 128;
@@ -726,17 +790,25 @@ class SimulationEngine {
     final xr = (x + 1) % w;
     if (y > 0) {
       final ra = (y - 1) * w;
-      int n = g[ra + xl]; if (n == a || n == b) return true;
-      n = g[ra + x]; if (n == a || n == b) return true;
-      n = g[ra + xr]; if (n == a || n == b) return true;
+      int n = g[ra + xl];
+      if (n == a || n == b) return true;
+      n = g[ra + x];
+      if (n == a || n == b) return true;
+      n = g[ra + xr];
+      if (n == a || n == b) return true;
     }
-    int n = g[y * w + xl]; if (n == a || n == b) return true;
-    n = g[y * w + xr]; if (n == a || n == b) return true;
+    int n = g[y * w + xl];
+    if (n == a || n == b) return true;
+    n = g[y * w + xr];
+    if (n == a || n == b) return true;
     if (y < maxY) {
       final rb = (y + 1) * w;
-      n = g[rb + xl]; if (n == a || n == b) return true;
-      n = g[rb + x]; if (n == a || n == b) return true;
-      n = g[rb + xr]; if (n == a || n == b) return true;
+      n = g[rb + xl];
+      if (n == a || n == b) return true;
+      n = g[rb + x];
+      if (n == a || n == b) return true;
+      n = g[rb + xr];
+      if (n == a || n == b) return true;
     }
     return false;
   }
@@ -751,17 +823,25 @@ class SimulationEngine {
     final xr = (x + 1) % w;
     if (y > 0) {
       final ra = (y - 1) * w;
-      int n = g[ra + xl]; if (n == a || n == b || n == c) return true;
-      n = g[ra + x]; if (n == a || n == b || n == c) return true;
-      n = g[ra + xr]; if (n == a || n == b || n == c) return true;
+      int n = g[ra + xl];
+      if (n == a || n == b || n == c) return true;
+      n = g[ra + x];
+      if (n == a || n == b || n == c) return true;
+      n = g[ra + xr];
+      if (n == a || n == b || n == c) return true;
     }
-    int n = g[y * w + xl]; if (n == a || n == b || n == c) return true;
-    n = g[y * w + xr]; if (n == a || n == b || n == c) return true;
+    int n = g[y * w + xl];
+    if (n == a || n == b || n == c) return true;
+    n = g[y * w + xr];
+    if (n == a || n == b || n == c) return true;
     if (y < maxY) {
       final rb = (y + 1) * w;
-      n = g[rb + xl]; if (n == a || n == b || n == c) return true;
-      n = g[rb + x]; if (n == a || n == b || n == c) return true;
-      n = g[rb + xr]; if (n == a || n == b || n == c) return true;
+      n = g[rb + xl];
+      if (n == a || n == b || n == c) return true;
+      n = g[rb + x];
+      if (n == a || n == b || n == c) return true;
+      n = g[rb + xr];
+      if (n == a || n == b || n == c) return true;
     }
     return false;
   }
@@ -849,17 +929,25 @@ class SimulationEngine {
     final xr = (x + 1) % w;
     if (y > 0) {
       final rowAbove = (y - 1) * w;
-      final e1 = g[rowAbove + xl]; if (e1 < maxElements && (cat[e1] & categoryMask) != 0) return true;
-      final e2 = g[rowAbove + x];  if (e2 < maxElements && (cat[e2] & categoryMask) != 0) return true;
-      final e3 = g[rowAbove + xr]; if (e3 < maxElements && (cat[e3] & categoryMask) != 0) return true;
+      final e1 = g[rowAbove + xl];
+      if (e1 < maxElements && (cat[e1] & categoryMask) != 0) return true;
+      final e2 = g[rowAbove + x];
+      if (e2 < maxElements && (cat[e2] & categoryMask) != 0) return true;
+      final e3 = g[rowAbove + xr];
+      if (e3 < maxElements && (cat[e3] & categoryMask) != 0) return true;
     }
-    final e4 = g[y * w + xl]; if (e4 < maxElements && (cat[e4] & categoryMask) != 0) return true;
-    final e5 = g[y * w + xr]; if (e5 < maxElements && (cat[e5] & categoryMask) != 0) return true;
+    final e4 = g[y * w + xl];
+    if (e4 < maxElements && (cat[e4] & categoryMask) != 0) return true;
+    final e5 = g[y * w + xr];
+    if (e5 < maxElements && (cat[e5] & categoryMask) != 0) return true;
     if (y < maxY) {
       final rowBelow = (y + 1) * w;
-      final e6 = g[rowBelow + xl]; if (e6 < maxElements && (cat[e6] & categoryMask) != 0) return true;
-      final e7 = g[rowBelow + x];  if (e7 < maxElements && (cat[e7] & categoryMask) != 0) return true;
-      final e8 = g[rowBelow + xr]; if (e8 < maxElements && (cat[e8] & categoryMask) != 0) return true;
+      final e6 = g[rowBelow + xl];
+      if (e6 < maxElements && (cat[e6] & categoryMask) != 0) return true;
+      final e7 = g[rowBelow + x];
+      if (e7 < maxElements && (cat[e7] & categoryMask) != 0) return true;
+      final e8 = g[rowBelow + xr];
+      if (e8 < maxElements && (cat[e8] & categoryMask) != 0) return true;
     }
     return false;
   }
@@ -943,7 +1031,8 @@ class SimulationEngine {
           final vib = ((r2 - dist2) * 200) ~/ r2; // 200 at center, 0 at edge
           if (vib > vibration[ni]) {
             vibration[ni] = vib;
-            vibrationFreq[ni] = 40 + (dist2 * 60) ~/ r2; // 40-100: rumble to thud
+            vibrationFreq[ni] =
+                40 + (dist2 * 60) ~/ r2; // 40-100: rumble to thud
           }
           final el = grid[ni];
           // Hardness-based explosion resistance: only destroy cells where hardness < explosionForce
@@ -952,15 +1041,22 @@ class SimulationEngine {
           final explosionForce = ((r2 - dist2) * 255) ~/ r2;
           if (cellHardness >= explosionForce) continue;
 
-          if (el != El.empty && el != El.tnt && dist2 > (r2 * 77) >> 8) { // ~0.3 * r²
+          if (el != El.empty && el != El.tnt && dist2 > (r2 * 77) >> 8) {
+            // ~0.3 * r²
             final flingDist = r + 2 + rng.nextInt(r);
             final normDx = dx == 0 ? 0 : (dx > 0 ? 1 : -1);
             final normDy = dy == 0 ? 0 : (dy > 0 ? 1 : -1);
             final targetX = nx + normDx * (flingDist ~/ 2 + rng.nextInt(3));
             final targetY = ny + normDy * (flingDist ~/ 2 + rng.nextInt(3));
-            final debrisEl = (el == El.oil || el == El.plant || el == El.seed || el == El.wood)
+            final debrisEl =
+                (el == El.oil ||
+                    el == El.plant ||
+                    el == El.seed ||
+                    el == El.wood)
                 ? El.fire
-                : (el == El.sand || el == El.dirt || el == El.snow) ? el : El.ash;
+                : (el == El.sand || el == El.dirt || el == El.snow)
+                ? el
+                : El.ash;
             if (debris.length < 60) {
               debris.addAll([debrisEl, targetX, targetY]);
             }
@@ -974,7 +1070,8 @@ class SimulationEngine {
       for (int i = 0; i < r * 4; i++) {
         // Integer trig: random angle as phase256 [0..255], distance as fixed-point
         final phase256 = rng.nextInt(256);
-        final dist = (r * 154 + rng.nextInt(r * 128)) >> 8; // ~0.6*r + rand*0.5*r
+        final dist =
+            (r * 154 + rng.nextInt(r * 128)) >> 8; // ~0.6*r + rand*0.5*r
         // sin/cos via lookup: _sinI256 returns [-128, 128]
         final sinV = _sinI256(phase256);
         final cosV = _sinI256(phase256 + 64);
@@ -1032,8 +1129,11 @@ class SimulationEngine {
       final rightBelowEl2 = grid[by2 * gridW + wrapX(x + 1)];
       // Arch holds if: below is still empty or same-type,
       // walls still exist, and neighbors still press
-      final wallsIntact = (elementPhysicsState[leftBelowEl2] == 0 && leftBelowEl2 != El.empty) &&
-                          (elementPhysicsState[rightBelowEl2] == 0 && rightBelowEl2 != El.empty);
+      final wallsIntact =
+          (elementPhysicsState[leftBelowEl2] == 0 &&
+              leftBelowEl2 != El.empty) &&
+          (elementPhysicsState[rightBelowEl2] == 0 &&
+              rightBelowEl2 != El.empty);
       final hasLateralPressure = leftEl2 != El.empty && rightEl2 != El.empty;
       if (belowEl2 == El.empty && wallsIntact && hasLateralPressure) {
         // Arch still holds — small chance of spontaneous collapse
@@ -1055,8 +1155,10 @@ class SimulationEngine {
         if (velY[idx] <= 1) {
           final leftBelowEl = grid[by * gridW + wrapX(x - 1)];
           final rightBelowEl = grid[by * gridW + wrapX(x + 1)];
-          if (elementPhysicsState[leftBelowEl] == 0 && leftBelowEl != El.empty &&
-              elementPhysicsState[rightBelowEl] == 0 && rightBelowEl != El.empty) {
+          if (elementPhysicsState[leftBelowEl] == 0 &&
+              leftBelowEl != El.empty &&
+              elementPhysicsState[rightBelowEl] == 0 &&
+              rightBelowEl != El.empty) {
             final leftEl = grid[y * gridW + wrapX(x - 1)];
             final rightEl = grid[y * gridW + wrapX(x + 1)];
             if (leftEl != El.empty && rightEl != El.empty) {
@@ -1074,9 +1176,13 @@ class SimulationEngine {
         // Stokes drag: submerged grains have reduced terminal velocity
         // v_t = 2r²(ρ_p - ρ_f)g / (9η) — in a liquid medium, cap at 1
         final curVel = velY[idx];
-        final aboveEl = y > 0 ? grid[(y - g) * gridW + x] : El.empty;
-        final submerged = aboveEl == El.water || aboveEl == El.oil ||
-                          aboveEl == El.acid || aboveEl == El.mud;
+        final aboveY = y - g;
+        final aboveEl = inBoundsY(aboveY) ? grid[aboveY * gridW + x] : El.empty;
+        final submerged =
+            aboveEl == El.water ||
+            aboveEl == El.oil ||
+            aboveEl == El.acid ||
+            aboveEl == El.mud;
         final effectiveMax = submerged ? 1 : maxVel;
         final newVel = (curVel + 1).clamp(0, effectiveMax);
         velY[idx] = newVel;
@@ -1104,18 +1210,49 @@ class SimulationEngine {
         }
         return;
       }
-      if ((elType == El.sand || elType == El.dirt || elType == El.seed) && belowEl == El.water) {
+      if ((elType == El.sand || elType == El.dirt || elType == El.seed) &&
+          belowEl == El.water) {
         // Impact splash: sand hitting water from height
         final impactVel = velY[idx];
+        final sinkWaterMass = life[below];
         if (impactVel > 2) {
-          // Splash effect: spawn water droplets upward
+          // Splash effect: move existing water droplets upward (mass-conserving).
           for (int i = 0; i < (impactVel ~/ 2).clamp(1, 3); i++) {
-            final sx = wrapX(x + (rng.nextBool() ? 1 : -1) * (1 + rng.nextInt(2)));
+            final sx = wrapX(
+              x + (rng.nextBool() ? 1 : -1) * (1 + rng.nextInt(2)),
+            );
             final sy = y - g * (1 + rng.nextInt(2));
-            if (inBoundsY(sy) && grid[sy * gridW + sx] == El.empty) {
-              grid[sy * gridW + sx] = El.water;
-              life[sy * gridW + sx] = 80;
-              markProcessed(sy * gridW + sx);
+            if (!inBoundsY(sy) || grid[sy * gridW + sx] != El.empty) continue;
+
+            int donor = -1;
+            for (int r = 0; r <= 2 && donor < 0; r++) {
+              for (int ddy = -r; ddy <= r; ddy++) {
+                for (int ddx = -r; ddx <= r; ddx++) {
+                  final nx = wrapX(x + ddx);
+                  final ny = by + ddy;
+                  if (!inBoundsY(ny)) continue;
+                  final ni = ny * gridW + nx;
+                  if (ni == below) {
+                    continue; // Keep the primary displacement water.
+                  }
+                  if (grid[ni] == El.water) {
+                    donor = ni;
+                    break;
+                  }
+                }
+                if (donor >= 0) break;
+              }
+            }
+
+            if (donor >= 0) {
+              final splashIdx = sy * gridW + sx;
+              final donorMass = life[donor];
+              grid[splashIdx] = El.water;
+              life[splashIdx] = donorMass < 20 ? 100 : donorMass;
+              markProcessed(splashIdx);
+              grid[donor] = El.empty;
+              life[donor] = 0;
+              markProcessed(donor);
             }
           }
           queueReactionFlash(x, y, 100, 180, 255, (impactVel ~/ 2).clamp(2, 4));
@@ -1128,7 +1265,6 @@ class SimulationEngine {
         }
         velY[idx] = 0;
         momentum[idx] = 0;
-        final sinkWaterMass = life[below];
         grid[idx] = El.water;
         life[idx] = sinkWaterMass < 20 ? 100 : sinkWaterMass;
         grid[below] = elType;
@@ -1145,7 +1281,9 @@ class SimulationEngine {
           vibration[idx] = mom;
           // Frequency based on element hardness: hard = high, soft = low
           final h = elType < maxElements ? elementHardness[elType] : 50;
-          vibrationFreq[idx] = h > 50 ? 200 + (h >> 2) : 80 + (h >> 1); // soft: 80-105, hard: 200-263 clamped
+          vibrationFreq[idx] = h > 50
+              ? 200 + (h >> 2)
+              : 80 + (h >> 1); // soft: 80-105, hard: 200-263 clamped
         }
         momentum[idx] = 0;
       }
@@ -1188,7 +1326,8 @@ class SimulationEngine {
           if (oppositeEl != El.empty) {
             // Something pressing from opposite side (grain or wall)
             final belowOppEl = grid[by * gridW + wx2];
-            if (elementPhysicsState[belowOppEl] == 0 && belowOppEl != El.empty) {
+            if (elementPhysicsState[belowOppEl] == 0 &&
+                belowOppEl != El.empty) {
               // Wall on both sides below — narrow orifice
               // ~40% arch formation probability
               if (rng.nextInt(10) < 7) return;
@@ -1204,7 +1343,8 @@ class SimulationEngine {
           final oppositeEl = grid[y * gridW + wx1];
           if (oppositeEl != El.empty) {
             final belowOppEl = grid[by * gridW + wx1];
-            if (elementPhysicsState[belowOppEl] == 0 && belowOppEl != El.empty) {
+            if (elementPhysicsState[belowOppEl] == 0 &&
+                belowOppEl != El.empty) {
               if (rng.nextInt(10) < 7) return;
             }
           }
@@ -1223,7 +1363,13 @@ class SimulationEngine {
   /// Uses velY for momentum with lower terminal velocity than granular.
   /// [sinkThroughLiquids]: if true, displaces lighter liquids via density.
   /// Returns true if the element moved.
-  bool fallSolid(int x, int y, int idx, int elType, {bool sinkThroughLiquids = true}) {
+  bool fallSolid(
+    int x,
+    int y,
+    int idx,
+    int elType, {
+    bool sinkThroughLiquids = true,
+  }) {
     final g = gravityDir;
     final by = y + g;
     if (!inBoundsY(by)) {
@@ -1243,10 +1389,12 @@ class SimulationEngine {
       final rightEl = grid[y * gridW + rx];
 
       // If sandwiched between solids, don't fall (arch support)
-      if (!isEmptyOrGas(leftEl) && !isEmptyOrGas(rightEl) &&
-          elementHardness[leftEl] > 20 && elementHardness[rightEl] > 20) {
-         velY[idx] = 0;
-         return false;
+      if (!isEmptyOrGas(leftEl) &&
+          !isEmptyOrGas(rightEl) &&
+          elementHardness[leftEl] > 20 &&
+          elementHardness[rightEl] > 20) {
+        velY[idx] = 0;
+        return false;
       }
 
       // Try diagonal slide if straight down is blocked
@@ -1258,13 +1406,13 @@ class SimulationEngine {
       // Only slide if there is NO lateral support holding it in place
       if (isEmptyOrGas(leftEl) && isEmptyOrGas(dlEl)) {
         if (rng.nextInt(2) == 0) {
-           swap(idx, dl);
-           return true;
+          swap(idx, dl);
+          return true;
         }
       } else if (isEmptyOrGas(rightEl) && isEmptyOrGas(drEl)) {
         if (rng.nextInt(2) == 0) {
-           swap(idx, dr);
-           return true;
+          swap(idx, dr);
+          return true;
         }
       }
     }
@@ -1272,7 +1420,10 @@ class SimulationEngine {
     // Fall through empty space or gas with momentum
     if (isEmptyOrGas(belowEl)) {
       final curVel = velY[idx];
-      final newVel = (curVel + 1).clamp(0, 2); // lower terminal vel than granular
+      final newVel = (curVel + 1).clamp(
+        0,
+        2,
+      ); // lower terminal vel than granular
       velY[idx] = newVel;
 
       // Accumulate momentum during fall
@@ -1306,7 +1457,7 @@ class SimulationEngine {
 
       if (belowDensity < myDensity &&
           (belowState == PhysicsState.liquid.index ||
-           belowState == PhysicsState.gas.index)) {
+              belowState == PhysicsState.gas.index)) {
         // Check clock bit to avoid double-processing
         final clockBit = simClock ? 0x80 : 0;
         if ((flags[below] & 0x80) != clockBit) {
@@ -1509,11 +1660,16 @@ class SimulationEngine {
           // Element-specific erosion thresholds
           int erosionDenom;
           switch (el) {
-            case El.snow: erosionDenom = 20;  // easiest to erode
-            case El.ash:  erosionDenom = 30;
-            case El.sand: erosionDenom = 40;  // baseline
-            case El.dirt: erosionDenom = 80;  // hardest to erode
-            default: continue; // not erodible
+            case El.snow:
+              erosionDenom = 20; // easiest to erode
+            case El.ash:
+              erosionDenom = 30;
+            case El.sand:
+              erosionDenom = 40; // baseline
+            case El.dirt:
+              erosionDenom = 80; // hardest to erode
+            default:
+              continue; // not erodible
           }
           // Must be exposed: cell above (against gravity) is empty or gas
           if (!isEmptyOrGas(g[aboveOff + wrapX(x)])) continue;
@@ -1574,7 +1730,8 @@ class SimulationEngine {
   int plantStage(int idx) => (velX[idx] >> 4) & 0x0F;
 
   @pragma('vm:prefer-inline')
-  void setPlantData(int idx, int t, int s) => velX[idx] = ((s & 0xF) << 4) | (t & 0xF);
+  void setPlantData(int idx, int t, int s) =>
+      velX[idx] = ((s & 0xF) << 4) | (t & 0xF);
 
   // =========================================================================
   // TNT radius calculation
@@ -1652,7 +1809,9 @@ class SimulationEngine {
           final ni = ny * gridW + nx;
           if (visited.contains(ni)) continue;
           final neighborEl = grid[ni];
-          final neighborCond = neighborEl < maxElements ? elementConductivity[neighborEl] : 0;
+          final neighborCond = neighborEl < maxElements
+              ? elementConductivity[neighborEl]
+              : 0;
 
           if (neighborCond > 0) {
             // Conductive neighbor: propagate
@@ -1662,7 +1821,9 @@ class SimulationEngine {
               queue.add(ni);
             }
           } else if (neighborEl == El.tnt) {
-            pendingExplosions.add(Explosion(nx, ny, calculateTNTRadius(nx, ny)));
+            pendingExplosions.add(
+              Explosion(nx, ny, calculateTNTRadius(nx, ny)),
+            );
           } else if (rng.nextInt(100) < 30) {
             // Non-conductive neighbor reactions
             if (neighborEl == El.sand) {
@@ -1673,8 +1834,10 @@ class SimulationEngine {
               grid[ni] = El.water;
               life[ni] = 0;
               markProcessed(ni);
-            } else if (neighborEl == El.plant || neighborEl == El.seed ||
-                neighborEl == El.oil || neighborEl == El.wood) {
+            } else if (neighborEl == El.plant ||
+                neighborEl == El.seed ||
+                neighborEl == El.oil ||
+                neighborEl == El.wood) {
               grid[ni] = El.fire;
               life[ni] = 0;
               markProcessed(ni);
@@ -1933,9 +2096,13 @@ class SimulationEngine {
                 final myDelta = energy ~/ myCap;
                 final nDelta = energy ~/ cap[nEl];
                 // Ensure at least 1 unit transfer in the correct direction
-                myTemp = (myTemp - (myDelta != 0 ? myDelta : (energy > 0 ? 1 : -1))).clamp(0, 255);
+                myTemp =
+                    (myTemp - (myDelta != 0 ? myDelta : (energy > 0 ? 1 : -1)))
+                        .clamp(0, 255);
                 temp[idx] = myTemp;
-                temp[ni0] = (temp[ni0] + (nDelta != 0 ? nDelta : (energy > 0 ? 1 : -1))).clamp(0, 255);
+                temp[ni0] =
+                    (temp[ni0] + (nDelta != 0 ? nDelta : (energy > 0 ? 1 : -1)))
+                        .clamp(0, 255);
               }
             }
           }
@@ -1952,9 +2119,13 @@ class SimulationEngine {
               if (energy != 0) {
                 final myDelta = energy ~/ myCap;
                 final nDelta = energy ~/ cap[nEl];
-                myTemp = (myTemp - (myDelta != 0 ? myDelta : (energy > 0 ? 1 : -1))).clamp(0, 255);
+                myTemp =
+                    (myTemp - (myDelta != 0 ? myDelta : (energy > 0 ? 1 : -1)))
+                        .clamp(0, 255);
                 temp[idx] = myTemp;
-                temp[ni1] = (temp[ni1] + (nDelta != 0 ? nDelta : (energy > 0 ? 1 : -1))).clamp(0, 255);
+                temp[ni1] =
+                    (temp[ni1] + (nDelta != 0 ? nDelta : (energy > 0 ? 1 : -1)))
+                        .clamp(0, 255);
               }
             }
           }
@@ -1971,9 +2142,13 @@ class SimulationEngine {
               if (energy != 0) {
                 final myDelta = energy ~/ myCap;
                 final nDelta = energy ~/ cap[nEl];
-                myTemp = (myTemp - (myDelta != 0 ? myDelta : (energy > 0 ? 1 : -1))).clamp(0, 255);
+                myTemp =
+                    (myTemp - (myDelta != 0 ? myDelta : (energy > 0 ? 1 : -1)))
+                        .clamp(0, 255);
                 temp[idx] = myTemp;
-                temp[ni2] = (temp[ni2] + (nDelta != 0 ? nDelta : (energy > 0 ? 1 : -1))).clamp(0, 255);
+                temp[ni2] =
+                    (temp[ni2] + (nDelta != 0 ? nDelta : (energy > 0 ? 1 : -1)))
+                        .clamp(0, 255);
               }
             }
           }
@@ -1990,9 +2165,13 @@ class SimulationEngine {
               if (energy != 0) {
                 final myDelta = energy ~/ myCap;
                 final nDelta = energy ~/ cap[nEl];
-                myTemp = (myTemp - (myDelta != 0 ? myDelta : (energy > 0 ? 1 : -1))).clamp(0, 255);
+                myTemp =
+                    (myTemp - (myDelta != 0 ? myDelta : (energy > 0 ? 1 : -1)))
+                        .clamp(0, 255);
                 temp[idx] = myTemp;
-                temp[ni3] = (temp[ni3] + (nDelta != 0 ? nDelta : (energy > 0 ? 1 : -1))).clamp(0, 255);
+                temp[ni3] =
+                    (temp[ni3] + (nDelta != 0 ? nDelta : (energy > 0 ? 1 : -1)))
+                        .clamp(0, 255);
               }
             }
           }
@@ -2025,7 +2204,9 @@ class SimulationEngine {
           final lt = y2 * w + ((x2 - 1 + w) % w);
           final rt = y2 * w + ((x2 + 1) % w);
           if (up >= 0 && (g[up] == El.empty || ps[g[up]] == gasIdx)) airCount++;
-          if (dn < g.length && (g[dn] == El.empty || ps[g[dn]] == gasIdx)) airCount++;
+          if (dn < g.length && (g[dn] == El.empty || ps[g[dn]] == gasIdx)) {
+            airCount++;
+          }
           if (g[lt] == El.empty || ps[g[lt]] == gasIdx) airCount++;
           if (g[rt] == El.empty || ps[g[rt]] == gasIdx) airCount++;
 
@@ -2150,24 +2331,24 @@ class SimulationEngine {
       for (int x = 0; x < w; x++) {
         final chunkIdx = chunkY * cols + (x >> 4);
         if (dc[chunkIdx] == 0) continue;
-        
+
         final idx = y * w + x;
         final el = g[idx];
         final state = el < maxElements ? elementPhysicsState[el] : 0;
-        
-        if (state == PhysicsState.liquid.index) {
-           final left = p[y * w + wrapX(x - 1)];
-           final right = p[y * w + wrapX(x + 1)];
-           final myP = p[idx];
-           
-           int maxP = myP;
-           if (left > maxP) maxP = left;
-           if (right > maxP) maxP = right;
 
-           // Equalize laterally, losing a bit of energy to friction
-           if (maxP > myP + 1) {
-              p[idx] = maxP - 1;
-           }
+        if (state == PhysicsState.liquid.index) {
+          final left = p[y * w + wrapX(x - 1)];
+          final right = p[y * w + wrapX(x + 1)];
+          final myP = p[idx];
+
+          int maxP = myP;
+          if (left > maxP) maxP = left;
+          if (right > maxP) maxP = right;
+
+          // Equalize laterally, losing a bit of energy to friction
+          if (maxP > myP + 1) {
+            p[idx] = maxP - 1;
+          }
         }
       }
     }
@@ -2186,7 +2367,10 @@ class SimulationEngine {
 
         final idx = y * w + x;
         final el = g[idx];
-        if (el == El.empty) { p[idx] = 0; continue; }
+        if (el == El.empty) {
+          p[idx] = 0;
+          continue;
+        }
         if (el >= maxElements) continue;
         if (ps[el] != gasState) continue;
 
@@ -2199,23 +2383,31 @@ class SimulationEngine {
 
         if (up >= 0) {
           final s = g[up] < maxElements ? ps[g[up]] : 0;
-          if (_isWallState(s)) { confinement++; }
+          if (_isWallState(s)) {
+            confinement++;
+          }
         } else {
           confinement++; // Boundary counts as wall
         }
         if (dn < g.length) {
           final s = g[dn] < maxElements ? ps[g[dn]] : 0;
-          if (_isWallState(s)) { confinement++; }
+          if (_isWallState(s)) {
+            confinement++;
+          }
         } else {
           confinement++;
         }
         {
           final s = g[lt] < maxElements ? ps[g[lt]] : 0;
-          if (_isWallState(s)) { confinement++; }
+          if (_isWallState(s)) {
+            confinement++;
+          }
         }
         {
           final s = g[rt] < maxElements ? ps[g[rt]] : 0;
-          if (_isWallState(s)) { confinement++; }
+          if (_isWallState(s)) {
+            confinement++;
+          }
         }
 
         if (confinement >= 3) {
@@ -2255,7 +2447,7 @@ class SimulationEngine {
           for (int x = startX; x < endX; x++) {
             final idx = y * w + x;
             final el = g[idx];
-            
+
             // Source: liquids provide maximum moisture
             if (el == El.water || el == El.mud) {
               m[idx] = 255;
@@ -2281,7 +2473,7 @@ class SimulationEngine {
               }
               final avg = total ~/ count;
               final current = m[idx];
-              
+
               if (avg > current) {
                 // Wicking: moisture increases towards neighbor average
                 // Scaled by porosity (more porous = faster wicking)
@@ -2313,16 +2505,15 @@ class SimulationEngine {
 
   /// Map of grid index to Chunk ID. 0 = no chunk.
   late Int32List chunkMap;
-  
+
   /// Active chunks currently in the simulation.
   final List<Set<int>> activeChunks = [];
 
   /// Update rigid-body chunks. Periodically identifies connected solids.
   void updateChunks() {
     final w = gridW;
-    final h = gridH;
     final g = grid;
-    
+
     // Clear old chunk data
     chunkMap.fillRange(0, chunkMap.length, 0);
     activeChunks.clear();
@@ -2331,13 +2522,13 @@ class SimulationEngine {
     for (int i = 0; i < g.length; i++) {
       final el = g[i];
       if (chunkMap[i] != 0) continue;
-      
+
       // Only wood, stone, metal, and glass form rigid chunks
       if (el == El.wood || el == El.stone || el == El.metal || el == El.glass) {
         final currentChunk = <int>{};
         final queue = <int>[i];
         chunkMap[i] = activeChunks.length + 1;
-        
+
         bool isAnchored = false;
 
         while (queue.isNotEmpty) {
@@ -2350,13 +2541,14 @@ class SimulationEngine {
           for (int di = 0; di < 4; di++) {
             final nx = di == 0 ? wrapX(cx - 1) : (di == 1 ? wrapX(cx + 1) : cx);
             final ny = di == 2 ? cy - 1 : (di == 3 ? cy + 1 : cy);
-            
+
             if (inBoundsY(ny)) {
               final ni = ny * w + nx;
               final nEl = g[ni];
-              
+
               // Anchor check: if we touch bedrock or fixed ground
-              if (nEl == El.bedrock || (nEl == El.dirt && (flags[ni] & 0x70) == 0x70)) {
+              if (nEl == El.bedrock ||
+                  (nEl == El.dirt && (flags[ni] & 0x70) == 0x70)) {
                 isAnchored = true;
               }
 
@@ -2371,11 +2563,10 @@ class SimulationEngine {
         // If the entire chunk is unsupported, mark it for falling
         if (!isAnchored && currentChunk.length > 1) {
           activeChunks.add(currentChunk);
-          // Apply gravity to the whole chunk
-          final gDir = gravityDir;
+          // Apply gravity to the whole chunk.
           for (final cIdx in currentChunk) {
             // Give all pixels in the chunk unified velocity
-            velY[cIdx] = (velY[cIdx] + 1).clamp(0, 127).toInt();
+            velY[cIdx] = (velY[cIdx] + gravityDir).clamp(-128, 127).toInt();
           }
         }
       }
@@ -2634,7 +2825,10 @@ class SimulationEngine {
           final falloff = intensity * (r2 - d2) ~/ r2;
           final current = temperature[ni];
           if (current < 128 + falloff) {
-            temperature[ni] = (current + (falloff ~/ 3).clamp(1, 15)).clamp(0, 255);
+            temperature[ni] = (current + (falloff ~/ 3).clamp(1, 15)).clamp(
+              0,
+              255,
+            );
           }
         }
       }
@@ -2656,17 +2850,41 @@ class SimulationEngine {
     final xr = (x + 1) % w;
     if (y > 0) {
       final rowAbove = (y - 1) * w;
-      if (g[rowAbove + xl] < maxElements && elementReductionPotential[g[rowAbove + xl]] > threshold) return true;
-      if (g[rowAbove + x] < maxElements && elementReductionPotential[g[rowAbove + x]] > threshold) return true;
-      if (g[rowAbove + xr] < maxElements && elementReductionPotential[g[rowAbove + xr]] > threshold) return true;
+      if (g[rowAbove + xl] < maxElements &&
+          elementReductionPotential[g[rowAbove + xl]] > threshold) {
+        return true;
+      }
+      if (g[rowAbove + x] < maxElements &&
+          elementReductionPotential[g[rowAbove + x]] > threshold) {
+        return true;
+      }
+      if (g[rowAbove + xr] < maxElements &&
+          elementReductionPotential[g[rowAbove + xr]] > threshold) {
+        return true;
+      }
     }
-    if (g[y * w + xl] < maxElements && elementReductionPotential[g[y * w + xl]] > threshold) return true;
-    if (g[y * w + xr] < maxElements && elementReductionPotential[g[y * w + xr]] > threshold) return true;
+    if (g[y * w + xl] < maxElements &&
+        elementReductionPotential[g[y * w + xl]] > threshold) {
+      return true;
+    }
+    if (g[y * w + xr] < maxElements &&
+        elementReductionPotential[g[y * w + xr]] > threshold) {
+      return true;
+    }
     if (y < maxY) {
       final rowBelow = (y + 1) * w;
-      if (g[rowBelow + xl] < maxElements && elementReductionPotential[g[rowBelow + xl]] > threshold) return true;
-      if (g[rowBelow + x] < maxElements && elementReductionPotential[g[rowBelow + x]] > threshold) return true;
-      if (g[rowBelow + xr] < maxElements && elementReductionPotential[g[rowBelow + xr]] > threshold) return true;
+      if (g[rowBelow + xl] < maxElements &&
+          elementReductionPotential[g[rowBelow + xl]] > threshold) {
+        return true;
+      }
+      if (g[rowBelow + x] < maxElements &&
+          elementReductionPotential[g[rowBelow + x]] > threshold) {
+        return true;
+      }
+      if (g[rowBelow + xr] < maxElements &&
+          elementReductionPotential[g[rowBelow + xr]] > threshold) {
+        return true;
+      }
     }
     return false;
   }
@@ -2681,10 +2899,10 @@ class SimulationEngine {
     final maxY = gridH - 1;
     int bestIdx = -1;
     int bestBond = 256;
-    
+
     final xl = x == 0 ? w - 1 : x - 1;
     final xr = x == w - 1 ? 0 : x + 1;
-    
+
     // Helper closure or macro-like behavior inline
     void check(int ni) {
       final ne = g[ni];
@@ -2698,15 +2916,20 @@ class SimulationEngine {
 
     if (y > 0) {
       final r = (y - 1) * w;
-      check(r + xl); check(r + x); check(r + xr);
+      check(r + xl);
+      check(r + x);
+      check(r + xr);
     }
     final r = y * w;
-    check(r + xl); check(r + xr);
+    check(r + xl);
+    check(r + xr);
     if (y < maxY) {
       final r = (y + 1) * w;
-      check(r + xl); check(r + x); check(r + xr);
+      check(r + xl);
+      check(r + x);
+      check(r + xr);
     }
-    
+
     return bestIdx;
   }
 
@@ -2737,13 +2960,18 @@ class SimulationEngine {
 
     if (y > 0) {
       final r = (y - 1) * w;
-      check(r + xl); check(r + x); check(r + xr);
+      check(r + xl);
+      check(r + x);
+      check(r + xr);
     }
     final r = y * w;
-    check(r + xl); check(r + xr);
+    check(r + xl);
+    check(r + xr);
     if (y < maxY) {
       final r = (y + 1) * w;
-      check(r + xl); check(r + x); check(r + xr);
+      check(r + xl);
+      check(r + x);
+      check(r + xr);
     }
 
     return bestIdx;
@@ -2777,7 +3005,8 @@ class SimulationEngine {
       // Oxidizer threshold: fuels with high reactivity need weaker oxidizers
       // reactivity 200 -> threshold ~7, reactivity 10 -> threshold ~55
       final oxThreshold = 60 - (react >> 2); // 60 - reactivity/4
-      if (temp > ignition && _hasAdjacentOxidizer(x, y, oxThreshold > 0 ? oxThreshold : 0)) {
+      if (temp > ignition &&
+          _hasAdjacentOxidizer(x, y, oxThreshold > 0 ? oxThreshold : 0)) {
         // Burn rate scales with fuelValue: high-energy fuels burn faster.
         // fuel 255 -> rate 5, fuel 100 -> rate 2, fuel 50 -> rate 1
         final burnRate = 1 + (fuel >> 6) + (react >> 7);
@@ -2840,7 +3069,12 @@ class SimulationEngine {
       // Oxidizer threshold: elements with more negative potential corrode
       // even with weaker oxidizers present
       final corrOxThreshold = redPot + 40; // e.g. -15+40=25, -80+40=-40
-      if (moist > moistThreshold && _hasAdjacentOxidizer(x, y, corrOxThreshold < 0 ? 0 : corrOxThreshold)) {
+      if (moist > moistThreshold &&
+          _hasAdjacentOxidizer(
+            x,
+            y,
+            corrOxThreshold < 0 ? 0 : corrOxThreshold,
+          )) {
         // Corrosion rate: wetter = faster, more negative potential = faster
         // moist 255 -> +3, redPot -80 -> +1 extra
         final moistFactor = (moist - moistThreshold) >> 6;
@@ -2971,7 +3205,8 @@ class SimulationEngine {
     final moistBoost = moisture[idx] >> 2;
     // Dissolved salt in water further boosts conductivity
     final saltBoost = (el == El.water && dissolvedType[idx] == El.salt)
-        ? concentration[idx] >> 3 // conc 200 -> +25 mobility
+        ? concentration[idx] >>
+              3 // conc 200 -> +25 mobility
         : 0;
     final effectiveMobility = mobility + moistBoost + saltBoost;
     // Conductivity threshold: dielectric constant determines minimum
@@ -3011,7 +3246,9 @@ class SimulationEngine {
       final flowThreshold = 1 + (elementDielectric[el] >> 5); // 1..8
       if (gradient > flowThreshold) {
         // Resistance = inverse of effective mobility
-        final clampedMobility = effectiveMobility < 255 ? effectiveMobility : 255;
+        final clampedMobility = effectiveMobility < 255
+            ? effectiveMobility
+            : 255;
         final resistance = 255 - clampedMobility;
         // Attenuation: resistance/32, so mobility 240->0, mobility 80->5
         final attenuation = 1 + (resistance >> 5);
@@ -3162,7 +3399,9 @@ class SimulationEngine {
     // pH spreads to neighbors slowly (every 4 frames, 1/4 the rate of temp).
     // Only diffuse from cells with strong pH signal (far from neutral).
     final myPH = pH[idx];
-    final phDist = myPH > 128 ? myPH - 128 : 128 - myPH; // distance from neutral
+    final phDist = myPH > 128
+        ? myPH - 128
+        : 128 - myPH; // distance from neutral
     if (phDist > 10) {
       // Pick one random neighbor to diffuse to (cheap, avoids 8-neighbor loop)
       final ndx = rng.nextInt(3) - 1; // -1, 0, 1
@@ -3344,7 +3583,10 @@ class SimulationEngine {
         final v = vib[idx];
         if (v == 0) continue;
         final el = g[idx];
-        if (el == El.empty) { vib[idx] = 0; continue; }
+        if (el == El.empty) {
+          vib[idx] = 0;
+          continue;
+        }
 
         // Spread to solid cardinal neighbors
         final myHardness = el < maxElements ? hard[el] : 0;
@@ -3417,7 +3659,7 @@ class SimulationEngine {
       for (int x = 0; x < w; x++) {
         final chunkIdx = chunkY * cols + (x >> 4);
         if (dc[chunkIdx] == 0) continue;
-        
+
         final idx = y * w + x;
         final el = g[idx];
 
@@ -3427,9 +3669,10 @@ class SimulationEngine {
         }
 
         final state = el < maxElements ? elementPhysicsState[el] : 0;
-        
+
         // Granular, liquid, and gas elements provide zero cantilever support
-        if (state != PhysicsState.solid.index && state != PhysicsState.special.index) {
+        if (state != PhysicsState.solid.index &&
+            state != PhysicsState.special.index) {
           sup[idx] = 0;
           continue;
         }
@@ -3442,18 +3685,22 @@ class SimulationEngine {
 
         // Structural elements pass support. Hardness determines how far they can stretch.
         int bestNeighborSupport = 0;
-        
+
         final below = y < h - 1 ? (y + 1) * w + x : -1;
         final left = y * w + wrapX(x - 1);
         final right = y * w + wrapX(x + 1);
         final above = y > 0 ? (y - 1) * w + x : -1;
 
         // Support flows mostly from below and sides
-        if (below >= 0 && sup[below] > bestNeighborSupport) bestNeighborSupport = sup[below];
+        if (below >= 0 && sup[below] > bestNeighborSupport) {
+          bestNeighborSupport = sup[below];
+        }
         if (sup[left] > bestNeighborSupport) bestNeighborSupport = sup[left];
         if (sup[right] > bestNeighborSupport) bestNeighborSupport = sup[right];
         // Hanging support is weaker (requires stronger bonds)
-        if (above >= 0 && sup[above] > bestNeighborSupport) bestNeighborSupport = sup[above];
+        if (above >= 0 && sup[above] > bestNeighborSupport) {
+          bestNeighborSupport = sup[above];
+        }
 
         // Decay per tile based on material hardness
         // Hardness 100 (metal) -> decay 3 (can build ~80 tiles out)
@@ -3461,21 +3708,26 @@ class SimulationEngine {
         // Hardness 20 (wood) -> decay 20 (can build ~12 tiles out)
         final hardness = el < maxElements ? elementHardness[el] : 10;
         final decay = ((120 - hardness) / 5).clamp(1, 50).toInt();
-        
-        final newSupport = bestNeighborSupport > decay ? bestNeighborSupport - decay : 0;
+
+        final newSupport = bestNeighborSupport > decay
+            ? bestNeighborSupport - decay
+            : 0;
         sup[idx] = newSupport;
 
         // If support hits 0 and it's a rigid body, it snaps and falls
         if (newSupport == 0 && state == PhysicsState.solid.index) {
-           velY[idx] = (velY[idx] + 1).clamp(0, 127).toInt();
-           // Structural snap generates vibration
-           vibration[idx] = 80;
-           vibrationFreq[idx] = 100; // mid-low snap
-           // Small chance to crumble from stress
-           if (rng.nextInt(20) == 0) {
-              if (el == El.stone) grid[idx] = El.dirt;
-              else if (el == El.wood) grid[idx] = El.sand;
-           }
+          velY[idx] = (velY[idx] + 1).clamp(0, 127).toInt();
+          // Structural snap generates vibration
+          vibration[idx] = 80;
+          vibrationFreq[idx] = 100; // mid-low snap
+          // Small chance to crumble from stress
+          if (rng.nextInt(20) == 0) {
+            if (el == El.stone) {
+              grid[idx] = El.dirt;
+            } else if (el == El.wood) {
+              grid[idx] = El.sand;
+            }
+          }
         }
       }
     }
@@ -3603,7 +3855,9 @@ class SimulationEngine {
           final checkX = (x + windDir * d + w) % w;
           final checkEl = g[y * w + checkX];
           if (checkEl != El.empty) {
-            final checkState = checkEl < maxElements ? elementPhysicsState[checkEl] : 0;
+            final checkState = checkEl < maxElements
+                ? elementPhysicsState[checkEl]
+                : 0;
             if (checkState == PhysicsState.solid.index) {
               shelter += 2;
             }
@@ -3748,8 +4002,12 @@ class SimulationEngine {
         bool isSurface = false;
         for (int sy = cy - 1; sy >= 0 && sy >= cy - 20; sy--) {
           final above = g[sy * w + cx];
-          if (above == El.empty || above == El.oxygen || above == El.co2 ||
-              above == El.smoke || above == El.steam || above == El.methane ||
+          if (above == El.empty ||
+              above == El.oxygen ||
+              above == El.co2 ||
+              above == El.smoke ||
+              above == El.steam ||
+              above == El.methane ||
               above == El.hydrogen) {
             continue;
           }
@@ -3760,7 +4018,8 @@ class SimulationEngine {
         if (cy <= 20 || g[0 * w + cx] == El.empty) {
           // Simple heuristic: check if sky column above is mostly empty
           int emptyCount = 0;
-          int scanTop = cy - 20; if (scanTop < 0) scanTop = 0;
+          int scanTop = cy - 20;
+          if (scanTop < 0) scanTop = 0;
           for (int sy = cy - 1; sy >= scanTop; sy--) {
             if (g[sy * w + cx] == El.empty) emptyCount++;
           }
@@ -3772,13 +4031,18 @@ class SimulationEngine {
         const radius = 8;
         final hm1 = h - 1;
         final wm1 = w - 1;
-        int yMin = cy - radius; if (yMin < 0) yMin = 0;
-        int yMax = cy + radius; if (yMax > hm1) yMax = hm1;
-        int xMin = cx - radius; if (xMin < 0) xMin = 0;
-        int xMax = cx + radius; if (xMax > wm1) xMax = wm1;
+        int yMin = cy - radius;
+        if (yMin < 0) yMin = 0;
+        int yMax = cy + radius;
+        if (yMax > hm1) yMax = hm1;
+        int xMin = cx - radius;
+        if (xMin < 0) xMin = 0;
+        int xMax = cx + radius;
+        if (xMax > wm1) xMax = wm1;
 
         for (int ey = yMin; ey <= yMax; ey++) {
-          final dy = ey - cy; final ady = dy < 0 ? -dy : dy;
+          final dy = ey - cy;
+          final ady = dy < 0 ? -dy : dy;
           final rowBase = ey * w;
           for (int ex = xMin; ex <= xMax; ex++) {
             final eidx = rowBase + ex;
@@ -3786,7 +4050,8 @@ class SimulationEngine {
             final gv = lg[eidx];
             final b = lb[eidx];
             if ((r | gv | b) == 0) continue;
-            final dx = ex - cx; final adx = dx < 0 ? -dx : dx;
+            final dx = ex - cx;
+            final adx = dx < 0 ? -dx : dx;
             final dist = ady > adx ? ady : adx; // Chebyshev distance
             if (dist == 0) continue;
             // Perceived brightness: approximate (r+g+b)/3 weighted by 1/dist
@@ -3814,8 +4079,14 @@ class SimulationEngine {
 
   /// Process a specific vertical slice of the grid.
   /// Used for parallelized processing.
-  void _processSlice(int startX, int endX, bool leftToRight, int currentClockBit, 
-                    void Function(SimulationEngine engine, int el, int x, int y, int idx) simulateElement) {
+  void _processSlice(
+    int startX,
+    int endX,
+    bool leftToRight,
+    int currentClockBit,
+    void Function(SimulationEngine engine, int el, int x, int y, int idx)
+    simulateElement,
+  ) {
     final yStart = gravityDir == 1 ? gridH - 1 : 0;
     final yEnd = gravityDir == 1 ? -1 : gridH;
     final yStep = gravityDir == 1 ? -1 : 1;
@@ -3856,7 +4127,8 @@ class SimulationEngine {
 
         simulateElement(this, el, x, y, idx);
 
-        if (grid[preIdx] == preEl && (flags[preIdx] & 0x80) != currentClockBit) {
+        if (grid[preIdx] == preEl &&
+            (flags[preIdx] & 0x80) != currentClockBit) {
           if (life[preIdx] != preLife) {
             flags[preIdx] = flags[preIdx] & 0x80;
             markDirty(x, y);
@@ -3879,7 +4151,10 @@ class SimulationEngine {
   }
 
   /// Run one frame of physics simulation.
-  void step(void Function(SimulationEngine engine, int el, int x, int y, int idx) simulateElement) {
+  void step(
+    void Function(SimulationEngine engine, int el, int x, int y, int idx)
+    simulateElement,
+  ) {
     simClock = !simClock;
     final currentClockBit = simClock ? 0x80 : 0;
 
@@ -3907,7 +4182,13 @@ class SimulationEngine {
       for (int i = 0; i < numSlices; i++) {
         final startX = i * sWidth;
         final endX = (i == numSlices - 1) ? gridW : (i + 1) * sWidth;
-        _processSlice(startX, endX, leftToRight, currentClockBit, simulateElement);
+        _processSlice(
+          startX,
+          endX,
+          leftToRight,
+          currentClockBit,
+          simulateElement,
+        );
       }
     } else {
       _processSlice(0, gridW, leftToRight, currentClockBit, simulateElement);
@@ -3931,334 +4212,337 @@ class SimulationEngine {
 /// All rates are 1/N chance per eligible tick unless otherwise noted.
 class SimTuning {
   // -- Sand --
-  static int sandToMudRate = 10;             // 1/N surface sand->mud with water
-  static int sandToMudSubmergedRate = 80;    // 1/N submerged sand->mud (slower)
+  static int sandToMudRate = 10; // 1/N surface sand->mud with water
+  static int sandToMudSubmergedRate = 80; // 1/N submerged sand->mud (slower)
 
   // -- Water --
-  static int waterTntDissolve = 10;          // 1/N dissolve TNT
-  static int waterSmokeDissolve = 10;        // 1/N dissolve smoke
-  static int waterRainbowSpread = 40;        // 1/N spread rainbow
-  static int waterPlantDamage = 20;          // 1/N damage plant
-  static int waterAcidPlantDamage = 10;      // 1/N acidic water damages plant
-  static int waterBubbleRate = 500;          // 1/N spawn bubble at high mass
-  static int waterPressurePush = 8;          // 1/N push sand/dirt sideways
-  static int waterMomentumReset = 4;         // 1/N velocity resets
-  static int waterDirtErosion = 20;          // 1/N erode dirt
-  static int waterSandErosion = 30;          // 1/N erode sand
-  static int waterSedimentDeposit = 40;      // 1/N deposit sediment
-  static int waterSeepageRate = 12;          // 1/N underground seepage
-  static int waterHydraulicRate = 3;         // 1/N hydraulic displacement
-  static int waterStoneExit = 6;             // 1/N pressurized stone exit
+  static int waterTntDissolve = 10; // 1/N dissolve TNT
+  static int waterSmokeDissolve = 10; // 1/N dissolve smoke
+  static int waterRainbowSpread = 40; // 1/N spread rainbow
+  static int waterPlantDamage = 20; // 1/N damage plant
+  static int waterAcidPlantDamage = 10; // 1/N acidic water damages plant
+  static int waterBubbleRate = 500; // 1/N spawn bubble at high mass
+  static int waterPressurePush = 8; // 1/N push sand/dirt sideways
+  static int waterMomentumReset = 4; // 1/N velocity resets
+  static int waterDirtErosion = 20; // 1/N erode dirt
+  static int waterSandErosion = 30; // 1/N erode sand
+  static int waterSedimentDeposit = 40; // 1/N deposit sediment
+  static int waterSeepageRate = 12; // 1/N underground seepage
+  static int waterHydraulicRate = 3; // 1/N hydraulic displacement
+  static int waterStoneExit = 6; // 1/N pressurized stone exit
 
   // -- Fire --
-  static int fireOxygenConsume = 3;          // 1/N consume oxygen
-  static int fireOilLifetimeBase = 70;       // base ticks near oil
-  static int fireOilLifetimeVar = 50;        // variance near oil
-  static int fireLifetimeBase = 40;          // base ticks
-  static int fireLifetimeVar = 40;           // variance
-  static int fireBurnoutSmoke = 3;           // N-1/N become smoke (2/3)
-  static int firePlantIgnite = 2;            // 1/N ignite plant/seed
-  static int fireOilChainIgnite = 3;         // 1/N chain ignite oil
-  static int fireWoodPyrolysis = 3;          // 1/N start wood charring
-  static int fireFlicker = 6;               // flicker range (0-5)
-  static int fireLateralShimmy = 5;          // 1/N lateral move when trapped
+  static int fireOxygenConsume = 3; // 1/N consume oxygen
+  static int fireOilLifetimeBase = 70; // base ticks near oil
+  static int fireOilLifetimeVar = 50; // variance near oil
+  static int fireLifetimeBase = 40; // base ticks
+  static int fireLifetimeVar = 40; // variance
+  static int fireBurnoutSmoke = 3; // N-1/N become smoke (2/3)
+  static int firePlantIgnite = 2; // 1/N ignite plant/seed
+  static int fireOilChainIgnite = 3; // 1/N chain ignite oil
+  static int fireWoodPyrolysis = 3; // 1/N start wood charring
+  static int fireFlicker = 6; // flicker range (0-5)
+  static int fireLateralShimmy = 5; // 1/N lateral move when trapped
 
   // -- Ice --
-  static int iceRegelation = 4;              // 1/N regelation melt
-  static int iceAmbientMeltDay = 20;         // 1/N ambient melt (day)
-  static int iceAmbientMeltNight = 60;       // 1/N ambient melt (night)
+  static int iceRegelation = 4; // 1/N regelation melt
+  static int iceAmbientMeltDay = 20; // 1/N ambient melt (day)
+  static int iceAmbientMeltNight = 60; // 1/N ambient melt (night)
 
   // -- Lightning --
-  static int lightningElectrolysis = 3;      // 1/N water->bubble
-  static int lightningOilChain = 3;          // 1/N chain ignite oil
+  static int lightningElectrolysis = 3; // 1/N water->bubble
+  static int lightningOilChain = 3; // 1/N chain ignite oil
 
   // -- Dirt --
-  static int dirtAshAbsorb = 10;             // 1/N absorb ash
-  static int dirtWaterErosionBase = 10;      // 1/N water erosion check
-  static int dirtFlowingErosion = 8;         // 1/N flowing water erosion
-  static int dirtCompactRate = 10;           // alias for backward compat
+  static int dirtAshAbsorb = 10; // 1/N absorb ash
+  static int dirtWaterErosionBase = 10; // 1/N water erosion check
+  static int dirtFlowingErosion = 8; // 1/N flowing water erosion
+  static int dirtCompactRate = 10; // alias for backward compat
 
   // -- Plant --
-  static int plantAcidDamage = 3;            // 1/N acid damage
-  static int plantDecomposeRate = 10;        // 1/N decompose to compost with fungus
-  static int plantO2Produce = 8;             // 1/N produce oxygen
-  static int plantSeedRateYoung = 500;       // 1/N seed (young mature)
-  static int plantSeedRateOld = 200;         // 1/N seed (aged mature)
-  static int plantGrassSpread = 40;          // 1/N grass lateral spread
-  static int plantMushroomSpread = 80;       // 1/N mushroom colony spread
-  static int plantTreeBranch = 3;            // 1/N tree branch at wide canopy
-  static int plantTreeRootGrow = 50;         // 1/N tree root growth
-  static int plantTreeBranchSkip = 2;        // 1/N skip branch side
+  static int plantAcidDamage = 3; // 1/N acid damage
+  static int plantDecomposeRate = 10; // 1/N decompose to compost with fungus
+  static int plantO2Produce = 8; // 1/N produce oxygen
+  static int plantSeedRateYoung = 500; // 1/N seed (young mature)
+  static int plantSeedRateOld = 200; // 1/N seed (aged mature)
+  static int plantGrassSpread = 40; // 1/N grass lateral spread
+  static int plantMushroomSpread = 80; // 1/N mushroom colony spread
+  static int plantTreeBranch = 3; // 1/N tree branch at wide canopy
+  static int plantTreeRootGrow = 50; // 1/N tree root growth
+  static int plantTreeBranchSkip = 2; // 1/N skip branch side
 
   // -- Lava --
-  static int lavaCoolingBase = 200;          // base cooling threshold
-  static int lavaCoolingVar = 50;            // cooling variance
-  static int lavaCoolIsolated = 80;          // isolated base
-  static int lavaCoolIsolatedVar = 30;       // isolated variance
-  static int lavaCoolPartial = 140;          // partial base
-  static int lavaCoolPartialVar = 40;        // partial variance
-  static int lavaSmokeEmit = 80;             // 1/N smoke emission
-  static int lavaSteamEmit = 120;            // 1/N steam emission
-  static int lavaEruptionOpen = 60;          // 1/N eruption (low pressure)
-  static int lavaEruptionPressured = 30;     // 1/N eruption (high pressure)
-  static int lavaEruptThreshLow = 20;        // eruption threshold (low pressure)
-  static int lavaEruptThreshHigh = 10;       // eruption threshold (high pressure)
-  static int lavaSpatter = 100;              // 1/N spatter
-  static int lavaIgniteFlammable = 2;        // 1/N ignite plant/oil/wood/seed
-  static int lavaSandToGlass = 40;           // 1/N sand->glass
-  static int lavaMeltMetal = 80;             // 1/N melt metal
-  static int lavaDryMud = 10;               // 1/N mud->dirt
-  static int lavaGasEmit = 100;              // 1/N gas emission (legacy)
+  static int lavaCoolingBase = 200; // base cooling threshold
+  static int lavaCoolingVar = 50; // cooling variance
+  static int lavaCoolIsolated = 80; // isolated base
+  static int lavaCoolIsolatedVar = 30; // isolated variance
+  static int lavaCoolPartial = 140; // partial base
+  static int lavaCoolPartialVar = 40; // partial variance
+  static int lavaSmokeEmit = 80; // 1/N smoke emission
+  static int lavaSteamEmit = 120; // 1/N steam emission
+  static int lavaEruptionOpen = 60; // 1/N eruption (low pressure)
+  static int lavaEruptionPressured = 30; // 1/N eruption (high pressure)
+  static int lavaEruptThreshLow = 20; // eruption threshold (low pressure)
+  static int lavaEruptThreshHigh = 10; // eruption threshold (high pressure)
+  static int lavaSpatter = 100; // 1/N spatter
+  static int lavaIgniteFlammable = 2; // 1/N ignite plant/oil/wood/seed
+  static int lavaSandToGlass = 40; // 1/N sand->glass
+  static int lavaMeltMetal = 80; // 1/N melt metal
+  static int lavaDryMud = 10; // 1/N mud->dirt
+  static int lavaGasEmit = 100; // 1/N gas emission (legacy)
 
   // -- Snow --
-  static int snowMeltRateDay = 20;           // 1/N proximity melt rate (day)
-  static int snowMeltRateNight = 40;         // 1/N proximity melt rate (night)
-  static int snowFreezeWater = 30;           // 1/N freeze adjacent water
-  static int snowAvalanche = 3;              // 1/N avalanche check
-  static int snowWindDrift = 2;              // 1/N wind-driven drift
+  static int snowMeltRateDay = 20; // 1/N proximity melt rate (day)
+  static int snowMeltRateNight = 40; // 1/N proximity melt rate (night)
+  static int snowFreezeWater = 30; // 1/N freeze adjacent water
+  static int snowAvalanche = 3; // 1/N avalanche check
+  static int snowWindDrift = 2; // 1/N wind-driven drift
 
   // -- Wood --
-  static int woodFireSpread = 12;            // 1/N fire spread to adjacent
-  static int woodBurnoutBase = 40;           // base ticks before burnout
-  static int woodBurnoutVar = 20;            // burnout variance
-  static int woodCharcoalChance = 5;         // N<2 = charcoal, else ash
-  static int woodAnoxicPyrolysis = 60;       // 1/N anoxic pyrolysis
-  static int woodWaterAbsorb = 30;           // 1/N water absorption
-  static int woodWetBurn = 5;               // 1/N burn when waterlogged
-  static int woodPetrify = 80;              // 1/N petrification
+  static int woodFireSpread = 12; // 1/N fire spread to adjacent
+  static int woodBurnoutBase = 40; // base ticks before burnout
+  static int woodBurnoutVar = 20; // burnout variance
+  static int woodCharcoalChance = 5; // N<2 = charcoal, else ash
+  static int woodAnoxicPyrolysis = 60; // 1/N anoxic pyrolysis
+  static int woodWaterAbsorb = 30; // 1/N water absorption
+  static int woodWetBurn = 5; // 1/N burn when waterlogged
+  static int woodPetrify = 80; // 1/N petrification
 
   // -- Metal --
-  static int metalFallResist = 30;           // 1/N start falling when unsupported
-  static int metalRustRate = 500;            // 1/N rust in water (base)
-  static int metalSaltRustRate = 100;        // 1/N rust in salt water
-  static int metalSaltRustAlkaline = 300;    // 1/N salt rust (alkaline)
-  static int metalHotIgniteRate = 6;         // 1/N hot metal ignites flammables
-  static int metalHotWoodChar = 10;          // 1/N hot metal chars wood
-  static int metalCondensation = 100;        // 1/N condensation
+  static int metalFallResist = 30; // 1/N start falling when unsupported
+  static int metalRustRate = 500; // 1/N rust in water (base)
+  static int metalSaltRustRate = 100; // 1/N rust in salt water
+  static int metalSaltRustAlkaline = 300; // 1/N salt rust (alkaline)
+  static int metalHotIgniteRate = 6; // 1/N hot metal ignites flammables
+  static int metalHotWoodChar = 10; // 1/N hot metal chars wood
+  static int metalCondensation = 100; // 1/N condensation
 
   // -- Smoke --
-  static int smokeLateralDrift = 3;          // 1/N lateral drift
+  static int smokeLateralDrift = 3; // 1/N lateral drift
 
   // -- Bubble --
-  static int bubbleWobble = 20;              // 1/N lateral wobble
+  static int bubbleWobble = 20; // 1/N lateral wobble
 
   // -- Ash --
-  static int ashLateralDrift = 3;            // 1/N lateral drift in water
-  static int ashAvalanche = 3;               // 1/N avalanche
+  static int ashLateralDrift = 3; // 1/N lateral drift in water
+  static int ashAvalanche = 3; // 1/N avalanche
 
   // -- Mud --
-  static int mudContactDry = 4;              // 1/N contact drying near fire
-  static int mudProximityDry = 40;           // 1/N proximity drying
+  static int mudContactDry = 4; // 1/N contact drying near fire
+  static int mudProximityDry = 40; // 1/N proximity drying
 
   // -- Steam --
-  static int steamAltitudeRain = 5;          // 1/N condense at sky edge
-  static int steamDeposition = 3;            // 1/N deposit as ice
-  static int steamIceCondense = 4;           // N-1/N condense on ice (3/4)
-  static int steamTrappedSeep = 40;          // 1/N seep through cracks
+  static int steamAltitudeRain = 5; // 1/N condense at sky edge
+  static int steamDeposition = 3; // 1/N deposit as ice
+  static int steamIceCondense = 4; // N-1/N condense on ice (3/4)
+  static int steamTrappedSeep = 40; // 1/N seep through cracks
 
   // -- Oil --
   // (no standalone magic numbers — ignition handled by fire/lava)
 
   // -- Acid --
-  static int acidLifetimeBase = 200;         // base life before expiry
-  static int acidLifetimeVar = 60;           // variance
-  static int acidWaterDilute = 8;            // 1/N dilute in water
-  static int acidIceMelt = 8;               // 1/N melt ice
-  static int acidSnowMelt = 5;              // 1/N melt snow
-  static int acidLavaReact = 5;             // 1/N react with lava
-  static int acidWaterBubble = 20;           // 1/N produce bubble in water
+  static int acidLifetimeBase = 200; // base life before expiry
+  static int acidLifetimeVar = 60; // variance
+  static int acidWaterDilute = 8; // 1/N dilute in water
+  static int acidIceMelt = 8; // 1/N melt ice
+  static int acidSnowMelt = 5; // 1/N melt snow
+  static int acidLavaReact = 5; // 1/N react with lava
+  static int acidWaterBubble = 20; // 1/N produce bubble in water
 
   // -- Stone --
-  static int stoneThinSupport = 60;          // 1/N thin support crumble
-  static int stoneNoLateralFall = 8;         // 1/N fall without diagonal support
-  static int stoneWeatherWater = 60;         // 1/N water weathering
-  static int stoneWeatherCrumble = 20;       // 1/N crumble when fully weathered
-  static int stoneFrostWeather = 20;         // 1/N frost weathering
-  static int stoneFrostCrumble = 15;         // 1/N frost crumble
-  static int stoneLavaCrack = 200;           // 1/N crack into lava
+  static int stoneThinSupport = 60; // 1/N thin support crumble
+  static int stoneNoLateralFall = 8; // 1/N fall without diagonal support
+  static int stoneWeatherWater = 60; // 1/N water weathering
+  static int stoneWeatherCrumble = 20; // 1/N crumble when fully weathered
+  static int stoneFrostWeather = 20; // 1/N frost weathering
+  static int stoneFrostCrumble = 15; // 1/N frost crumble
+  static int stoneLavaCrack = 200; // 1/N crack into lava
 
   // -- Glass --
-  static int glassLavaMeltBase = 80;         // base life near lava before melt
-  static int glassLavaMeltVar = 40;          // variance
-  static int glassThermalShatter = 3;        // 1/N probabilistic thermal shatter
+  static int glassLavaMeltBase = 80; // base life near lava before melt
+  static int glassLavaMeltVar = 40; // variance
+  static int glassThermalShatter = 3; // 1/N probabilistic thermal shatter
 
   // -- Avalanche --
-  static int avalancheStandard = 3;          // N-1/N chance (2/3 standard)
-  static int avalancheExtended = 4;          // 1/N extended roll
+  static int avalancheStandard = 3; // N-1/N chance (2/3 standard)
+  static int avalancheExtended = 4; // 1/N extended roll
 
   // -- Fungus --
-  static int fungusDeathToCompost = 20;      // 1/N die to compost when dry
-  static int fungusAshDecompose = 5;         // 1/N convert ash to compost
-  static int fungusWoodRot = 80;             // 1/N decompose wood
-  static int fungusDirtSpread = 40;          // 1/N spread to dirt
-  static int fungusSporulate = 200;          // 1/N release spore
-  static int fungusMethane = 300;            // 1/N produce methane
+  static int fungusDeathToCompost = 20; // 1/N die to compost when dry
+  static int fungusAshDecompose = 5; // 1/N convert ash to compost
+  static int fungusWoodRot = 80; // 1/N decompose wood
+  static int fungusDirtSpread = 40; // 1/N spread to dirt
+  static int fungusSporulate = 200; // 1/N release spore
+  static int fungusMethane = 300; // 1/N produce methane
 
   // -- Spore --
-  static int sporeFallRate = 3;              // 1/N slow fall
-  static int sporeDriftRate = 2;             // 1/N lateral drift
+  static int sporeFallRate = 3; // 1/N slow fall
+  static int sporeDriftRate = 2; // 1/N lateral drift
 
   // -- Compost --
-  static int compostDryToDirt = 100;         // 1/N become dirt when dry
-  static int compostNutrient = 100;          // 1/N nutrient diffusion
-  static int compostMethane = 400;           // 1/N produce methane
+  static int compostDryToDirt = 100; // 1/N become dirt when dry
+  static int compostNutrient = 100; // 1/N nutrient diffusion
+  static int compostMethane = 400; // 1/N produce methane
 
   // -- Rust --
-  static int rustCrumble = 50;              // 1/N crumble under weight
+  static int rustCrumble = 50; // 1/N crumble under weight
 
   // -- Methane --
-  static int methaneLateralDrift = 2;        // 1/N lateral drift
+  static int methaneLateralDrift = 2; // 1/N lateral drift
 
   // -- Salt --
-  static int saltDissolveRate = 5;           // 1/N dissolve in water
-  static int saltDeiceRate = 15;             // 1/N melt ice
-  static int saltPlantKill = 30;             // 1/N damage plant
+  static int saltDissolveRate = 5; // 1/N dissolve in water
+  static int saltDeiceRate = 15; // 1/N melt ice
+  static int saltPlantKill = 30; // 1/N damage plant
 
   // -- Algae --
-  static int algaeGrowRate = 10;             // 1/N spread
-  static int algaeO2Rate = 40;              // 1/N produce oxygen
-  static int algaeCO2Absorb = 10;           // 1/N absorb CO2
-  static int algaeBloomDieoff = 50;          // 1/N overpopulation death
-  static int algaeBloomThreshold = 12;       // nearby algae count for bloom
+  static int algaeGrowRate = 10; // 1/N spread
+  static int algaeO2Rate = 40; // 1/N produce oxygen
+  static int algaeCO2Absorb = 10; // 1/N absorb CO2
+  static int algaeBloomDieoff = 50; // 1/N overpopulation death
+  static int algaeBloomThreshold = 12; // nearby algae count for bloom
 
   // -- Seaweed --
-  static int seaweedO2Rate = 30;             // 1/N produce oxygen
-  static int seaweedCO2Absorb = 8;           // 1/N absorb CO2
-  static int seaweedBloomDieoff = 60;        // 1/N overpopulation death
-  static int seaweedBloomThreshold = 14;     // nearby count for die-off
+  static int seaweedO2Rate = 30; // 1/N produce oxygen
+  static int seaweedCO2Absorb = 8; // 1/N absorb CO2
+  static int seaweedBloomDieoff = 60; // 1/N overpopulation death
+  static int seaweedBloomThreshold = 14; // nearby count for die-off
 
   // -- Moss --
-  static int mossO2Rate = 60;               // 1/N produce oxygen
-  static int mossCO2Absorb = 15;            // 1/N absorb CO2
+  static int mossO2Rate = 60; // 1/N produce oxygen
+  static int mossCO2Absorb = 15; // 1/N absorb CO2
 
   // -- Vine --
-  static int vineAcidDamage = 3;            // 1/N acid damage
-  static int vineO2Rate = 5;               // 1/N produce oxygen
+  static int vineAcidDamage = 3; // 1/N acid damage
+  static int vineO2Rate = 5; // 1/N produce oxygen
 
   // -- Flower --
-  static int flowerAcidDamage = 3;          // 1/N acid damage
-  static int flowerO2Rate = 6;             // 1/N produce oxygen
+  static int flowerAcidDamage = 3; // 1/N acid damage
+  static int flowerO2Rate = 6; // 1/N produce oxygen
 
   // -- Honey --
-  static int honeyCrystallize = 50;          // 1/N crystallize at max life
-  static int honeyCrystallizeLife = 250;     // life threshold
+  static int honeyCrystallize = 50; // 1/N crystallize at max life
+  static int honeyCrystallizeLife = 250; // life threshold
 
   // -- Hydrogen --
-  static int hydrogenDrift = 2;             // 1/N lateral drift
+  static int hydrogenDrift = 2; // 1/N lateral drift
 
   // -- Sulfur --
-  static int sulfurTarnishRate = 300;        // 1/N tarnish metal
+  static int sulfurTarnishRate = 300; // 1/N tarnish metal
 
   // -- Copper --
-  static int copperPatinaBase = 2000;        // 1/N base patina rate
-  static int copperAcidRate = 20;           // 1/N acid dissolution
+  static int copperPatinaBase = 2000; // 1/N base patina rate
+  static int copperAcidRate = 20; // 1/N acid dissolution
 
   // -- Web --
-  static int webWaterDissolve = 30;          // 1/N dissolve in water
-  static int webDecayLife = 200;             // ticks before decay
+  static int webWaterDissolve = 30; // 1/N dissolve in water
+  static int webDecayLife = 200; // ticks before decay
 
   // -- Thorn --
-  static int thornDamage = 15;              // life damage per hit
+  static int thornDamage = 15; // life damage per hit
 
   // -- Ant --
-  static int antExplorerWander = 60;         // 1/N switch to explorer mode
-  static int antBlobDisperse = 3;            // 1/N blob dispersal
+  static int antExplorerWander = 60; // 1/N switch to explorer mode
+  static int antBlobDisperse = 3; // 1/N blob dispersal
 
   // -- Colony Dynamics --
-  static int colonyMigrationThreshold = 5;  // min distance before colony moves
-  static int colonyMigrationInterval = 60;  // ticks between migration checks
+  static int colonyMigrationThreshold = 5; // min distance before colony moves
+  static int colonyMigrationInterval = 60; // ticks between migration checks
 
   // -- Queen --
-  static int queenEggRate = 100;            // 1/N chance per tick to lay egg
-  static int queenMaxAge = 180000;          // 10x worker lifespan
-  static int queenFoodPerEgg = 3;           // food consumed per egg laid
-  static int queenMoveSpeed = 10;           // ticks between queen movements (slow)
-  static int orphanDecayRate = 500;         // 1/N chance orphan ant loses energy
+  static int queenEggRate = 100; // 1/N chance per tick to lay egg
+  static int queenMaxAge = 180000; // 10x worker lifespan
+  static int queenFoodPerEgg = 3; // food consumed per egg laid
+  static int queenMoveSpeed = 10; // ticks between queen movements (slow)
+  static int orphanDecayRate = 500; // 1/N chance orphan ant loses energy
 
   // -- Castes --
-  static int casteWorkerRatio = 70;         // % workers in colony
-  static int casteSoldierRatio = 15;        // % soldiers
-  static int casteNurseRatio = 10;          // % nurses
-  static int casteScoutRatio = 5;           // % scouts
+  static int casteWorkerRatio = 70; // % workers in colony
+  static int casteSoldierRatio = 15; // % soldiers
+  static int casteNurseRatio = 10; // % nurses
+  static int casteScoutRatio = 5; // % scouts
 
   // -- Brood --
-  static int eggHatchTicks = 200;           // ticks for egg → larva
-  static int larvaGrowTicks = 400;          // ticks for larva → adult
-  static int larvaFoodPerGrow = 2;          // food units per larva maturation
+  static int eggHatchTicks = 200; // ticks for egg → larva
+  static int larvaGrowTicks = 400; // ticks for larva → adult
+  static int larvaFoodPerGrow = 2; // food units per larva maturation
 
   // -- Nest Building --
-  static int digSuccessRate = 3;            // 1/N chance dig succeeds per tick
-  static int dirtCarryDrop = 2;             // 1/N chance to drop carried dirt
-  static int soldierPatrolRadius = 8;       // cells soldiers patrol from nest
-  static int alarmMobilizeRadius = 15;      // cells soldiers respond to alarm
+  static int digSuccessRate = 3; // 1/N chance dig succeeds per tick
+  static int dirtCarryDrop = 2; // 1/N chance to drop carried dirt
+  static int soldierPatrolRadius = 8; // cells soldiers patrol from nest
+  static int alarmMobilizeRadius = 15; // cells soldiers respond to alarm
 
   // -- Species-Specific --
-  static int spiderWebRate = 8;             // 1/N chance spider spins web per tick
-  static int beePollinateRate = 12;         // 1/N chance bee pollinates flower
-  static int wormAerateRate = 15;           // 1/N chance worm aerates dirt
-  static int beetleDecomposeRate = 10;      // 1/N chance beetle eats compost
-  static int fishEatRate = 8;              // 1/N chance fish eats algae
-  static int fishMaxPop = 30;              // max fish per colony
-  static int beeMaxPop = 20;              // max bees per colony
-  static int wormMaxPop = 40;             // max worms per colony
+  static int spiderWebRate = 8; // 1/N chance spider spins web per tick
+  static int beePollinateRate = 12; // 1/N chance bee pollinates flower
+  static int wormAerateRate = 15; // 1/N chance worm aerates dirt
+  static int beetleDecomposeRate = 10; // 1/N chance beetle eats compost
+  static int fishEatRate = 8; // 1/N chance fish eats algae
+  static int fishMaxPop = 30; // max fish per colony
+  static int beeMaxPop = 20; // max bees per colony
+  static int wormMaxPop = 40; // max worms per colony
 
   // ===================================================================
   // THROTTLES — how often behaviors update (frameCount % N)
   // Lower = more frequent = more responsive but more CPU
   // ===================================================================
-  static int throttleSandAbsorb = 3;         // sand moisture check interval
-  static int throttleWaterMomentum = 6;      // water velocity damping interval
-  static int throttleWaterSeep = 8;          // underground seepage interval
-  static int throttleWaterPressure = 3;      // pressure-driven flow interval
-  static int throttleWaterFountain = 4;      // high-pressure eruption interval
-  static int throttleFireSpread = 6;         // fire spread attempt interval
-  static int throttleFireSmoke = 10;         // smoke spawning interval
-  static int throttleIceRegel = 8;           // regelation check interval
-  static int throttleDirtMoistLoss = 15;     // dirt moisture evaporation interval
-  static int throttleDirtErosion = 12;       // dirt erosion interval
-  static int throttlePlantHydration = 5;     // plant water check interval
-  static int throttlePlantGrow = 6;          // plant growth check interval
+  static int throttleSandAbsorb = 3; // sand moisture check interval
+  static int throttleWaterMomentum = 6; // water velocity damping interval
+  static int throttleWaterSeep = 8; // underground seepage interval
+  static int throttleWaterPressure = 3; // pressure-driven flow interval
+  static int throttleWaterFountain = 4; // high-pressure eruption interval
+  static int throttleFireSpread = 6; // fire spread attempt interval
+  static int throttleFireSmoke = 10; // smoke spawning interval
+  static int throttleIceRegel = 8; // regelation check interval
+  static int throttleDirtMoistLoss = 15; // dirt moisture evaporation interval
+  static int throttleDirtErosion = 12; // dirt erosion interval
+  static int throttlePlantHydration = 5; // plant water check interval
+  static int throttlePlantGrow = 6; // plant growth check interval
   static int throttlePlantPhotosynthesis = 15; // O2/CO2 exchange interval
-  static int throttlePlantSeed = 30;         // seed production check interval
-  static int throttleLavaCool = 10;          // lava cooling check interval
-  static int throttleMetalHeat = 3;          // metal heat absorption interval
-  static int throttleStoneCrack = 8;         // stone cracking check interval
-  static int throttleFungusGrow = 20;        // fungus spread interval
-  static int throttleAlgaeGrow = 30;         // algae spread interval
-  static int throttleCompostDry = 10;        // compost drying interval
+  static int throttlePlantSeed = 30; // seed production check interval
+  static int throttleLavaCool = 10; // lava cooling check interval
+  static int throttleMetalHeat = 3; // metal heat absorption interval
+  static int throttleStoneCrack = 8; // stone cracking check interval
+  static int throttleFungusGrow = 20; // fungus spread interval
+  static int throttleAlgaeGrow = 30; // algae spread interval
+  static int throttleCompostDry = 10; // compost drying interval
 
   // ===================================================================
   // THRESHOLDS — trigger points for state changes
   // ===================================================================
-  static int thresholdPressureHigh = 6;      // pressure considered "high" for flow
-  static int thresholdPressureErupt = 16;    // pressure for fountain eruption
-  static int thresholdColumnHeavy = 6;       // liquid column depth for downward push
-  static int thresholdWaterDeep = 4;         // water depth for visual/behavior change
-  static int thresholdPlantWilt = 30;        // life below this = wilting
-  static int thresholdPlantMature = 8;       // min size for maturity
-  static int thresholdPlantSeedAge = 150;    // cellAge for seed production
-  static int thresholdPHAcidDamage = 80;     // pH below this damages plants
-  static int thresholdPHOptimalLo = 100;     // optimal pH range low
-  static int thresholdPHOptimalHi = 140;     // optimal pH range high
-  static int thresholdLightPhotosynthesis = 50; // min luminance for photosynthesis
-  static int thresholdLightFungusMax = 30;   // max luminance fungus tolerates
-  static int thresholdTempHot = 200;         // "hot" for incandescence/reactions
-  static int thresholdTempWarm = 150;        // "warm" for enhanced reactions
-  static int thresholdMoistureWet = 50;      // moisture considered "wet"
-  static int thresholdAgingOld = 200;        // cellAge considered "old" for effects
-  static int thresholdAgingDecay = 250;      // cellAge for accelerated decay
-  static int thresholdStressFailure = 2;     // stress > bondEnergy * this = collapse
-  static int thresholdVibrationBreak = 200;  // vibration level that breaks weak cells
-  static int thresholdAlgaeBloom = 12;       // nearby algae for bloom die-off
+  static int thresholdPressureHigh = 6; // pressure considered "high" for flow
+  static int thresholdPressureErupt = 16; // pressure for fountain eruption
+  static int thresholdColumnHeavy = 6; // liquid column depth for downward push
+  static int thresholdWaterDeep = 4; // water depth for visual/behavior change
+  static int thresholdPlantWilt = 30; // life below this = wilting
+  static int thresholdPlantMature = 8; // min size for maturity
+  static int thresholdPlantSeedAge = 150; // cellAge for seed production
+  static int thresholdPHAcidDamage = 80; // pH below this damages plants
+  static int thresholdPHOptimalLo = 100; // optimal pH range low
+  static int thresholdPHOptimalHi = 140; // optimal pH range high
+  static int thresholdLightPhotosynthesis =
+      50; // min luminance for photosynthesis
+  static int thresholdLightFungusMax = 30; // max luminance fungus tolerates
+  static int thresholdTempHot = 200; // "hot" for incandescence/reactions
+  static int thresholdTempWarm = 150; // "warm" for enhanced reactions
+  static int thresholdMoistureWet = 50; // moisture considered "wet"
+  static int thresholdAgingOld = 200; // cellAge considered "old" for effects
+  static int thresholdAgingDecay = 250; // cellAge for accelerated decay
+  static int thresholdStressFailure =
+      2; // stress > bondEnergy * this = collapse
+  static int thresholdVibrationBreak =
+      200; // vibration level that breaks weak cells
+  static int thresholdAlgaeBloom = 12; // nearby algae for bloom die-off
 
   // ===================================================================
   // DISTANCES — sensing and interaction ranges
   // ===================================================================
-  static int distAntScan = 8;               // ant horizontal scan distance
-  static int distForagerScan = 12;           // forager scan distance
-  static int distLightRadius = 8;           // luminance flood fill radius
-  static int distWindShelter = 3;           // terrain wind sheltering distance
-  static int distVibrationSpread = 1;       // vibration propagation per tick
+  static int distAntScan = 8; // ant horizontal scan distance
+  static int distForagerScan = 12; // forager scan distance
+  static int distLightRadius = 8; // luminance flood fill radius
+  static int distWindShelter = 3; // terrain wind sheltering distance
+  static int distVibrationSpread = 1; // vibration propagation per tick
 
   /// Load tuning from JSON (Optuna results).
   static void loadFromJson(Map<String, dynamic> json) {
@@ -4466,7 +4750,8 @@ class SimTuning {
     'throttleDirtErosion': (value) => throttleDirtErosion = value,
     'throttlePlantHydration': (value) => throttlePlantHydration = value,
     'throttlePlantGrow': (value) => throttlePlantGrow = value,
-    'throttlePlantPhotosynthesis': (value) => throttlePlantPhotosynthesis = value,
+    'throttlePlantPhotosynthesis': (value) =>
+        throttlePlantPhotosynthesis = value,
     'throttlePlantSeed': (value) => throttlePlantSeed = value,
     'throttleLavaCool': (value) => throttleLavaCool = value,
     'throttleMetalHeat': (value) => throttleMetalHeat = value,
@@ -4484,7 +4769,8 @@ class SimTuning {
     'thresholdPHAcidDamage': (value) => thresholdPHAcidDamage = value,
     'thresholdPHOptimalLo': (value) => thresholdPHOptimalLo = value,
     'thresholdPHOptimalHi': (value) => thresholdPHOptimalHi = value,
-    'thresholdLightPhotosynthesis': (value) => thresholdLightPhotosynthesis = value,
+    'thresholdLightPhotosynthesis': (value) =>
+        thresholdLightPhotosynthesis = value,
     'thresholdLightFungusMax': (value) => thresholdLightFungusMax = value,
     'thresholdTempHot': (value) => thresholdTempHot = value,
     'thresholdTempWarm': (value) => thresholdTempWarm = value,

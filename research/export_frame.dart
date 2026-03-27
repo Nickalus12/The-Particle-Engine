@@ -543,38 +543,38 @@ void _applyElementOverride(
   );
 
   if (density != null) {
-    elementDensity[elementId] = density.clamp(0, 255) as int;
+    elementDensity[elementId] = density.clamp(0, 255);
   }
   if (gravity != null) {
-    elementGravity[elementId] = gravity.clamp(-128, 127) as int;
+    elementGravity[elementId] = gravity.clamp(-128, 127);
   }
   if (viscosity != null) {
-    elementViscosity[elementId] = viscosity.clamp(0, 255) as int;
+    elementViscosity[elementId] = viscosity.clamp(0, 255);
   }
   if (surfaceTension != null) {
-    elementSurfaceTension[elementId] = surfaceTension.clamp(0, 255) as int;
+    elementSurfaceTension[elementId] = surfaceTension.clamp(0, 255);
   }
   if (reactivity != null) {
-    elementReactivity[elementId] = reactivity.clamp(0, 255) as int;
+    elementReactivity[elementId] = reactivity.clamp(0, 255);
   }
   if (reductionPotential != null) {
     elementReductionPotential[elementId] =
-        reductionPotential.clamp(-128, 127) as int;
+        reductionPotential.clamp(-128, 127);
   }
   if (bondEnergy != null) {
-    elementBondEnergy[elementId] = bondEnergy.clamp(0, 255) as int;
+    elementBondEnergy[elementId] = bondEnergy.clamp(0, 255);
   }
   if (fuelValue != null) {
-    elementFuelValue[elementId] = fuelValue.clamp(0, 255) as int;
+    elementFuelValue[elementId] = fuelValue.clamp(0, 255);
   }
   if (ignitionTemp != null) {
-    elementIgnitionTemp[elementId] = ignitionTemp.clamp(0, 255) as int;
+    elementIgnitionTemp[elementId] = ignitionTemp.clamp(0, 255);
   }
   if (electronMobility != null) {
-    elementElectronMobility[elementId] = electronMobility.clamp(0, 255) as int;
+    elementElectronMobility[elementId] = electronMobility.clamp(0, 255);
   }
   if (dielectric != null) {
-    elementDielectric[elementId] = dielectric.clamp(0, 255) as int;
+    elementDielectric[elementId] = dielectric.clamp(0, 255);
   }
 
   applied.add('element:$name');

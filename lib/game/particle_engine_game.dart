@@ -42,6 +42,7 @@ class ParticleEngineGame extends FlameGame
     this.isBlankCanvas = false,
     this.loadState,
     this.worldName,
+    this.viewportGlobalToLocal,
     this.gridWidth = 320,
     this.gridHeight = 180,
     this.cellSize = 4.0,
@@ -75,6 +76,10 @@ class ParticleEngineGame extends FlameGame
 
   /// User-provided world name (for save metadata).
   final String? worldName;
+
+  /// Converts a global pointer position from the enclosing Flutter widget tree
+  /// into the GameWidget viewport's local coordinate space.
+  final Offset Function(Offset globalPosition)? viewportGlobalToLocal;
 
   /// Typed accessor for the sandbox world.
   SandboxWorld get sandboxWorld => world as SandboxWorld;
@@ -217,6 +222,9 @@ class ParticleEngineGame extends FlameGame
   void onScaleStart(ScaleStartInfo info) {
     _startZoom = camera.viewfinder.zoom;
     _pointerCount = info.pointerCount;
+    if (!isDesktop) {
+      return;
+    }
     // Single finger: forward to sandbox for painting
     if (_pointerCount == 1) {
       sandboxWorld.sandboxComponent.colonySpawnedThisGesture = false;
@@ -226,6 +234,9 @@ class ParticleEngineGame extends FlameGame
 
   @override
   void onScaleUpdate(ScaleUpdateInfo info) {
+    if (!isDesktop) {
+      if (_pointerCount < 2) return;
+    }
     if (_pointerCount < 2) {
       // Single finger: forward continuous drag to sandbox for painting
       _paintFromScreenPosition(info.raw.focalPoint);
@@ -247,7 +258,7 @@ class ParticleEngineGame extends FlameGame
 
   @override
   void onScaleEnd(ScaleEndInfo info) {
-    if (_pointerCount == 1) {
+    if (isDesktop && _pointerCount == 1) {
       enterCreationMode();
       // Reset paint interpolation state
       sandboxWorld.sandboxComponent.lastPaintX = null;
@@ -258,11 +269,10 @@ class ParticleEngineGame extends FlameGame
 
   /// Convert a screen-space position to world coordinates and paint.
   void _paintFromScreenPosition(Offset screenPos) {
-    // Convert screen position to world coordinates via the camera
-    final worldPos = camera.viewfinder.transform.globalToLocal(
-      Vector2(screenPos.dx, screenPos.dy),
+    final viewportPos = viewportGlobalToLocal?.call(screenPos) ?? screenPos;
+    sandboxWorld.sandboxComponent.paintAtScreen(
+      Vector2(viewportPos.dx, viewportPos.dy),
     );
-    sandboxWorld.sandboxComponent.paintAt(worldPos);
   }
 
   // ---------------------------------------------------------------------------
@@ -440,10 +450,8 @@ class ParticleEngineGame extends FlameGame
   static const String overlayPeriodicTable = 'periodic_table';
 
   /// All creation-mode overlays shown/hidden as a group.
-  /// Note: overlayBottomBar is managed via showBottomBar notifier, not overlays.
-  static const List<String> _creationOverlays = [
-    overlayToolbar,
-  ];
+  /// Mobile creation HUD is managed by [showBottomBar] at the screen layer.
+  static const List<String> _creationOverlays = [];
 
   // ---------------------------------------------------------------------------
   // Two-state HUD mode (observation ↔ creation)

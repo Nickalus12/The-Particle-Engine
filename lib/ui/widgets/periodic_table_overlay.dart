@@ -618,7 +618,6 @@ class _PeriodicTableOverlayState extends State<PeriodicTableOverlay>
                             builder: (context, constraints) {
                               final horizontal = constraints.maxWidth >= 1120;
                               final table = _buildTablePane(
-                                constraints,
                                 horizontal,
                                 activeColor,
                               );
@@ -814,7 +813,6 @@ class _PeriodicTableOverlayState extends State<PeriodicTableOverlay>
   }
 
   Widget _buildTablePane(
-    BoxConstraints _constraints,
     bool horizontal,
     Color accent,
   ) {

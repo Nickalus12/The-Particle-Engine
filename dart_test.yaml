@@ -1,0 +1,7 @@
+tags:
+  performance:
+    timeout: 5x
+  performance_gate:
+    timeout: 5x
+  soak:
+    timeout: 10x

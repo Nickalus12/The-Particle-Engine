@@ -63,3 +63,10 @@ research/cloud/.github.env
 research/cloud/last_training_plan.json
 research/cloud/training_system_summary.json
 research/cloud/pipeline_summary.json
+
+# Performance observability artifacts
+reports/performance/runs/
+observability/data/
+research/telemetry/perf_history.sqlite
+research/telemetry/perf_history.duckdb
+research/telemetry/perf_history.jsonl

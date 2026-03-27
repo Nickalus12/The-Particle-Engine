@@ -14,6 +14,10 @@ class SaveStorage {
     await prefs.setString(_key(name), value);
   }
 
+  Future<void> writeAtomic(String name, String value) async {
+    await write(name, value);
+  }
+
   Future<String?> read(String name) async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_key(name));

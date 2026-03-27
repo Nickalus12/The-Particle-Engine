@@ -143,6 +143,13 @@ class ReactionRegistry {
         if (rules == null) continue;
 
         for (final rule in rules) {
+          final sourceTemp = sim.temperature[idx];
+          if (rule.requiresMinTemp > 0 && sourceTemp < rule.requiresMinTemp) {
+            continue;
+          }
+          if (rule.requiresMaxTemp > 0 && sourceTemp > rule.requiresMaxTemp) {
+            continue;
+          }
           if (rule.probability < 1.0 &&
               sim.rng.nextDouble() > rule.probability) {
             continue;

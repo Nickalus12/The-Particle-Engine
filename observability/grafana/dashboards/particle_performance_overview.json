@@ -1,0 +1,337 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "expr": "sum(particle_engine_tests_failed{profile=~\"$profile\"})",
+          "refId": "A"
+        }
+      ],
+      "title": "Failed Tests (Run Health)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(particle_engine_targets_timed_out_total{profile=~\"$profile\"})",
+          "refId": "A"
+        }
+      ],
+      "title": "Timed-Out Targets",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(particle_engine_telemetry_complete_total{profile=~\"$profile\"})",
+          "refId": "A"
+        }
+      ],
+      "title": "Telemetry Complete Runs",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "id": 4,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(particle_engine_test_duration_ms_bucket{profile=~\"$profile\"}[5m])))",
+          "legendFormat": "p95 duration ms",
+          "refId": "A"
+        }
+      ],
+      "title": "Frame/Test P95 Duration",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": 5,
+      "targets": [
+        {
+          "expr": "sum by (suite, scenario, metric_key) (particle_engine_scenario_metric_value{profile=~\"$profile\",suite=~\"physics_integrity|engine_soak|game_loop\"})",
+          "legendFormat": "{{suite}}/{{scenario}}/{{metric_key}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Physics Integrity + Atmospherics Metrics",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "id": 6,
+      "targets": [
+        {
+          "expr": "sum by (target, outcome) (rate(particle_engine_test_duration_ms_count{profile=~\"$profile\"}[10m]))",
+          "legendFormat": "{{target}} {{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Pipeline Reliability by Target/Outcome",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 26
+      },
+      "id": 7,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(particle_engine_visual_diff_ratio_bucket{profile=~\"$profile\"}[10m])))",
+          "legendFormat": "visual diff ratio p95",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(particle_engine_visual_ssim_bucket{profile=~\"$profile\"}[10m])))",
+          "legendFormat": "visual SSIM p95",
+          "refId": "B"
+        }
+      ],
+      "title": "Visual Regression Quality",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 26
+      },
+      "id": 8,
+      "targets": [
+        {
+          "expr": "sum(particle_engine_visual_failed_total{profile=~\"$profile\"})",
+          "refId": "A"
+        }
+      ],
+      "title": "Visual Failures",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      },
+      "id": 9,
+      "targets": [
+        {
+          "expr": "sum by (metric_key) (particle_engine_scenario_metric_value{profile=~\"$profile\",suite=\"atmospherics\",metric_key=~\"cloud_cluster_coherence|cloud_temporal_smoothness|isolated_water_dots|isolated_cloud_dots\"})",
+          "legendFormat": "{{metric_key}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Atmospherics Morphology",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": [
+    "particle-engine",
+    "performance",
+    "physics"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": true,
+          "text": ".*",
+          "value": ".*"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(particle_engine_tests_total, profile)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Profile",
+        "multi": false,
+        "name": "profile",
+        "options": [],
+        "query": {
+          "query": "label_values(particle_engine_tests_total, profile)",
+          "refId": "Prometheus-profile-Variable-Query"
+        },
+        "refresh": 2,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Particle Engine Performance Overview",
+  "uid": "particle-perf-overview",
+  "version": 1,
+  "weekStart": ""
+}

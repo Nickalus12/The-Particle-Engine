@@ -378,6 +378,7 @@ class FeaturePlacer {
   ) {
     if (config.waterLevel <= 0) return;
 
+    _carveRiverCorridors(data, config, heightmap);
     _fillDepressions(data, config, heightmap);
 
     if (config.vegetation >= 0.8 && config.terrainScale < 1.0) {
@@ -487,6 +488,85 @@ class FeaturePlacer {
         }
       }
     }
+
+    _refineShorelines(data, config, heightmap);
+  }
+
+  static void _carveRiverCorridors(
+    GridData data,
+    WorldConfig config,
+    List<int> heightmap,
+  ) {
+    if (config.waterLevel < 0.22) return;
+
+    final humidityNoise = SimplexNoise(config.seed + 2400);
+    final sourceCount = (config.width / 90).round().clamp(1, 4);
+    final step = (config.width / (sourceCount + 1)).round().clamp(18, config.width);
+
+    for (var source = step; source < config.width - step; source += step) {
+      final humidity = (humidityNoise.noise2D(source / 12.0, 1.0) + 1.0) * 0.5;
+      if (humidity < 0.52) continue;
+
+      int currentX = source;
+      int currentY = heightmap[currentX];
+      final width = humidity > 0.72 ? 2 : 1;
+      var steps = 0;
+
+      while (currentX > 3 && currentX < config.width - 4 && currentY < config.height - 8 && steps < config.width) {
+        _carveRiverStamp(data, config, heightmap, currentX, currentY, width);
+        final nextX = _chooseDownhillDirection(heightmap, currentX);
+        if (nextX == currentX) break;
+        currentX = nextX;
+        currentY = heightmap[currentX];
+        steps++;
+      }
+    }
+  }
+
+  static int _chooseDownhillDirection(List<int> heightmap, int x) {
+    var bestX = x;
+    var bestHeight = heightmap[x];
+    for (var dx = -2; dx <= 2; dx++) {
+      final nx = x + dx;
+      if (nx <= 1 || nx >= heightmap.length - 2) continue;
+      final candidate = heightmap[nx];
+      if (candidate > bestHeight) {
+        bestHeight = candidate;
+        bestX = nx;
+      }
+    }
+    return bestX;
+  }
+
+  static void _carveRiverStamp(
+    GridData data,
+    WorldConfig config,
+    List<int> heightmap,
+    int centerX,
+    int surfaceY,
+    int halfWidth,
+  ) {
+    for (var dx = -halfWidth; dx <= halfWidth; dx++) {
+      final x = centerX + dx;
+      if (x <= 1 || x >= config.width - 2) continue;
+      final normalized = halfWidth == 0 ? 1.0 : 1.0 - (dx.abs() / (halfWidth + 0.2));
+      final carveDepth = max(1, (1 + normalized * (config.waterLevel > 0.5 ? 3 : 2)).round());
+
+      for (var y = surfaceY - 1; y < surfaceY + carveDepth; y++) {
+        if (!data.inBounds(x, y)) continue;
+        final el = data.get(x, y);
+        if (el == El.empty || el == El.dirt || el == El.compost || el == El.clay || el == El.sand) {
+          data.set(x, y, El.water);
+          data.setTemp(x, y, 120);
+        }
+      }
+
+      for (var y = surfaceY + carveDepth; y <= surfaceY + carveDepth + 1; y++) {
+        if (data.inBounds(x, y) && data.get(x, y) == El.dirt) {
+          data.set(x, y, El.sand);
+        }
+      }
+    }
   }
 
   static void _placeMeadowStreams(
@@ -516,6 +596,34 @@ class FeaturePlacer {
         if (data.get(x, surfY - 1) == El.empty &&
             data.get(x, surfY) == El.dirt) {
           data.set(x, surfY, El.water);
+        }
+      }
+    }
+  }
+
+  static void _refineShorelines(
+    GridData data,
+    WorldConfig config,
+    List<int> heightmap,
+  ) {
+    for (var x = 1; x < config.width - 1; x++) {
+      final surfaceY = heightmap[x];
+      for (var y = surfaceY - 2; y <= surfaceY + 4; y++) {
+        if (!data.inBounds(x, y)) continue;
+
+        bool nearWater = false;
+        for (var dx = -2; dx <= 2 && !nearWater; dx++) {
+          for (var dy = -2; dy <= 2 && !nearWater; dy++) {
+            if (data.get(x + dx, y + dy) == El.water) {
+              nearWater = true;
+            }
+          }
+        }
+        if (!nearWater) continue;
+
+        final el = data.get(x, y);
+        if (el == El.dirt || el == El.compost) {
+          data.set(x, y, y <= surfaceY + 1 ? El.sand : El.clay);
         }
       }
     }
@@ -1187,9 +1295,13 @@ class FeaturePlacer {
       if (surfaceY <= 3 || surfaceY >= config.height - 5) continue;
 
       final surfaceEl = data.get(x, surfaceY);
-      if (surfaceEl != El.dirt) continue;
+      if (surfaceEl != El.dirt && surfaceEl != El.sand && surfaceEl != El.clay) continue;
 
       if (data.get(x, surfaceY - 1) != El.empty) continue;
+
+      final slope =
+          (heightmap[(x - 1).clamp(0, config.width - 1)] - heightmap[(x + 1).clamp(0, config.width - 1)]).abs();
+      if (slope > 10) continue;
 
       final density = clusterNoise.noise2D(x / 15.0, 0.0);
       final clusterFactor = ((density + 1.0) * 0.5).clamp(0.0, 1.0);
@@ -1204,7 +1316,10 @@ class FeaturePlacer {
       }
 
       final baseChance = config.vegetation * clusterFactor;
-      final chance = moist ? baseChance * 0.7 : baseChance * 0.30;
+      final fertileSurface = surfaceEl == El.dirt || surfaceEl == El.clay;
+      final chance = moist
+          ? baseChance * (fertileSurface ? 0.92 : 0.55)
+          : baseChance * (fertileSurface ? 0.34 : 0.12);
 
       if (rng.nextDouble() < chance) {
         if (clusterFactor > 0.45 && rng.nextDouble() < 0.45) {

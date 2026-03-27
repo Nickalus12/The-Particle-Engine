@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flame/components.dart';
+import 'package:flutter/foundation.dart';
 
 import '../creatures/ant.dart';
 import '../creatures/creature_registry.dart';
@@ -103,6 +104,7 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
   @override
   Future<void> onLoad() async {
     await super.onLoad();
+    final loadStopwatch = Stopwatch()..start();
 
     // Grid dimensions flow from the game instance.
     final gridW = game.gridWidth;
@@ -136,7 +138,11 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
       );
     } else if (!game.isBlankCanvas && game.worldConfig != null) {
       // Generate procedural world from config.
-      final gridData = WorldGenerator.generate(game.worldConfig!);
+      final runtimeConfig = game.worldConfig!.copyWith(
+        width: gridW,
+        height: gridH,
+      );
+      final gridData = WorldGenerator.generate(runtimeConfig);
       gridData.loadIntoEngine(simulation);
     } else if (!game.isBlankCanvas && game.worldConfig == null) {
       // Default: generate a meadow world.
@@ -180,6 +186,17 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
         ..priority = 4,
       giPostProcess..priority = 5,
     ]);
+
+    loadStopwatch.stop();
+    assert(() {
+      debugPrint(
+        'SandboxWorld loaded ${simulation.gridW}x${simulation.gridH}'
+        ' in ${loadStopwatch.elapsedMilliseconds}ms'
+        ' loadState=${game.loadState != null}'
+        ' generated=${!game.isBlankCanvas}',
+      );
+      return true;
+    }());
   }
 
   @override
@@ -259,9 +276,15 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
     if (!_autoSaveInFlight) {
       _autoSaveInFlight = true;
       unawaited(
-        _saveService.tickAutoSave(captureGameState).whenComplete(() {
-          _autoSaveInFlight = false;
-        }),
+        _saveService
+            .tickAutoSave(
+              dtSeconds: dt,
+              paused: paused,
+              stateProvider: captureGameState,
+            )
+            .whenComplete(() {
+              _autoSaveInFlight = false;
+            }),
       );
     }
   }

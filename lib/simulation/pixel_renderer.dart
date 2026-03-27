@@ -2,7 +2,8 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'image_builder_stub.dart'
-    if (dart.library.ui) 'image_builder_ui.dart' as image_builder;
+    if (dart.library.ui) 'image_builder_ui.dart'
+    as image_builder;
 
 import 'element_registry.dart';
 import 'simulation_engine.dart';
@@ -88,30 +89,76 @@ class PixelRenderer {
     _rockTintG = Uint8List(maxElements);
     _rockTintB = Uint8List(maxElements);
     // Populate rock tint for solid terrain elements
-    _rockTintR[El.stone] = 80;  _rockTintG[El.stone] = 80;  _rockTintB[El.stone] = 90;
-    _rockTintR[El.dirt]  = 90;  _rockTintG[El.dirt]  = 60;  _rockTintB[El.dirt]  = 30;
-    _rockTintR[El.sand]  = 110; _rockTintG[El.sand]  = 100; _rockTintB[El.sand]  = 70;
-    _rockTintR[El.mud]   = 60;  _rockTintG[El.mud]   = 40;  _rockTintB[El.mud]   = 25;
-    _rockTintR[El.clay]  = 100; _rockTintG[El.clay]  = 68;  _rockTintB[El.clay]  = 45;
-    _rockTintR[El.charcoal] = 30; _rockTintG[El.charcoal] = 30; _rockTintB[El.charcoal] = 32;
-    _rockTintR[El.copper] = 95; _rockTintG[El.copper] = 58; _rockTintB[El.copper] = 26;
-    _rockTintR[El.salt]  = 120; _rockTintG[El.salt]  = 116; _rockTintB[El.salt]  = 112;
-    _rockTintR[El.sulfur] = 106; _rockTintG[El.sulfur] = 100; _rockTintB[El.sulfur] = 16;
-    _rockTintR[El.rust]  = 80;  _rockTintG[El.rust]  = 36;  _rockTintB[El.rust]  = 16;
-    _rockTintR[El.compost] = 40; _rockTintG[El.compost] = 22; _rockTintB[El.compost] = 6;
+    _rockTintR[El.stone] = 80;
+    _rockTintG[El.stone] = 80;
+    _rockTintB[El.stone] = 90;
+    _rockTintR[El.dirt] = 90;
+    _rockTintG[El.dirt] = 60;
+    _rockTintB[El.dirt] = 30;
+    _rockTintR[El.sand] = 110;
+    _rockTintG[El.sand] = 100;
+    _rockTintB[El.sand] = 70;
+    _rockTintR[El.mud] = 60;
+    _rockTintG[El.mud] = 40;
+    _rockTintB[El.mud] = 25;
+    _rockTintR[El.clay] = 100;
+    _rockTintG[El.clay] = 68;
+    _rockTintB[El.clay] = 45;
+    _rockTintR[El.charcoal] = 30;
+    _rockTintG[El.charcoal] = 30;
+    _rockTintB[El.charcoal] = 32;
+    _rockTintR[El.copper] = 95;
+    _rockTintG[El.copper] = 58;
+    _rockTintB[El.copper] = 26;
+    _rockTintR[El.salt] = 120;
+    _rockTintG[El.salt] = 116;
+    _rockTintB[El.salt] = 112;
+    _rockTintR[El.sulfur] = 106;
+    _rockTintG[El.sulfur] = 100;
+    _rockTintB[El.sulfur] = 16;
+    _rockTintR[El.rust] = 80;
+    _rockTintG[El.rust] = 36;
+    _rockTintB[El.rust] = 16;
+    _rockTintR[El.compost] = 40;
+    _rockTintG[El.compost] = 22;
+    _rockTintB[El.compost] = 6;
     // Periodic table ore tints
-    _rockTintR[El.gold] = 128; _rockTintG[El.gold] = 100; _rockTintB[El.gold] = 10;
-    _rockTintR[El.silver] = 96; _rockTintG[El.silver] = 96; _rockTintB[El.silver] = 100;
-    _rockTintR[El.platinum] = 110; _rockTintG[El.platinum] = 110; _rockTintB[El.platinum] = 112;
-    _rockTintR[El.aluminum] = 95; _rockTintG[El.aluminum] = 97; _rockTintB[El.aluminum] = 102;
-    _rockTintR[El.titanium] = 68; _rockTintG[El.titanium] = 68; _rockTintB[El.titanium] = 65;
-    _rockTintR[El.tungsten] = 64; _rockTintG[El.tungsten] = 64; _rockTintB[El.tungsten] = 64;
-    _rockTintR[El.uranium] = 37; _rockTintG[El.uranium] = 64; _rockTintB[El.uranium] = 37;
-    _rockTintR[El.thorium] = 72; _rockTintG[El.thorium] = 76; _rockTintB[El.thorium] = 76;
-    _rockTintR[El.carbon] = 88; _rockTintG[El.carbon] = 116; _rockTintB[El.carbon] = 128;
-    _rockTintR[El.tin] = 104; _rockTintG[El.tin] = 104; _rockTintB[El.tin] = 104;
-    _rockTintR[El.nickel] = 96; _rockTintG[El.nickel] = 96; _rockTintB[El.nickel] = 88;
-    _rockTintR[El.cobalt] = 48; _rockTintG[El.cobalt] = 56; _rockTintB[El.cobalt] = 88;
+    _rockTintR[El.gold] = 128;
+    _rockTintG[El.gold] = 100;
+    _rockTintB[El.gold] = 10;
+    _rockTintR[El.silver] = 96;
+    _rockTintG[El.silver] = 96;
+    _rockTintB[El.silver] = 100;
+    _rockTintR[El.platinum] = 110;
+    _rockTintG[El.platinum] = 110;
+    _rockTintB[El.platinum] = 112;
+    _rockTintR[El.aluminum] = 95;
+    _rockTintG[El.aluminum] = 97;
+    _rockTintB[El.aluminum] = 102;
+    _rockTintR[El.titanium] = 68;
+    _rockTintG[El.titanium] = 68;
+    _rockTintB[El.titanium] = 65;
+    _rockTintR[El.tungsten] = 64;
+    _rockTintG[El.tungsten] = 64;
+    _rockTintB[El.tungsten] = 64;
+    _rockTintR[El.uranium] = 37;
+    _rockTintG[El.uranium] = 64;
+    _rockTintB[El.uranium] = 37;
+    _rockTintR[El.thorium] = 72;
+    _rockTintG[El.thorium] = 76;
+    _rockTintB[El.thorium] = 76;
+    _rockTintR[El.carbon] = 88;
+    _rockTintG[El.carbon] = 116;
+    _rockTintB[El.carbon] = 128;
+    _rockTintR[El.tin] = 104;
+    _rockTintG[El.tin] = 104;
+    _rockTintB[El.tin] = 104;
+    _rockTintR[El.nickel] = 96;
+    _rockTintG[El.nickel] = 96;
+    _rockTintB[El.nickel] = 88;
+    _rockTintR[El.cobalt] = 48;
+    _rockTintG[El.cobalt] = 56;
+    _rockTintB[El.cobalt] = 88;
   }
 
   void generateStars() {
@@ -143,7 +190,12 @@ class PixelRenderer {
   void spawnParticle(int x, int y, int r, int g, int b, int frames) {
     if (_microParticles.length >= _maxMicroParticles) return;
     final p = Int32List(6);
-    p[0] = x; p[1] = y; p[2] = r; p[3] = g; p[4] = b; p[5] = frames;
+    p[0] = x;
+    p[1] = y;
+    p[2] = r;
+    p[3] = g;
+    p[4] = b;
+    p[5] = frames;
     _microParticles.add(p);
   }
 
@@ -216,6 +268,44 @@ class PixelRenderer {
     return (top + ((bot - top) * fy) ~/ 256).clamp(0, 255);
   }
 
+  @pragma('vm:prefer-inline')
+  bool _countsAsTerrainCeiling(int idx, int el) {
+    if (el == El.empty ||
+        el == El.sand ||
+        el == El.mud ||
+        el == El.snow ||
+        el == El.ash ||
+        el == El.bubble ||
+        el == El.spore ||
+        el == El.web) {
+      return false;
+    }
+
+    final physicsState = elementPhysicsState[el];
+    if (physicsState == PhysicsState.gas.index ||
+        physicsState == PhysicsState.liquid.index ||
+        physicsState == PhysicsState.granular.index) {
+      return false;
+    }
+
+    final support = engine.support[idx];
+    final age = engine.cellAge[idx];
+    // Freshly painted or currently unstable cells should not instantly turn
+    // the air beneath them into cave atmosphere while the user is dragging.
+    if (support < 24 && age < 10) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /// Force atmosphere/underground caches to refresh on the next render.
+  /// This is needed after interactive paint strokes so cave lighting and
+  /// ground classification do not lag behind the edited world.
+  void invalidateAtmosphereCaches() {
+    _groundLevelAge = 8;
+  }
+
   /// Update the cached ground level for each column. Scans from top down
   /// to find the first THICK solid terrain per column. Requires 3+ consecutive
   /// solid cells to count as ground — prevents a single placed element from
@@ -228,12 +318,9 @@ class PixelRenderer {
       int level = h; // default: no ground found
       int consecutive = 0;
       for (int y = 0; y < h; y++) {
-        final el = g[y * w + x];
-        if (el == El.stone || el == El.dirt || el == El.metal ||
-            el == El.sand || el == El.mud || el == El.wood ||
-            el == El.glass || el == El.ice || el == El.clay ||
-            el == El.charcoal || el == El.copper || el == El.salt ||
-            el == El.sulfur || el == El.rust || el == El.compost) {
+        final idx = y * w + x;
+        final el = g[idx];
+        if (_countsAsTerrainCeiling(idx, el)) {
           consecutive++;
           if (consecutive >= 5) {
             level = y - 4; // top of the 5-cell solid run
@@ -301,7 +388,9 @@ class PixelRenderer {
           final vertDist = y - groundY;
           final totalDist = vertDist + horizDist;
           final light = 255 - totalDist * 16;
-          _caveLightLevel[y * w + x] = light > 0 ? (light < 256 ? light : 255) : 0;
+          _caveLightLevel[y * w + x] = light > 0
+              ? (light < 256 ? light : 255)
+              : 0;
         }
       }
     }
@@ -334,6 +423,11 @@ class PixelRenderer {
     // glowMul256 = (1 + t*2) * 256 = 256 + t*512
     final glowMul256 = 256 + (t256 << 1); // [256, 768]
 
+    // Lazily initialize stars so night rendering is safe even if callers
+    // forgot to call generateStars() up front.
+    if (t256 > 13 && !_starsGenerated) {
+      generateStars();
+    }
     final starSet = t256 > 13 ? _starSet : const <int>{}; // t > ~0.05
 
     // Pre-compute sky gradient stops interpolated between day and night
@@ -359,8 +453,14 @@ class PixelRenderer {
     final nightBoostG = nightBoost ~/ 5; // ≈ nightBoost * 0.2
     final nightShimmer = (t256 * 50) >> 8; // ≈ t * 50
     final nightSmokeBoost = (t256 * 20) >> 8; // ≈ t * 20
-    final nightDimWater = (256 - (t256 * 38 >> 8)).clamp(0, 256); // ≈ 256*(1-t*0.15)
-    final nightDimGeneral = (256 - (t256 * 51 >> 8)).clamp(0, 256); // ≈ 256*(1-t*0.2)
+    final nightDimWater = (256 - (t256 * 38 >> 8)).clamp(
+      0,
+      256,
+    ); // ≈ 256*(1-t*0.15)
+    final nightDimGeneral = (256 - (t256 * 51 >> 8)).clamp(
+      0,
+      256,
+    ); // ≈ 256*(1-t*0.2)
 
     final dayNightTransitioning = t256 != _prevNightT256;
     _prevNightT256 = t256;
@@ -388,7 +488,8 @@ class PixelRenderer {
         int glowRadius = 3;
 
         // Special case: heated stone/metal emits light dynamically
-        final isHeatedSolid = (el == El.stone || el == El.metal) && engine.velX[i] > 2;
+        final isHeatedSolid =
+            (el == El.stone || el == El.metal) && engine.velX[i] > 2;
         if (isHeatedSolid) {
           final heatLevel = engine.velX[i].clamp(0, 5);
           emission = (heatLevel * 40).clamp(0, 200);
@@ -435,10 +536,15 @@ class PixelRenderer {
             // warm tint to nearby non-empty cells (prevents dark halos)
             final neighborEl = g[ni];
             // Treat transparent gases (oxygen, hydrogen) same as empty for glow
-            final isTarget = neighborEl == El.empty ||
-                neighborEl == El.oxygen || neighborEl == El.hydrogen;
-            final isTintable = !isTarget && neighborEl != el &&
-                neighborEl != El.fire && neighborEl != El.lava &&
+            final isTarget =
+                neighborEl == El.empty ||
+                neighborEl == El.oxygen ||
+                neighborEl == El.hydrogen;
+            final isTintable =
+                !isTarget &&
+                neighborEl != el &&
+                neighborEl != El.fire &&
+                neighborEl != El.lava &&
                 neighborEl != El.lightning;
             if (!isTarget && !isTintable) continue;
 
@@ -500,7 +606,8 @@ class PixelRenderer {
             final pi4 = i * 4;
 
             // Transparent atmospheric gases above ground render as sky
-            final isTransparentGas = (el == El.oxygen || el == El.hydrogen) &&
+            final isTransparentGas =
+                (el == El.oxygen || el == El.hydrogen) &&
                 !_isUnderground(x, y, w, g);
             if (el == El.empty || isTransparentGas) {
               // Check if this empty cell is underground (cave atmosphere)
@@ -537,22 +644,42 @@ class PixelRenderer {
                 if (y > 0) {
                   final nEl = g[i - w];
                   final nr = _rockTintR[nEl];
-                  if (nr > 0) { tintR = tintR + nr; tintG = tintG + _rockTintG[nEl]; tintB = tintB + _rockTintB[nEl]; tintCount++; }
+                  if (nr > 0) {
+                    tintR = tintR + nr;
+                    tintG = tintG + _rockTintG[nEl];
+                    tintB = tintB + _rockTintB[nEl];
+                    tintCount++;
+                  }
                 }
                 if (y < h - 1) {
                   final nEl = g[i + w];
                   final nr = _rockTintR[nEl];
-                  if (nr > 0) { tintR = tintR + nr; tintG = tintG + _rockTintG[nEl]; tintB = tintB + _rockTintB[nEl]; tintCount++; }
+                  if (nr > 0) {
+                    tintR = tintR + nr;
+                    tintG = tintG + _rockTintG[nEl];
+                    tintB = tintB + _rockTintB[nEl];
+                    tintCount++;
+                  }
                 }
                 if (x > 0) {
                   final nEl = g[i - 1];
                   final nr = _rockTintR[nEl];
-                  if (nr > 0) { tintR = tintR + nr; tintG = tintG + _rockTintG[nEl]; tintB = tintB + _rockTintB[nEl]; tintCount++; }
+                  if (nr > 0) {
+                    tintR = tintR + nr;
+                    tintG = tintG + _rockTintG[nEl];
+                    tintB = tintB + _rockTintB[nEl];
+                    tintCount++;
+                  }
                 }
                 if (x < w - 1) {
                   final nEl = g[i + 1];
                   final nr = _rockTintR[nEl];
-                  if (nr > 0) { tintR = tintR + nr; tintG = tintG + _rockTintG[nEl]; tintB = tintB + _rockTintB[nEl]; tintCount++; }
+                  if (nr > 0) {
+                    tintR = tintR + nr;
+                    tintG = tintG + _rockTintG[nEl];
+                    tintB = tintB + _rockTintB[nEl];
+                    tintCount++;
+                  }
                 }
                 if (tintCount > 0) {
                   emptyR = emptyR + (tintR * 26) ~/ (tintCount * 256);
@@ -565,7 +692,10 @@ class PixelRenderer {
                   emptyB = emptyB + (currentMoist >> 4);
                 }
 
-                final dustHash = _smoothHash(x * 53 + fc ~/ 8, y * 37 + fc ~/ 12);
+                final dustHash = _smoothHash(
+                  x * 53 + fc ~/ 8,
+                  y * 37 + fc ~/ 12,
+                );
                 if (dustHash % 180 == 0) {
                   final baseDustBright = 25 + (dustHash >> 8) % 20;
                   final dustScale = 64 + (caveLight * 192 ~/ 255);
@@ -593,7 +723,8 @@ class PixelRenderer {
                   emptyB = skyMidB + (((skyBotB - skyMidB) * segFrac) >> 8);
                 }
                 if (y > horizonStartY) {
-                  final horFrac = ((y - horizonStartY) * 256) ~/ (h - horizonStartY);
+                  final horFrac =
+                      ((y - horizonStartY) * 256) ~/ (h - horizonStartY);
                   final horBlend = (horFrac * 38) >> 8;
                   emptyR = emptyR + (((skyHorR - emptyR) * horBlend) >> 8);
                   emptyG = emptyG + (((skyHorG - emptyG) * horBlend) >> 8);
@@ -603,10 +734,20 @@ class PixelRenderer {
                 // PHASE 10: Atmospheric Light Scattering (Haze)
                 // Humid air catches light from the glow buffer much more strongly
                 if (currentMoist > 50 && _glowBuffersValid) {
-                   final scattering = (currentMoist * 30) >> 8; // 0-30 extra scattering
-                   emptyR = (emptyR + (glowR8[i] * scattering) ~/ 20).clamp(0, 255);
-                   emptyG = (emptyG + (glowG8[i] * scattering) ~/ 20).clamp(0, 255);
-                   emptyB = (emptyB + (glowB8[i] * scattering) ~/ 20).clamp(0, 255);
+                  final scattering =
+                      (currentMoist * 30) >> 8; // 0-30 extra scattering
+                  emptyR = (emptyR + (glowR8[i] * scattering) ~/ 20).clamp(
+                    0,
+                    255,
+                  );
+                  emptyG = (emptyG + (glowG8[i] * scattering) ~/ 20).clamp(
+                    0,
+                    255,
+                  );
+                  emptyB = (emptyB + (glowB8[i] * scattering) ~/ 20).clamp(
+                    0,
+                    255,
+                  );
                 }
               }
 
@@ -638,7 +779,9 @@ class PixelRenderer {
                   final shimmerPhase2 = _fastSinI(hsp2); // [0, 256]
                   // heatIntensity: (cellTemp-170) / 80 as [0, 256]
                   final heatI256 = ((cellTemp - 170) * 256 ~/ 80).clamp(0, 256);
-                  final shimmerAmount = (heatI256 * (shimmerPhase * 18 + shimmerPhase2 * 10)) >> 16;
+                  final shimmerAmount =
+                      (heatI256 * (shimmerPhase * 18 + shimmerPhase2 * 10)) >>
+                      16;
                   // Warm orange-red shimmer tint
                   emptyR = (emptyR + shimmerAmount).clamp(0, 255);
                   emptyG = (emptyG + shimmerAmount ~/ 3).clamp(0, 255);
@@ -666,9 +809,12 @@ class PixelRenderer {
                 if (starIdx != null) {
                   final baseBright = _starBrightness[starIdx];
                   final phase = _starTwinklePhase[starIdx];
-                  final twinkle = _fastSinI((fc * 3 + phase) & 0xFF); // [0, 256]
+                  final twinkle = _fastSinI(
+                    (fc * 3 + phase) & 0xFF,
+                  ); // [0, 256]
                   final starIntensity = (baseBright * twinkle * t256) >> 16;
-                  final starB = (starIntensity * 240) >> 8; // warm tint: B at 94%
+                  final starB =
+                      (starIntensity * 240) >> 8; // warm tint: B at 94%
                   emptyR = (emptyR + starIntensity).clamp(0, 255);
                   emptyG = (emptyG + starIntensity).clamp(0, 255);
                   emptyB = (emptyB + starB).clamp(0, 255);
@@ -678,13 +824,17 @@ class PixelRenderer {
               // Sky cells are always visible (opaque) for the gradient
               // Underground cells too (cave atmosphere)
               // Glow cells use proportional alpha
-              final hasGlow = _glowBuffersValid &&
+              final hasGlow =
+                  _glowBuffersValid &&
                   (glowR8[i] > 0 || glowG8[i] > 0 || glowB8[i] > 0);
               pxBuf[pi4] = emptyR;
               pxBuf[pi4 + 1] = emptyG;
               pxBuf[pi4 + 2] = emptyB;
-              if (underground || hasGlow || starSet.contains(i) ||
-                  pheroFood[i] > 8 || pheroHome[i] > 8) {
+              if (underground ||
+                  hasGlow ||
+                  starSet.contains(i) ||
+                  pheroFood[i] > 8 ||
+                  pheroHome[i] > 8) {
                 pxBuf[pi4 + 3] = 255;
               } else {
                 // Sky: fully opaque so the gradient shows
@@ -699,69 +849,84 @@ class PixelRenderer {
                   const sparkR = 255;
                   final sparkG = 180 + rng.nextInt(75);
                   final sparkB = rng.nextInt(120);
-                  spawnParticle(x + rng.nextInt(3) - 1, y - 1, sparkR, sparkG,
-                      sparkB, 4 + rng.nextInt(4));
+                  spawnParticle(
+                    x + rng.nextInt(3) - 1,
+                    y - 1,
+                    sparkR,
+                    sparkG,
+                    sparkB,
+                    4 + rng.nextInt(4),
+                  );
                 }
               } else if (el == El.lava) {
-                final isLavaSurface =
-                    y > 1 && g[(y - 1) * w + x] == El.empty;
+                final isLavaSurface = y > 1 && g[(y - 1) * w + x] == El.empty;
                 if (isLavaSurface) {
                   if (rng.nextInt(120) < 2) {
                     const emberR = 255;
                     final emberG = 160 + rng.nextInt(95);
                     final emberB = rng.nextInt(80);
-                    spawnParticle(x + rng.nextInt(3) - 1,
-                        y - 1 - rng.nextInt(2), emberR, emberG, emberB,
-                        5 + rng.nextInt(5));
+                    spawnParticle(
+                      x + rng.nextInt(3) - 1,
+                      y - 1 - rng.nextInt(2),
+                      emberR,
+                      emberG,
+                      emberB,
+                      5 + rng.nextInt(5),
+                    );
                   }
                   if (rng.nextInt(200) < 1) {
                     spawnParticle(
-                        x + rng.nextInt(5) - 2,
-                        y - 2 - rng.nextInt(2),
-                        255,
-                        255,
-                        200 + rng.nextInt(55),
-                        3 + rng.nextInt(3));
+                      x + rng.nextInt(5) - 2,
+                      y - 2 - rng.nextInt(2),
+                      255,
+                      255,
+                      200 + rng.nextInt(55),
+                      3 + rng.nextInt(3),
+                    );
                   }
                 } else if (y > 1) {
                   // Falling lava leaves ember trails more frequently
-                  final belowEmpty = y < h - 1 &&
-                      g[(y + 1) * w + x] == El.empty;
+                  final belowEmpty =
+                      y < h - 1 && g[(y + 1) * w + x] == El.empty;
                   final trailChance = belowEmpty ? 100 : 150;
                   if (rng.nextInt(trailChance) < 2) {
                     spawnParticle(
-                        x + rng.nextInt(3) - 1,
-                        y - 1,
-                        255,
-                        120 + rng.nextInt(80),
-                        10 + rng.nextInt(40),
-                        4 + rng.nextInt(4));
+                      x + rng.nextInt(3) - 1,
+                      y - 1,
+                      255,
+                      120 + rng.nextInt(80),
+                      10 + rng.nextInt(40),
+                      4 + rng.nextInt(4),
+                    );
                   }
                 }
               } else if (el == El.lightning) {
                 if (rng.nextInt(60) < 3 && y > 1) {
                   spawnParticle(
-                      x + rng.nextInt(5) - 2,
-                      y + rng.nextInt(3) - 1,
-                      255,
-                      255,
-                      100 + rng.nextInt(155),
-                      3 + rng.nextInt(2));
+                    x + rng.nextInt(5) - 2,
+                    y + rng.nextInt(3) - 1,
+                    255,
+                    255,
+                    100 + rng.nextInt(155),
+                    3 + rng.nextInt(2),
+                  );
                 }
               } else if (el == El.water) {
                 // Splash particles when water lands on solid ground
-                if (rng.nextInt(200) < 2 &&
-                    y > 1 &&
-                    y < h - 1) {
+                if (rng.nextInt(200) < 2 && y > 1 && y < h - 1) {
                   final below = g[(y + 1) * w + x];
                   final above = g[(y - 1) * w + x];
                   if (below != El.empty &&
                       below != El.water &&
                       above == El.empty) {
                     spawnParticle(
-                        x + rng.nextInt(3) - 1, y - 1,
-                        60 + rng.nextInt(30), 140 + rng.nextInt(60),
-                        200 + rng.nextInt(55), 3 + rng.nextInt(3));
+                      x + rng.nextInt(3) - 1,
+                      y - 1,
+                      60 + rng.nextInt(30),
+                      140 + rng.nextInt(60),
+                      200 + rng.nextInt(55),
+                      3 + rng.nextInt(3),
+                    );
                   }
                 }
               } else if (el == El.sand) {
@@ -772,30 +937,59 @@ class PixelRenderer {
                       below != El.sand &&
                       rng.nextInt(300) < 2) {
                     spawnParticle(
-                        x + rng.nextInt(3) - 1, y - 1,
-                        194, 178, 128, 3 + rng.nextInt(2));
-                  } else if (below == El.empty &&
-                      rng.nextInt(400) < 1) {
+                      x + rng.nextInt(3) - 1,
+                      y - 1,
+                      194,
+                      178,
+                      128,
+                      3 + rng.nextInt(2),
+                    );
+                  } else if (below == El.empty && rng.nextInt(400) < 1) {
                     spawnParticle(x, y - 1, 194, 178, 128, 3);
                   }
                 }
               } else if (el == El.acid) {
                 if (rng.nextInt(80) < 2 && y > 1) {
-                  spawnParticle(x + rng.nextInt(3) - 1, y - 1,
-                      30 + rng.nextInt(40), 220 + rng.nextInt(35),
-                      30 + rng.nextInt(30), 3 + rng.nextInt(3));
+                  spawnParticle(
+                    x + rng.nextInt(3) - 1,
+                    y - 1,
+                    30 + rng.nextInt(40),
+                    220 + rng.nextInt(35),
+                    30 + rng.nextInt(30),
+                    3 + rng.nextInt(3),
+                  );
                 }
               } else if (el == El.steam) {
                 if (rng.nextInt(400) < 1 && y > 1) {
-                  spawnParticle(x + rng.nextInt(3) - 1, y - 1,
-                      180, 185, 200, 2 + rng.nextInt(2));
+                  spawnParticle(
+                    x + rng.nextInt(3) - 1,
+                    y - 1,
+                    180,
+                    185,
+                    200,
+                    2 + rng.nextInt(2),
+                  );
                 }
               }
             }
 
             int r, g2, b, a = 255;
             _writeElementColor(
-                el, i, x, y, w, h, g, life, velX, velY, fc, rng, temp, t256);
+              el,
+              i,
+              x,
+              y,
+              w,
+              h,
+              g,
+              life,
+              velX,
+              velY,
+              fc,
+              rng,
+              temp,
+              t256,
+            );
             r = _inlineR;
             g2 = _inlineG;
             b = _inlineB;
@@ -826,10 +1020,11 @@ class PixelRenderer {
                 // INNOVATION: Subterranean Fog based on camera focus
                 // If camera is high up, underground is much darker
                 final distToCamera = (y - viewportY).abs();
-                if (viewportY < h * 0.8) { // Camera is mostly above ground
-                   final fogFrac = (distToCamera / h).clamp(0.0, 1.0);
-                   final fogDarken = (fogFrac * 120).toInt();
-                   darken += fogDarken;
+                if (viewportY < h * 0.8) {
+                  // Camera is mostly above ground
+                  final fogFrac = (distToCamera / h).clamp(0.0, 1.0);
+                  final fogDarken = (fogFrac * 120).toInt();
+                  darken += fogDarken;
                 }
 
                 r = (r - darken).clamp(0, 255);
@@ -869,9 +1064,12 @@ class PixelRenderer {
             final flowX = velX[i];
             final flowY = velY[i];
             if (el == El.water && (flowX != 0 || flowY != 0)) {
-               r = (r + (flowX * 10)).clamp(0, 255);
-               g2 = (g2 + (flowY * 10)).clamp(0, 255);
-               b = (b + 15).clamp(0, 255); // Flowing water is slightly brighter/more aerated
+              r = (r + (flowX * 10)).clamp(0, 255);
+              g2 = (g2 + (flowY * 10)).clamp(0, 255);
+              b = (b + 15).clamp(
+                0,
+                255,
+              ); // Flowing water is slightly brighter/more aerated
             }
 
             pxBuf[pi4] = r.clamp(0, 255);
@@ -900,7 +1098,10 @@ class PixelRenderer {
 
   Future<Object> buildImage() async {
     return image_builder.buildImageFromPixels(
-        _pixels, engine.gridW, engine.gridH);
+      _pixels,
+      engine.gridW,
+      engine.gridH,
+    );
   }
 
   int _inlineR = 0;
@@ -909,29 +1110,29 @@ class PixelRenderer {
   int _inlineA = 255;
 
   void _writeElementColor(
-      int el,
-      int idx,
-      int x,
-      int y,
-      int w,
-      int h,
-      Uint8List grid,
-      Uint8List life,
-      Int8List velX,
-      Int8List velY,
-      int frameCount,
-      math.Random rng,
-      Uint8List temp,
-      int nightT256) {
+    int el,
+    int idx,
+    int x,
+    int y,
+    int w,
+    int h,
+    Uint8List grid,
+    Uint8List life,
+    Int8List velX,
+    Int8List velY,
+    int frameCount,
+    math.Random rng,
+    Uint8List temp,
+    int nightT256,
+  ) {
     switch (el) {
       case El.fire:
         final fireLife = life[idx];
         final slow1 = (frameCount + idx * 3) % 8;
         final slow2 = (frameCount * 2 + idx * 7) % 12;
         final slow3 = (frameCount + idx * 13) % 20;
-        final flickerSum = (slow1 < 3 ? 18 : 0) +
-            (slow2 < 4 ? 14 : 0) +
-            (slow3 < 7 ? 10 : 0);
+        final flickerSum =
+            (slow1 < 3 ? 18 : 0) + (slow2 < 4 ? 14 : 0) + (slow3 < 7 ? 10 : 0);
 
         // Smooth gradient: white-hot core -> orange -> red tips -> smoke edges
         if (fireLife < 6) {
@@ -995,7 +1196,10 @@ class PixelRenderer {
           _inlineG = (255 - ageDim + pulseBoost).clamp(150, 255);
           // Purple fringe on odd frames
           final purpleFringe = (frameCount & 1) == 1 ? 30 : 0;
-          _inlineB = (255 - ageDim ~/ 3 + purpleFringe + pulseBoost).clamp(180, 255);
+          _inlineB = (255 - ageDim ~/ 3 + purpleFringe + pulseBoost).clamp(
+            180,
+            255,
+          );
         }
         _inlineA = 255;
 
@@ -1072,7 +1276,11 @@ class PixelRenderer {
           _inlineB = 255;
           _inlineA = 255;
         } else {
-          final isTop = y > 0 &&
+          final hydroMomentum = engine.hydroMomentumV2[idx];
+          final hydroTurbulence = engine.hydroTurbulenceV2[idx];
+          final hydroEq = engine.hydroPressureEqV2[idx];
+          final isTop =
+              y > 0 &&
               grid[(y - 1) * w + x] != El.water &&
               grid[(y - 1) * w + x] != El.oil;
 
@@ -1092,43 +1300,74 @@ class PixelRenderer {
             // Wave ripple brightness from velY (set by splash impacts)
             final waveVel = engine.velY[idx];
             final waveOffset = waveVel.abs() * 8; // 0..64 brightness boost
+            final hydroSparkle = (hydroTurbulence >> 3).clamp(0, 24);
 
             // Foam/highlight where water meets solid elements
             final belowIdx = y < h - 1 ? (y + 1) * w + x : -1;
-            final isSolid = belowIdx >= 0 && grid[belowIdx] != El.water &&
-                grid[belowIdx] != El.empty && grid[belowIdx] != El.oil;
+            final isSolid =
+                belowIdx >= 0 &&
+                grid[belowIdx] != El.water &&
+                grid[belowIdx] != El.empty &&
+                grid[belowIdx] != El.oil;
 
             // Check left/right for solid contact (foam)
-            final leftSolid = x > 0 && grid[y * w + x - 1] != El.water &&
-                grid[y * w + x - 1] != El.empty && grid[y * w + x - 1] != El.oil;
-            final rightSolid = x < w - 1 && grid[y * w + x + 1] != El.water &&
-                grid[y * w + x + 1] != El.empty && grid[y * w + x + 1] != El.oil;
+            final leftSolid =
+                x > 0 &&
+                grid[y * w + x - 1] != El.water &&
+                grid[y * w + x - 1] != El.empty &&
+                grid[y * w + x - 1] != El.oil;
+            final rightSolid =
+                x < w - 1 &&
+                grid[y * w + x + 1] != El.water &&
+                grid[y * w + x + 1] != El.empty &&
+                grid[y * w + x + 1] != El.oil;
             final hasFoam = isSolid || leftSolid || rightSolid;
 
             if (hasFoam) {
               // White-ish foam highlight with animated sparkle
               final foamFlicker = ((frameCount + x * 7) % 20 < 3) ? 25 : 0;
-              _inlineR = (110 + shimmer * 2 + foamFlicker + waveOffset).clamp(80, 255);
-              _inlineG = (225 + shimmer + foamFlicker ~/ 2 + waveOffset).clamp(200, 255);
-              _inlineB = (255 + waveOffset).clamp(200, 255);
+              _inlineR = (110 + shimmer * 2 + foamFlicker + waveOffset).clamp(
+                80,
+                255,
+              );
+              _inlineG = (225 + shimmer + foamFlicker ~/ 2 + waveOffset).clamp(
+                200,
+                255,
+              );
+              _inlineB = (255 + waveOffset + hydroSparkle).clamp(200, 255);
               _inlineA = 235;
             } else if (isUndergroundWater) {
               // Underground surface water: darker, more muted
-              _inlineR = (30 + shimmer ~/ 2 + waveOffset).clamp(20, 100);
-              _inlineG = (120 + shimmer ~/ 2 + waveOffset).clamp(100, 200);
-              _inlineB = (200 + shimmer ~/ 3 + waveOffset).clamp(180, 255);
+              _inlineR = (30 + shimmer ~/ 2 + waveOffset + (hydroMomentum >> 5))
+                  .clamp(20, 110);
+              _inlineG =
+                  (120 + shimmer ~/ 2 + waveOffset + (hydroMomentum >> 4))
+                      .clamp(100, 210);
+              _inlineB =
+                  (200 + shimmer ~/ 3 + waveOffset + (hydroTurbulence >> 4))
+                      .clamp(180, 255);
               _inlineA = 235;
             } else {
               // Surface water reflects sky color
               // Integer night dimming using frame-level nightT256
-              final skyDimRG = 256 - (nightT256 * 218 >> 8); // ~(1 - t*0.85)*256
+              final skyDimRG =
+                  256 - (nightT256 * 218 >> 8); // ~(1 - t*0.85)*256
               final skyReflectR = (135 * skyDimRG) >> 8;
               final skyReflectG = (195 * skyDimRG) >> 8;
-              final skyReflectB = (255 * (256 - (nightT256 * 77 >> 8))) >> 8; // ~(1-t*0.3)*255
+              final skyReflectB =
+                  (255 * (256 - (nightT256 * 77 >> 8))) >> 8; // ~(1-t*0.3)*255
               // Blend ~25% sky reflection into surface water + wave ripple brightness
-              _inlineR = (55 + shimmer + (skyReflectR * 60) ~/ 256 + waveOffset).clamp(35, 200);
-              _inlineG = (185 + shimmer + (skyReflectG * 30) ~/ 256 + waveOffset).clamp(165, 255);
-              _inlineB = (240 + (skyReflectB * 15) ~/ 256 + waveOffset).clamp(230, 255);
+              _inlineR = (55 + shimmer + (skyReflectR * 60) ~/ 256 + waveOffset)
+                  .clamp(35, 200);
+              _inlineG =
+                  (185 + shimmer + (skyReflectG * 30) ~/ 256 + waveOffset)
+                      .clamp(165, 255);
+              _inlineB =
+                  (240 +
+                          (skyReflectB * 15) ~/ 256 +
+                          waveOffset +
+                          (hydroTurbulence >> 4))
+                      .clamp(230, 255);
               _inlineA = 215;
             }
           } else {
@@ -1144,20 +1383,22 @@ class PixelRenderer {
 
             // Smooth depth darkening with no visible steps
             final depthFrac = (depth * 256 ~/ 25).clamp(0, 255);
-            final pressureDarken = (engine.pressure[idx] * 40) >> 8; // Darken with pressure
+            final pressureDarken =
+                (engine.pressure[idx] * 40) >> 8; // Darken with pressure
+            final hydroDepthTint = (hydroEq >> 4).clamp(0, 12);
 
             int baseR, baseG, baseB, baseA;
             if (isUndergroundWater) {
               // Underground water: much darker and murkier
               baseR = _lerpC(25, 3, depthFrac) - pressureDarken;
               baseG = _lerpC(90, 25, depthFrac) - pressureDarken;
-              baseB = _lerpC(160, 80, depthFrac);
+              baseB = _lerpC(160, 80, depthFrac) + hydroDepthTint;
               baseA = _lerpC(230, 250, depthFrac);
             } else {
               // Surface water: clear blue gradient
               baseR = _lerpC(45, 5, depthFrac) - pressureDarken;
               baseG = _lerpC(155, 35, depthFrac) - pressureDarken;
-              baseB = _lerpC(255, 160, depthFrac);
+              baseB = _lerpC(255, 160, depthFrac) + hydroDepthTint;
               baseA = _lerpC(220, 250, depthFrac);
             }
 
@@ -1176,20 +1417,24 @@ class PixelRenderer {
 
             // Foam/highlight at water-solid edges
             bool nearEdge = false;
-            if (x > 0 && grid[y * w + x - 1] != El.water &&
+            if (x > 0 &&
+                grid[y * w + x - 1] != El.water &&
                 grid[y * w + x - 1] != El.empty) {
               nearEdge = true;
-            } else if (x < w - 1 && grid[y * w + x + 1] != El.water &&
+            } else if (x < w - 1 &&
+                grid[y * w + x + 1] != El.water &&
                 grid[y * w + x + 1] != El.empty) {
               nearEdge = true;
             }
             // Also check above/below for foam
-            if (y > 0 && grid[(y - 1) * w + x] != El.water &&
+            if (y > 0 &&
+                grid[(y - 1) * w + x] != El.water &&
                 grid[(y - 1) * w + x] != El.empty &&
                 grid[(y - 1) * w + x] != El.oil) {
               nearEdge = true;
             }
-            if (y < h - 1 && grid[(y + 1) * w + x] != El.water &&
+            if (y < h - 1 &&
+                grid[(y + 1) * w + x] != El.water &&
                 grid[(y + 1) * w + x] != El.empty) {
               nearEdge = true;
             }
@@ -1210,16 +1455,24 @@ class PixelRenderer {
         int sandBaseR, sandBaseG, sandBaseB;
         if (grainType == 0) {
           // Warm golden
-          sandBaseR = 218; sandBaseG = 198; sandBaseB = 135;
+          sandBaseR = 218;
+          sandBaseG = 198;
+          sandBaseB = 135;
         } else if (grainType == 1) {
           // Pale cream
-          sandBaseR = 228; sandBaseG = 212; sandBaseB = 155;
+          sandBaseR = 228;
+          sandBaseG = 212;
+          sandBaseB = 155;
         } else if (grainType == 2) {
           // Dark amber
-          sandBaseR = 195; sandBaseG = 172; sandBaseB = 108;
+          sandBaseR = 195;
+          sandBaseG = 172;
+          sandBaseB = 108;
         } else {
           // Reddish tan
-          sandBaseR = 210; sandBaseG = 182; sandBaseB = 118;
+          sandBaseR = 210;
+          sandBaseG = 182;
+          sandBaseB = 118;
         }
         // Smooth spatial gradient for gentle blending between grains
         final sandSpatial = _spatialBlend(x, y, 6);
@@ -1230,15 +1483,36 @@ class PixelRenderer {
         // Quartz glint: rare bright sparkle
         final sandSparkPhase = (sandHash % 80);
         final sandSparkActive = ((frameCount + sandSparkPhase) % 80);
-        final isSandSparkle = sandSparkActive < 2 && (sandHash % 6 == 0);
+        final sandAge = engine.cellAge[idx];
+        final isSandSparkle =
+            sandAge > 8 && sandSparkActive < 2 && (sandHash % 6 == 0);
         final sandSparkle = isSandSparkle ? 30 : 0;
         // Temperature coloring: heat = slightly redder, cold = bluer
         final sandTemp = temp[idx];
-        final sandHeatTint = sandTemp > 148 ? ((sandTemp - 148) * 8 ~/ 107).clamp(0, 8) : 0;
-        final sandColdTint = sandTemp < 108 ? ((108 - sandTemp) * 6 ~/ 108).clamp(0, 6) : 0;
-        _inlineR = (sandBaseR + sandVar + sandBandShift + sandSparkle + sandHeatTint).clamp(185, 255);
-        _inlineG = (sandBaseG + sandVar + sandBandShift + sandSparkle - sandHeatTint ~/ 2).clamp(165, 245);
-        _inlineB = (sandBaseB + sandVar ~/ 2 + sandBandShift ~/ 2 + sandSparkle ~/ 2 - sandHeatTint + sandColdTint).clamp(95, 190);
+        final sandHeatTint = sandTemp > 148
+            ? ((sandTemp - 148) * 8 ~/ 107).clamp(0, 8)
+            : 0;
+        final sandColdTint = sandTemp < 108
+            ? ((108 - sandTemp) * 6 ~/ 108).clamp(0, 6)
+            : 0;
+        _inlineR =
+            (sandBaseR + sandVar + sandBandShift + sandSparkle + sandHeatTint)
+                .clamp(185, 255);
+        _inlineG =
+            (sandBaseG +
+                    sandVar +
+                    sandBandShift +
+                    sandSparkle -
+                    sandHeatTint ~/ 2)
+                .clamp(165, 245);
+        _inlineB =
+            (sandBaseB +
+                    sandVar ~/ 2 +
+                    sandBandShift ~/ 2 +
+                    sandSparkle ~/ 2 -
+                    sandHeatTint +
+                    sandColdTint)
+                .clamp(95, 190);
 
       case El.tnt:
         _inlineA = 255;
@@ -1253,9 +1527,14 @@ class PixelRenderer {
           final isChecker = (x + y) % 4 == 0;
           final checkerDim = isChecker ? ((255 - urgency) * 68) ~/ 255 : 0;
           // Base brightens toward orange-white
-          _inlineR = (204 + urgency ~/ 5 + pulseVal ~/ 2 - checkerDim).clamp(60, 255);
-          _inlineG = (34 + urgency ~/ 3 + pulseVal ~/ 3 - checkerDim ~/ 2).clamp(0, 255);
-          _inlineB = (34 + urgency ~/ 6 + pulseVal ~/ 4 - checkerDim ~/ 3).clamp(0, 200);
+          _inlineR = (204 + urgency ~/ 5 + pulseVal ~/ 2 - checkerDim).clamp(
+            60,
+            255,
+          );
+          _inlineG = (34 + urgency ~/ 3 + pulseVal ~/ 3 - checkerDim ~/ 2)
+              .clamp(0, 255);
+          _inlineB = (34 + urgency ~/ 6 + pulseVal ~/ 4 - checkerDim ~/ 3)
+              .clamp(0, 200);
         } else {
           // Sharp checkerboard pattern for stable TNT
           if ((x + y) % 2 == 0) {
@@ -1358,14 +1637,36 @@ class PixelRenderer {
         final grubR = isGrub ? 12 : 0;
         final grubG = isGrub ? 8 : 0;
         // Surface crust: top dirt is lighter (dried surface)
-        final isDirtSurface = y > 0 && grid[(y - 1) * w + x] != El.dirt &&
-            grid[(y - 1) * w + x] != El.plant && grid[(y - 1) * w + x] != El.stone;
+        final isDirtSurface =
+            y > 0 &&
+            grid[(y - 1) * w + x] != El.dirt &&
+            grid[(y - 1) * w + x] != El.plant &&
+            grid[(y - 1) * w + x] != El.stone;
         final surfaceCrust = isDirtSurface ? 12 : 0;
         // Moisture sheen on surface: wet top glints
         final moistSheen = isDirtSurface && currentMoist > 100 ? 8 : 0;
-        final dirtBaseR = 140 + dirtVar + dirtWarmShift - compactDarken - organicDarken + mineralSpeck + grubR + surfaceCrust;
-        final dirtBaseG = 95 + dirtVar ~/ 2 - compactDarken - organicDarken ~/ 2 + grubG + surfaceCrust ~/ 2;
-        final dirtBaseB = 40 + dirtVar ~/ 3 - compactDarken ~/ 2 - organicDarken ~/ 3 + moistSheen;
+        final dirtBaseR =
+            140 +
+            dirtVar +
+            dirtWarmShift -
+            compactDarken -
+            organicDarken +
+            mineralSpeck +
+            grubR +
+            surfaceCrust;
+        final dirtBaseG =
+            95 +
+            dirtVar ~/ 2 -
+            compactDarken -
+            organicDarken ~/ 2 +
+            grubG +
+            surfaceCrust ~/ 2;
+        final dirtBaseB =
+            40 +
+            dirtVar ~/ 3 -
+            compactDarken ~/ 2 -
+            organicDarken ~/ 3 +
+            moistSheen;
         // Darker when moist: currentMoist is 0-255. darken up to 60 units.
         _inlineR = (dirtBaseR - ((currentMoist * 60) >> 8)).clamp(35, 175);
         _inlineG = (dirtBaseG - ((currentMoist * 50) >> 8)).clamp(18, 125);
@@ -1448,7 +1749,10 @@ class PixelRenderer {
                 final grainY = _spatialBlend(x, y * 4, 3);
                 final grainShift = (grainY * 14) ~/ 256 - 7;
                 _inlineR = (105 + variation + grainShift).clamp(80, 130);
-                _inlineG = (65 + variation ~/ 2 + grainShift ~/ 2).clamp(40, 90);
+                _inlineG = (65 + variation ~/ 2 + grainShift ~/ 2).clamp(
+                  40,
+                  90,
+                );
                 _inlineB = (30 + variation ~/ 3).clamp(12, 48);
               } else if (pStage == stSprout) {
                 // Bright green sapling
@@ -1532,21 +1836,36 @@ class PixelRenderer {
         final iceDepthBlue = (iceDepth * 2).clamp(0, 16);
         int iceBaseR, iceBaseG;
         if (iceFacet == 0) {
-          iceBaseR = 190; iceBaseG = 230;
+          iceBaseR = 190;
+          iceBaseG = 230;
         } else if (iceFacet == 1) {
-          iceBaseR = 175; iceBaseG = 222;
+          iceBaseR = 175;
+          iceBaseG = 222;
         } else if (iceFacet == 2) {
-          iceBaseR = 165; iceBaseG = 215;
+          iceBaseR = 165;
+          iceBaseG = 215;
         } else if (iceFacet == 3) {
-          iceBaseR = 200; iceBaseG = 235;
+          iceBaseR = 200;
+          iceBaseG = 235;
         } else if (iceFacet == 4) {
-          iceBaseR = 182; iceBaseG = 225;
+          iceBaseR = 182;
+          iceBaseG = 225;
         } else {
-          iceBaseR = 172; iceBaseG = 218;
+          iceBaseR = 172;
+          iceBaseG = 218;
         }
-        _inlineR = (iceBaseR + iceGlint + iceRefract - crackDarken - iceDepthDarken).clamp(130, 255);
-        _inlineG = (iceBaseG + iceGlint + iceRefract ~/ 2 - crackDarken ~/ 2 - iceDepthDarken ~/ 2).clamp(175, 255);
-        _inlineB = (255 + iceGlint ~/ 2 - crackDarken ~/ 3 + iceDepthBlue).clamp(220, 255);
+        _inlineR =
+            (iceBaseR + iceGlint + iceRefract - crackDarken - iceDepthDarken)
+                .clamp(130, 255);
+        _inlineG =
+            (iceBaseG +
+                    iceGlint +
+                    iceRefract ~/ 2 -
+                    crackDarken ~/ 2 -
+                    iceDepthDarken ~/ 2)
+                .clamp(175, 255);
+        _inlineB = (255 + iceGlint ~/ 2 - crackDarken ~/ 3 + iceDepthBlue)
+            .clamp(220, 255);
 
       case El.stone:
         _inlineA = 255;
@@ -1561,13 +1880,21 @@ class PixelRenderer {
         final strataType = strataHash % 4;
         int strataR, strataG, strataB;
         if (strataType == 0) {
-          strataR = 125; strataG = 125; strataB = 130;
+          strataR = 125;
+          strataG = 125;
+          strataB = 130;
         } else if (strataType == 1) {
-          strataR = 128; strataG = 126; strataB = 127;
+          strataR = 128;
+          strataG = 126;
+          strataB = 127;
         } else if (strataType == 2) {
-          strataR = 122; strataG = 123; strataB = 128;
+          strataR = 122;
+          strataG = 123;
+          strataB = 128;
         } else {
-          strataR = 126; strataG = 125; strataB = 126;
+          strataR = 126;
+          strataG = 125;
+          strataB = 126;
         }
         // Gentle transition at boundaries
         final strataEdge = (y % 20 == 0) ? -2 : 0;
@@ -1590,9 +1917,38 @@ class PixelRenderer {
         final micaActive = ((frameCount + micaPhase) % 70);
         final isMica = micaActive < 2 && mineralHash % 22 == 0;
         final micaFlash = isMica ? 35 : 0;
-        _inlineR = (strataR + stoneLayer + hBandShift + strataEdge - depthDarken - veinDarken + quartzBoost + micaFlash).clamp(50, 195);
-        _inlineG = (strataG + stoneLayer + sedimentShift + hBandShift + strataEdge - depthDarken - veinDarken + quartzBoost ~/ 2 + micaFlash).clamp(48, 190);
-        _inlineB = (strataB + stoneLayer - sedimentShift + hBandShift + strataEdge - depthDarken ~/ 2 - veinDarken ~/ 2 + quartzBoost ~/ 3 + micaFlash).clamp(60, 200);
+        _inlineR =
+            (strataR +
+                    stoneLayer +
+                    hBandShift +
+                    strataEdge -
+                    depthDarken -
+                    veinDarken +
+                    quartzBoost +
+                    micaFlash)
+                .clamp(50, 195);
+        _inlineG =
+            (strataG +
+                    stoneLayer +
+                    sedimentShift +
+                    hBandShift +
+                    strataEdge -
+                    depthDarken -
+                    veinDarken +
+                    quartzBoost ~/ 2 +
+                    micaFlash)
+                .clamp(48, 190);
+        _inlineB =
+            (strataB +
+                    stoneLayer -
+                    sedimentShift +
+                    hBandShift +
+                    strataEdge -
+                    depthDarken ~/ 2 -
+                    veinDarken ~/ 2 +
+                    quartzBoost ~/ 3 +
+                    micaFlash)
+                .clamp(60, 200);
         if (stoneHeat > 0) {
           // Integer heat glow: heatFrac = stoneHeat/5 as [0,256]
           final heatFrac256 = stoneHeat * 256 ~/ 5;
@@ -1600,14 +1956,15 @@ class PixelRenderer {
           final pulsePhase = (frameCount * 77 + idx * 26) >> 8;
           final pulseI = _fastSinI(pulsePhase); // [0, 256]
           final pulse256 = 102 + (pulseI * 154) >> 8; // [102, 256]
-          _inlineR =
-              (_inlineR + ((heatFrac256 * 130 * pulse256) >> 16))
-                  .clamp(0, 255);
-          _inlineG =
-              (_inlineG + ((heatFrac256 * 45 * pulse256) >> 16))
-                  .clamp(0, 255);
-          _inlineB =
-              (_inlineB - (heatFrac256 * 70 >> 8)).clamp(0, 255);
+          _inlineR = (_inlineR + ((heatFrac256 * 130 * pulse256) >> 16)).clamp(
+            0,
+            255,
+          );
+          _inlineG = (_inlineG + ((heatFrac256 * 45 * pulse256) >> 16)).clamp(
+            0,
+            255,
+          );
+          _inlineB = (_inlineB - (heatFrac256 * 70 >> 8)).clamp(0, 255);
           if (frameCount % 20 == 0) {
             velX[idx] = (stoneHeat - 1).clamp(0, 5);
           }
@@ -1631,14 +1988,30 @@ class PixelRenderer {
         }
         // Bubble spots: rare transient light circles on surface
         final mudBubHash = _smoothHash(x * 23, y * 11);
-        final isMudBubble = isMudTop && mudBubHash % 35 == 0 &&
+        final isMudBubble =
+            isMudTop &&
+            mudBubHash % 35 == 0 &&
             ((frameCount + mudBubHash % 40) % 40 < 3);
         final mudBubbleBoost = isMudBubble ? 18 : 0;
         // Pebble inclusions: occasional lighter hard specks
         final mudPebble = _smoothHash(x * 37, y * 43) % 28 == 0 ? 10 : 0;
-        _inlineR = (80 + mudVar + mudWarmShift + mudWetBoost + mudBubbleBoost + mudPebble).clamp(50, 120);
-        _inlineG = (65 + mudVar ~/ 2 + mudWarmShift ~/ 2 + mudWetBoost ~/ 2 + mudBubbleBoost ~/ 2).clamp(35, 95);
-        _inlineB = (45 + mudVar ~/ 3 + mudWetBoost ~/ 3 + mudBubbleBoost ~/ 3).clamp(22, 70);
+        _inlineR =
+            (80 +
+                    mudVar +
+                    mudWarmShift +
+                    mudWetBoost +
+                    mudBubbleBoost +
+                    mudPebble)
+                .clamp(50, 120);
+        _inlineG =
+            (65 +
+                    mudVar ~/ 2 +
+                    mudWarmShift ~/ 2 +
+                    mudWetBoost ~/ 2 +
+                    mudBubbleBoost ~/ 2)
+                .clamp(35, 95);
+        _inlineB = (45 + mudVar ~/ 3 + mudWetBoost ~/ 3 + mudBubbleBoost ~/ 3)
+            .clamp(22, 70);
 
       case El.oil:
         _inlineA = 255;
@@ -1652,8 +2025,10 @@ class PixelRenderer {
           // Rainbow iridescence phase: [0, 256] mapped from x*37+fc*2
           final iridP = ((x * 37 + frameCount * 2) % 120) * 256 ~/ 120;
           final iridR = (_fastSinI(iridP) * 20 >> 8) + 10;
-          final iridG = (_fastSinI(iridP + 85) * 15 >> 8) + 3; // +85 ≈ 2.09/6.28*256
-          final iridB = (_fastSinI(iridP + 170) * 20 >> 8) + 5; // +170 ≈ 4.19/6.28*256
+          final iridG =
+              (_fastSinI(iridP + 85) * 15 >> 8) + 3; // +85 ≈ 2.09/6.28*256
+          final iridB =
+              (_fastSinI(iridP + 170) * 20 >> 8) + 5; // +170 ≈ 4.19/6.28*256
           final shimVal = (shimmer1 * 14 + shimmer2 * 8) >> 8;
           _inlineR = (60 + shimVal + iridR).clamp(45, 110);
           _inlineG = (45 + shimVal + iridG).clamp(32, 85);
@@ -1674,8 +2049,8 @@ class PixelRenderer {
         final acidVar = ((idx * 7 + y * 3) % 11) - 5;
         // Bubbling surface: transient bright spots
         final acidHash = _smoothHash(x * 17, y * 29);
-        final isAcidBubble = acidHash % 20 == 0 &&
-            ((frameCount + acidHash % 30) % 30 < 3);
+        final isAcidBubble =
+            acidHash % 20 == 0 && ((frameCount + acidHash % 30) % 30 < 3);
         final acidBubble = isAcidBubble ? 25 : 0;
         // Corrosion streaks: darker pools where acid is concentrated
         final isAcidConc = acidHash % 9 == 0;
@@ -1683,15 +2058,26 @@ class PixelRenderer {
         // Surface detection: top acid slightly brighter (fizzing)
         final isAcidTop = y > 0 && grid[(y - 1) * w + x] != El.acid;
         final acidSurfFizz = isAcidTop ? 15 : 0;
-        _inlineR = (20 + acidVar + acidGlow ~/ 3 + acidBubble ~/ 2 - acidConc ~/ 2).clamp(0, 85);
-        _inlineG = (235 + acidVar + acidGlow ~/ 4 + acidBubble + acidSurfFizz - acidConc).clamp(200, 255);
-        _inlineB = (20 + acidVar + acidGlow ~/ 5 + acidBubble ~/ 3).clamp(0, 70);
+        _inlineR =
+            (20 + acidVar + acidGlow ~/ 3 + acidBubble ~/ 2 - acidConc ~/ 2)
+                .clamp(0, 85);
+        _inlineG =
+            (235 +
+                    acidVar +
+                    acidGlow ~/ 4 +
+                    acidBubble +
+                    acidSurfFizz -
+                    acidConc)
+                .clamp(200, 255);
+        _inlineB = (20 + acidVar + acidGlow ~/ 5 + acidBubble ~/ 3).clamp(
+          0,
+          70,
+        );
         _inlineA = 255;
 
       case El.glass:
         // More frequent sparkle (1/10 frames instead of 2/20)
-        final sparkle =
-            (frameCount + idx * 3) % 10 < 1 ? 35 : 0;
+        final sparkle = (frameCount + idx * 3) % 10 < 1 ? 35 : 0;
         final variation = ((idx * 7 + y * 3) % 11) - 5;
         // Count glass depth (cells above that are also glass, max 6)
         int glassDepth = 0;
@@ -1705,10 +2091,17 @@ class PixelRenderer {
         // Deeper glass gets more blue-tinted
         final depthBlue = (glassDepth * 8).clamp(0, 48);
         // Refraction shimmer: slight RGB shift based on depth + frame
-        final shimmerPhase = _fastSinI((frameCount * 3 + idx * 7 + glassDepth * 40) & 0xFF);
+        final shimmerPhase = _fastSinI(
+          (frameCount * 3 + idx * 7 + glassDepth * 40) & 0xFF,
+        );
         final shimmerVal = (shimmerPhase - 128) ~/ 16; // -8 to +8
-        _inlineR = (210 + variation + sparkle - depthBlue + shimmerVal).clamp(160, 255);
-        _inlineG = (225 + variation + sparkle - depthBlue ~/ 2 + shimmerVal ~/ 2).clamp(185, 255);
+        _inlineR = (210 + variation + sparkle - depthBlue + shimmerVal).clamp(
+          160,
+          255,
+        );
+        _inlineG =
+            (225 + variation + sparkle - depthBlue ~/ 2 + shimmerVal ~/ 2)
+                .clamp(185, 255);
         _inlineB = (255 + sparkle).clamp(240, 255);
         _inlineA = (200 + depthBlue ~/ 3).clamp(200, 220);
 
@@ -1717,7 +2110,8 @@ class PixelRenderer {
         // Two-frequency flicker for organic molten look
         final flickerHash1 = ((frameCount * 7 + idx * 13) >> 3) & 0x1F;
         final flickerHash2 = ((frameCount * 5 + idx * 19) >> 4) & 0xF;
-        final lavaFlicker = (flickerHash1 < 16 ? flickerHash1 : 31 - flickerHash1) +
+        final lavaFlicker =
+            (flickerHash1 < 16 ? flickerHash1 : 31 - flickerHash1) +
             (flickerHash2 < 8 ? flickerHash2 : 15 - flickerHash2) ~/ 2;
         final isLavaSurf = y > 0 && grid[(y - 1) * w + x] == El.empty;
 
@@ -1740,7 +2134,9 @@ class PixelRenderer {
           if (isCrustVein) {
             // Dark cooling crust with pulsing glow underneath
             final crustGlowP = ((frameCount * 4 + idx * 7) >> 4) & 0xF;
-            final crustGlow = crustGlowP < 8 ? crustGlowP * 3 : (15 - crustGlowP) * 3;
+            final crustGlow = crustGlowP < 8
+                ? crustGlowP * 3
+                : (15 - crustGlowP) * 3;
             _inlineR = (120 + crustGlow + lavaFlicker ~/ 3).clamp(90, 170);
             _inlineG = (14 + crustGlow ~/ 4 + lavaFlicker ~/ 6).clamp(6, 40);
             _inlineB = (crustGlow ~/ 8 + lavaFlicker ~/ 10).clamp(0, 10);
@@ -1818,9 +2214,27 @@ class PixelRenderer {
         // Prismatic: brief rainbow tint on sparkle
         final prismR = isPrismatic ? 15 : 0;
         final prismB = isPrismatic ? -10 : 0;
-        _inlineR = (235 + snowVar + snowShimVal + snowSparkInt + snowSurfBoost - snowDepthDarken + prismR).clamp(218, 255);
-        _inlineG = (238 + snowVar + snowShimVal + snowSparkInt + snowSurfBoost - snowDepthDarken ~/ 2).clamp(222, 255);
-        _inlineB = (250 + snowSparkInt ~/ 2 + snowDepthBlue + prismB).clamp(240, 255);
+        _inlineR =
+            (235 +
+                    snowVar +
+                    snowShimVal +
+                    snowSparkInt +
+                    snowSurfBoost -
+                    snowDepthDarken +
+                    prismR)
+                .clamp(218, 255);
+        _inlineG =
+            (238 +
+                    snowVar +
+                    snowShimVal +
+                    snowSparkInt +
+                    snowSurfBoost -
+                    snowDepthDarken ~/ 2)
+                .clamp(222, 255);
+        _inlineB = (250 + snowSparkInt ~/ 2 + snowDepthBlue + prismB).clamp(
+          240,
+          255,
+        );
 
       case El.wood:
         _inlineA = 255;
@@ -1853,7 +2267,8 @@ class PixelRenderer {
           final ringPhase = _spatialBlend(x * 2, y * 2, 5);
           final ringDark = (ringPhase > 180 && ringPhase < 200) ? 8 : 0;
           // Bark texture: exposed surface is rougher
-          final isWoodSurface = (x > 0 && grid[y * w + x - 1] != El.wood) ||
+          final isWoodSurface =
+              (x > 0 && grid[y * w + x - 1] != El.wood) ||
               (x < w - 1 && grid[y * w + x + 1] != El.wood) ||
               (y > 0 && grid[(y - 1) * w + x] != El.wood);
           final barkRough = isWoodSurface ? (woodHash % 8 - 4).clamp(-3, 3) : 0;
@@ -1862,15 +2277,38 @@ class PixelRenderer {
             final knotCenter = _smoothHash(x * 3, y * 3) % 3 == 0;
             final knotShift = knotCenter ? 8 : 0;
             _inlineR = (115 - waterlog + grainVal + knotShift).clamp(48, 145);
-            _inlineG = (60 - waterlog + grainVal ~/ 2 + knotShift ~/ 2).clamp(22, 85);
+            _inlineG = (60 - waterlog + grainVal ~/ 2 + knotShift ~/ 2).clamp(
+              22,
+              85,
+            );
             _inlineB = (32 - waterlog + grainVal ~/ 3).clamp(8, 52);
           } else {
             // Vertical grain emphasis with warm tones
             final woodBand = _spatialBlend(x, y * 5, 3);
             final woodBandShift = (woodBand * 20) ~/ 256 - 10;
-            _inlineR = (160 - waterlog + woodVar + woodBandShift + barkRough - ringDark).clamp(60, 195);
-            _inlineG = (85 - waterlog + woodVar ~/ 2 + woodBandShift ~/ 2 + barkRough ~/ 2 - ringDark ~/ 2).clamp(28, 118);
-            _inlineB = (46 - waterlog + woodVar ~/ 3 + woodBandShift ~/ 3 - ringDark ~/ 3).clamp(10, 72);
+            _inlineR =
+                (160 -
+                        waterlog +
+                        woodVar +
+                        woodBandShift +
+                        barkRough -
+                        ringDark)
+                    .clamp(60, 195);
+            _inlineG =
+                (85 -
+                        waterlog +
+                        woodVar ~/ 2 +
+                        woodBandShift ~/ 2 +
+                        barkRough ~/ 2 -
+                        ringDark ~/ 2)
+                    .clamp(28, 118);
+            _inlineB =
+                (46 -
+                        waterlog +
+                        woodVar ~/ 3 +
+                        woodBandShift ~/ 3 -
+                        ringDark ~/ 3)
+                    .clamp(10, 72);
           }
         }
 
@@ -1890,9 +2328,13 @@ class PixelRenderer {
             final rustHash = _smoothHash(x * 19, y * 23);
             final isPit = rustHash % 8 == 0;
             final pitDarken = isPit ? 15 : 0;
-            _inlineR = (168 - (rustLevel * 29) ~/ 120 + metalVar - pitDarken).clamp(90, 200);
-            _inlineG = (168 - (rustLevel * 78) ~/ 120 + metalVar - pitDarken).clamp(50, 200);
-            _inlineB = (176 - (rustLevel * 133) ~/ 120 + metalVar - pitDarken ~/ 2).clamp(25, 210);
+            _inlineR = (168 - (rustLevel * 29) ~/ 120 + metalVar - pitDarken)
+                .clamp(90, 200);
+            _inlineG = (168 - (rustLevel * 78) ~/ 120 + metalVar - pitDarken)
+                .clamp(50, 200);
+            _inlineB =
+                (176 - (rustLevel * 133) ~/ 120 + metalVar - pitDarken ~/ 2)
+                    .clamp(25, 210);
           } else {
             // Brushed metal texture: horizontal micro-scratches
             final brushHash = _smoothHash(x * 3, y * 71);
@@ -1910,9 +2352,19 @@ class PixelRenderer {
             final metalSpecActive = ((frameCount + metalSpecPhase) % 55);
             final isMetalSpec = metalSpecActive < 2 && metalSpecHash % 5 == 0;
             final metalSpecFlash = isMetalSpec ? 28 : 0;
-            _inlineR = (168 + totalSheen + metalVar + scratchShift + metalSpecFlash).clamp(140, 218);
-            _inlineG = (168 + totalSheen + metalVar + scratchShift + metalSpecFlash).clamp(140, 218);
-            _inlineB = (176 + totalSheen + metalVar + scratchShift ~/ 2 + metalSpecFlash).clamp(148, 225);
+            _inlineR =
+                (168 + totalSheen + metalVar + scratchShift + metalSpecFlash)
+                    .clamp(140, 218);
+            _inlineG =
+                (168 + totalSheen + metalVar + scratchShift + metalSpecFlash)
+                    .clamp(140, 218);
+            _inlineB =
+                (176 +
+                        totalSheen +
+                        metalVar +
+                        scratchShift ~/ 2 +
+                        metalSpecFlash)
+                    .clamp(148, 225);
           }
           // Heat glow: hot metal shifts from silver to orange-red with pulsing
           final metalHeat = velX[idx].clamp(0, 5);
@@ -1944,8 +2396,11 @@ class PixelRenderer {
         final smokeWispVal = wisp1 + wisp2;
         // Alpha: young smoke is more opaque, fades to near-invisible wisps
         _inlineA = (smokeFade * 3 + 50).clamp(50, 200);
-        final smokeBase =
-            _lerpC(145, 90, (smokeLife * 255 ~/ 60).clamp(0, 255));
+        final smokeBase = _lerpC(
+          145,
+          90,
+          (smokeLife * 255 ~/ 60).clamp(0, 255),
+        );
         final smokeVar = ((idx * 7 + y * 3) % 11) - 5;
         // Volumetric density: nearby smoke makes this cell denser (darker, more opaque)
         int smokeNeighbors = 0;
@@ -1958,9 +2413,13 @@ class PixelRenderer {
           _inlineA = (_inlineA + 20).clamp(0, 220);
         }
         // Warm grey with slight brown tint (combustion smoke)
-        _inlineR = (smokeBase + 8 + smokeVar + smokeWispVal - densityDarken).clamp(80, 175);
-        _inlineG = (smokeBase + smokeVar + smokeWispVal ~/ 2 - densityDarken).clamp(72, 160);
-        _inlineB = (smokeBase - 8 + smokeVar + smokeWispVal ~/ 3 - densityDarken ~/ 2).clamp(68, 158);
+        _inlineR = (smokeBase + 8 + smokeVar + smokeWispVal - densityDarken)
+            .clamp(80, 175);
+        _inlineG = (smokeBase + smokeVar + smokeWispVal ~/ 2 - densityDarken)
+            .clamp(72, 160);
+        _inlineB =
+            (smokeBase - 8 + smokeVar + smokeWispVal ~/ 3 - densityDarken ~/ 2)
+                .clamp(68, 158);
 
       case El.bubble:
         // Iridescent soap-bubble feel with shifting rainbow highlight (integer)
@@ -1982,8 +2441,11 @@ class PixelRenderer {
         final ashV = ((idx % 7) * 3 + ashVar).clamp(0, 20);
         // Floating vs settled: airborne ash is lighter and more transparent
         final ashBelow = y < h - 1 ? grid[(y + 1) * w + x] : El.stone;
-        final ashSettled = ashBelow != El.empty && ashBelow != El.smoke &&
-            ashBelow != El.steam && ashBelow != El.ash;
+        final ashSettled =
+            ashBelow != El.empty &&
+            ashBelow != El.smoke &&
+            ashBelow != El.steam &&
+            ashBelow != El.ash;
         // Gentle drift shimmer for airborne ash
         final ashDriftP = (frameCount * 10 + idx * 51) >> 8;
         final ashDrift = ashSettled ? 0 : ((_fastSinI(ashDriftP) * 6) >> 8);
@@ -2022,7 +2484,9 @@ class PixelRenderer {
         _inlineR = (150 + co2Shift).clamp(148, 165);
         _inlineG = (155 + co2Shift).clamp(153, 168);
         _inlineB = (175 + co2Shift ~/ 2).clamp(173, 185);
-        _inlineA = _isUnderground(x, y, engine.gridW, engine.grid) ? 30 + co2Shift : 8 + (co2Shift >> 1);
+        _inlineA = _isUnderground(x, y, engine.gridW, engine.grid)
+            ? 30 + co2Shift
+            : 8 + (co2Shift >> 1);
 
       case El.hydrogen:
         // Hydrogen is invisible in open air, faint shimmer underground
@@ -2044,7 +2508,9 @@ class PixelRenderer {
         _inlineR = (170 + methShift).clamp(168, 185);
         _inlineG = (210 + methShift).clamp(208, 225);
         _inlineB = (170 + methShift ~/ 2).clamp(168, 180);
-        _inlineA = _isUnderground(x, y, engine.gridW, engine.grid) ? 25 + methShift : 6 + (methShift >> 1);
+        _inlineA = _isUnderground(x, y, engine.gridW, engine.grid)
+            ? 25 + methShift
+            : 6 + (methShift >> 1);
 
       case El.fungus:
         // Rich brownish-gold with organic texture variation
@@ -2059,7 +2525,10 @@ class PixelRenderer {
         final isLight = fungHash % 11 == 0;
         final lightBoost = isLight ? 15 : 0;
         _inlineR = (139 + fungVar - fiberDarken + lightBoost).clamp(90, 170);
-        _inlineG = (105 + fungVar ~/ 2 - fiberDarken + lightBoost ~/ 2).clamp(60, 130);
+        _inlineG = (105 + fungVar ~/ 2 - fiberDarken + lightBoost ~/ 2).clamp(
+          60,
+          130,
+        );
         _inlineB = (20 + fungVar ~/ 4 - fiberDarken ~/ 2).clamp(5, 45);
 
       case El.spore:
@@ -2097,7 +2566,10 @@ class PixelRenderer {
         final isStreak = compHash % 13 == 0 && (compHash >> 8) % 3 == 0;
         final streakDarken = isStreak ? 10 : 0;
         _inlineR = (52 + compVar + fleckBoost - streakDarken).clamp(28, 75);
-        _inlineG = (36 + compVar ~/ 2 + fleckBoost ~/ 2 - streakDarken).clamp(14, 55);
+        _inlineG = (36 + compVar ~/ 2 + fleckBoost ~/ 2 - streakDarken).clamp(
+          14,
+          55,
+        );
         _inlineB = (8 + compVar ~/ 4 + fleckBoost ~/ 4).clamp(2, 22);
 
       case El.rust:
@@ -2113,7 +2585,10 @@ class PixelRenderer {
         final isFlake = rustHash % 8 == 0 && !isPit;
         final flakeBoost = isFlake ? 18 : 0;
         _inlineR = (160 + rustVar - pitDarken + flakeBoost).clamp(100, 195);
-        _inlineG = (68 + rustVar ~/ 2 - pitDarken ~/ 2 + flakeBoost ~/ 2).clamp(30, 100);
+        _inlineG = (68 + rustVar ~/ 2 - pitDarken ~/ 2 + flakeBoost ~/ 2).clamp(
+          30,
+          100,
+        );
         _inlineB = (28 + rustVar ~/ 4 - pitDarken ~/ 3).clamp(8, 50);
 
       case El.salt:
@@ -2122,7 +2597,9 @@ class PixelRenderer {
         final saltHash = _smoothHash(x * 31, y * 47);
         final saltFacet = saltHash % 4;
         // Crystalline facets: slightly different tones
-        final saltBase = saltFacet == 0 ? 240 : (saltFacet == 1 ? 236 : (saltFacet == 2 ? 244 : 238));
+        final saltBase = saltFacet == 0
+            ? 240
+            : (saltFacet == 1 ? 236 : (saltFacet == 2 ? 244 : 238));
         // Sparkling: sharp bright pixel glints
         final saltSparkPhase = (saltHash % 50);
         final saltSparkActive = ((frameCount + saltSparkPhase) % 50);
@@ -2144,9 +2621,15 @@ class PixelRenderer {
         final clayHash = _smoothHash(x * 23, y * 11);
         final isInclusion = clayHash % 14 == 0;
         final inclusionDarken = isInclusion ? 15 : 0;
-        _inlineR = (196 + clayVar + clayBandShift - inclusionDarken).clamp(155, 225);
-        _inlineG = (130 + clayVar ~/ 2 + clayBandShift ~/ 2 - inclusionDarken).clamp(90, 160);
-        _inlineB = (86 + clayVar ~/ 3 + clayBandShift ~/ 3 - inclusionDarken ~/ 2).clamp(55, 115);
+        _inlineR = (196 + clayVar + clayBandShift - inclusionDarken).clamp(
+          155,
+          225,
+        );
+        _inlineG = (130 + clayVar ~/ 2 + clayBandShift ~/ 2 - inclusionDarken)
+            .clamp(90, 160);
+        _inlineB =
+            (86 + clayVar ~/ 3 + clayBandShift ~/ 3 - inclusionDarken ~/ 2)
+                .clamp(55, 115);
 
       case El.algae:
         // Dark green, slightly transparent in water
@@ -2154,7 +2637,8 @@ class PixelRenderer {
         final algaeSpatial = _spatialBlend(x, y, 3);
         final algaeVar = (algaeSpatial * 18) ~/ 256 - 9;
         // Check if submerged in water for transparency
-        final algaeInWater = (y > 0 && grid[(y - 1) * w + x] == El.water) ||
+        final algaeInWater =
+            (y > 0 && grid[(y - 1) * w + x] == El.water) ||
             (y < h - 1 && grid[(y + 1) * w + x] == El.water);
         if (algaeInWater) {
           _inlineA = 200;
@@ -2174,7 +2658,8 @@ class PixelRenderer {
         final swSway = ((frameCount + x * 3) % 40 < 20) ? 5 : -5;
         // Check for toxin tint from colony
         final swToxin = engine.plantColonies != null
-            ? (engine.plantColonies!.colonyForCell(idx)?.toxinLevel ?? 0.0) : 0.0;
+            ? (engine.plantColonies!.colonyForCell(idx)?.toxinLevel ?? 0.0)
+            : 0.0;
         final toxinShift = (swToxin * 30).toInt(); // purple shift for toxic
         _inlineR = (26 + swVar + toxinShift).clamp(10, 70);
         _inlineG = (96 + swVar + swSway).clamp(60, 140);
@@ -2341,7 +2826,9 @@ class PixelRenderer {
         final auPhase = (frameCount * 6 + x * 37 + y * 19) & 0xFF;
         final auShim = (_fastSinI(auPhase) * 25) >> 8;
         // Rare specular flash (brilliant highlight)
-        final auSpec = ((auHash >> 4) % 30 == 0 && (frameCount + x) % 40 < 3) ? 40 : 0;
+        final auSpec = ((auHash >> 4) % 30 == 0 && (frameCount + x) % 40 < 3)
+            ? 40
+            : 0;
         _inlineR = (255).clamp(230, 255);
         _inlineG = (195 + auGrain + auShim + auSpec).clamp(160, 240);
         _inlineB = (20 + auGrain ~/ 2 + auSpec ~/ 2).clamp(0, 80);
@@ -2353,7 +2840,9 @@ class PixelRenderer {
         final agVar = (agHash % 9) - 4;
         final agPhase = (frameCount * 4 + idx * 29) & 0xFF;
         final agShim = (_fastSinI(agPhase) * 12) >> 8;
-        final agSpec = ((agHash >> 3) % 25 == 0 && (frameCount + y) % 35 < 2) ? 30 : 0;
+        final agSpec = ((agHash >> 3) % 25 == 0 && (frameCount + y) % 35 < 2)
+            ? 30
+            : 0;
         _inlineR = (192 + agVar + agShim + agSpec).clamp(175, 235);
         _inlineG = (192 + agVar + agShim + agSpec).clamp(175, 235);
         _inlineB = (200 + agVar + agShim + agSpec).clamp(185, 245);
@@ -2372,7 +2861,9 @@ class PixelRenderer {
         // Liquid metal: high-contrast silver with rolling convection
         _inlineA = 255;
         // Convection cells (like lava but faster, cooler colors)
-        final hgConv = _fastSinI((frameCount * 12 + x * 26 + y * 18) >> 3 & 0xFF);
+        final hgConv = _fastSinI(
+          (frameCount * 12 + x * 26 + y * 18) >> 3 & 0xFF,
+        );
         final hgConvD = (hgConv * 15) >> 8;
         // Sharp specular highlights on surface
         final hgHash = _smoothHash(x * 13, y * 7);
@@ -2395,16 +2886,23 @@ class PixelRenderer {
           // Prismatic flash — cycle through spectral colors
           final diaHue = (frameCount * 40 + idx * 13) % 768;
           if (diaHue < 256) {
-            _inlineR = 255; _inlineG = (diaHue).clamp(0, 255); _inlineB = 0;
+            _inlineR = 255;
+            _inlineG = (diaHue).clamp(0, 255);
+            _inlineB = 0;
           } else if (diaHue < 512) {
-            _inlineR = (511 - diaHue).clamp(0, 255); _inlineG = 255; _inlineB = (diaHue - 256).clamp(0, 255);
+            _inlineR = (511 - diaHue).clamp(0, 255);
+            _inlineG = 255;
+            _inlineB = (diaHue - 256).clamp(0, 255);
           } else {
-            _inlineR = (diaHue - 512).clamp(0, 255); _inlineG = (767 - diaHue).clamp(0, 255); _inlineB = 255;
+            _inlineR = (diaHue - 512).clamp(0, 255);
+            _inlineG = (767 - diaHue).clamp(0, 255);
+            _inlineB = 255;
           }
           _inlineA = 255;
         } else {
           // Base: ice-blue transparent crystal
-          final diaShim = (_fastSinI((frameCount * 5 + idx * 7) & 0xFF) * 15) >> 8;
+          final diaShim =
+              (_fastSinI((frameCount * 5 + idx * 7) & 0xFF) * 15) >> 8;
           _inlineR = (185 + diaVar + diaShim).clamp(170, 220);
           _inlineG = (235 + diaVar + diaShim).clamp(220, 255);
           _inlineB = (255).clamp(240, 255);
@@ -2459,30 +2957,34 @@ class PixelRenderer {
         _inlineB = (203 + alVar + alGrain).clamp(190, 225);
 
       case El.vapor:
-        // Soft semi-transparent wisp
-        final vPhase = (frameCount + idx * 7) % 60;
-        final vPulse = vPhase < 30 ? vPhase : 59 - vPhase;
-        _inlineR = (210 + vPulse).clamp(200, 255);
-        _inlineG = (220 + vPulse).clamp(210, 255);
-        _inlineB = (245 + vPulse).clamp(230, 255);
-        _inlineA = (20 + vPulse).clamp(15, 60);
+        // Very soft vapor: subtle blue haze, never bright white dots.
+        final vPhase = (frameCount + idx * 11) % 80;
+        final vPulse = vPhase < 40 ? vPhase : 79 - vPhase;
+        final vNoise = (_spatialBlend(x + frameCount ~/ 12, y, 6) - 128) >> 4;
+        _inlineR = (182 + vPulse ~/ 6 + vNoise).clamp(174, 202);
+        _inlineG = (194 + vPulse ~/ 5 + vNoise).clamp(184, 216);
+        _inlineB = (216 + vPulse ~/ 4 + vNoise).clamp(204, 238);
+        _inlineA = (7 + vPulse ~/ 6 + (vNoise > 0 ? 1 : 0)).clamp(7, 20);
 
       case El.cloud:
-        // Soft fluffy clouds with transparent edges.
+        // Soft volumetric cloud shading with broad gradients.
         // life[idx] = cloud neighbor count (0-8) from simCloud.
-        // More neighbors = denser core = more opaque.
-        // Fewer neighbors = wispy edge = more transparent.
         final cMoist = engine.moisture[idx];
         final cNeighbors = life[idx].clamp(0, 8);
-        final cHash = _smoothHash(x * 13 + frameCount ~/ 20, y * 17);
-        final cVar = (cHash % 14) - 7;
-        // Color: white → dark gray as moisture increases (storm)
-        final cBase = 245 - (cMoist * 160 >> 8);
-        _inlineR = (cBase + cVar).clamp(50, 255);
-        _inlineG = (cBase + cVar).clamp(50, 255);
-        _inlineB = (cBase + 15 + cVar).clamp(60, 255);
-        // Alpha: wispy edges, dense core
-        _inlineA = (30 + cNeighbors * 22).clamp(30, 210);
+        final cHash = _smoothHash(x * 5 + frameCount ~/ 32, y * 7);
+        final cVar = (cHash % 6) - 3;
+        final puff = (_spatialBlend(x + frameCount ~/ 20, y, 10) - 128) >> 4;
+        final edgeSoften =
+            (_spatialBlend(x + 13, y + frameCount ~/ 28, 7) - 128) >> 5;
+        // Color: bright silver-white to cool storm gray.
+        final cBase = 236 - (cMoist * 120 >> 8);
+        final coolTint = (12 - (cMoist >> 5)).clamp(0, 12);
+        _inlineR = (cBase + cVar + puff).clamp(105, 248);
+        _inlineG = (cBase + 2 + cVar + puff).clamp(110, 250);
+        _inlineB = (cBase + 14 + coolTint + cVar + puff).clamp(128, 255);
+        // Higher alpha in dense cores, feathered edges.
+        final coreAlpha = 16 + cNeighbors * 19;
+        _inlineA = (coreAlpha + edgeSoften - (cHash % 9)).clamp(14, 182);
 
       case El.silicon:
         // Dark gray semi-metallic with semiconductor sparkle
@@ -2495,8 +2997,8 @@ class PixelRenderer {
         final isConductive = siT > 150 || siOx > 200;
         int sparkle = 0;
         if (isConductive) {
-           final p = (frameCount * 15 + idx * 7) % 60;
-           if (p < 5) sparkle = 40;
+          final p = (frameCount * 15 + idx * 7) % 60;
+          if (p < 5) sparkle = 40;
         }
         _inlineR = (80 + siVar).clamp(60, 110);
         _inlineG = (85 + siVar + sparkle).clamp(60, 150);
@@ -2513,7 +3015,10 @@ class PixelRenderer {
           _inlineB = (intensity * 15) >> 8;
           _inlineA = (60 + intensity * 3 ~/ 4).clamp(60, 220);
         } else {
-          _inlineR = 255; _inlineG = 96; _inlineB = 64; _inlineA = 24;
+          _inlineR = 255;
+          _inlineG = 96;
+          _inlineB = 64;
+          _inlineA = 24;
         }
       case El.argon:
         final aLife = life[idx];
@@ -2524,7 +3029,10 @@ class PixelRenderer {
           _inlineB = intensity;
           _inlineA = (50 + intensity * 3 ~/ 4).clamp(50, 200);
         } else {
-          _inlineR = 192; _inlineG = 160; _inlineB = 224; _inlineA = 21;
+          _inlineR = 192;
+          _inlineG = 160;
+          _inlineB = 224;
+          _inlineA = 21;
         }
       case El.krypton:
         final kLife = life[idx];
@@ -2535,7 +3043,10 @@ class PixelRenderer {
           _inlineB = intensity;
           _inlineA = (50 + intensity * 3 ~/ 4).clamp(50, 220);
         } else {
-          _inlineR = 224; _inlineG = 224; _inlineB = 224; _inlineA = 18;
+          _inlineR = 224;
+          _inlineG = 224;
+          _inlineB = 224;
+          _inlineA = 18;
         }
       case El.xenon:
         final xLife = life[idx];
@@ -2546,7 +3057,10 @@ class PixelRenderer {
           _inlineB = intensity;
           _inlineA = (60 + intensity * 3 ~/ 4).clamp(60, 230);
         } else {
-          _inlineR = 128; _inlineG = 128; _inlineB = 255; _inlineA = 21;
+          _inlineR = 128;
+          _inlineG = 128;
+          _inlineB = 255;
+          _inlineA = 21;
         }
 
       default:

@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../simulation/world_gen/terrain_generator.dart';
 import '../../simulation/world_gen/world_config.dart';
 import '../theme/colors.dart';
 import '../theme/particle_theme.dart';
@@ -125,150 +126,202 @@ class _WorldCreateScreenState extends State<WorldCreateScreen>
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
-        child: FadeTransition(
-          opacity: _contentFade,
-          child: Column(
-            children: [
-              // Top bar with back button
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                child: Row(
-                  children: [
-                    GlassBackButton(
-                      onTap: () => Navigator.of(context).maybePop(),
-                    ),
-                    const SizedBox(width: 16),
-                    Text('New World', style: AppTypography.heading),
-                    const Spacer(),
-                    // Page indicator dots
-                    Row(
-                      children: List.generate(_presets.length, (i) {
-                        final isActive = i == _currentPage;
-                        return AnimatedContainer(
-                          duration: ParticleTheme.fastDuration,
-                          width: isActive ? 20 : 6,
-                          height: 6,
-                          margin: const EdgeInsets.symmetric(horizontal: 3),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(3),
-                            color: isActive
-                                ? preset.color
-                                : AppColors.textDim.withValues(alpha: 0.3),
-                          ),
-                        );
-                      }),
-                    ),
-                  ],
-                ),
-              ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact =
+                constraints.maxHeight < 760 || constraints.maxWidth < 420;
+            final ultraCompact = constraints.maxHeight < 680;
+            final seedBarHeight = ultraCompact ? 44.0 : 48.0;
+            final createButtonHeight = ultraCompact ? 44.0 : 48.0;
 
-              // Big terrain preview cards -- horizontal swipe
-              Expanded(
-                child: PageView.builder(
-                  controller: _pageController,
-                  itemCount: _presets.length,
-                  onPageChanged: (i) => setState(() => _currentPage = i),
-                  itemBuilder: (context, index) {
-                    return AnimatedBuilder(
-                      animation: _pageController,
-                      builder: (context, child) {
-                        double scale = 1.0;
-                        if (_pageController.position.haveDimensions) {
-                          final page = _pageController.page ?? 0.0;
-                          scale = (1 - (page - index).abs() * 0.1)
-                              .clamp(0.85, 1.0);
-                        }
-                        return Transform.scale(
-                          scale: scale,
-                          child: child,
-                        );
-                      },
-                      child: _PresetCard(
-                        preset: _presets[index],
-                        seed: _currentSeed,
-                        isActive: index == _currentPage,
+            Widget buildSeedBar() {
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(ParticleTheme.radiusMedium),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                  child: Container(
+                    height: seedBarHeight,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    decoration: BoxDecoration(
+                      color: AppColors.glass,
+                      borderRadius: BorderRadius.circular(
+                        ParticleTheme.radiusMedium,
                       ),
-                    );
-                  },
-                ),
-              ),
-
-              // Bottom controls: seed input + create button
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
-                child: Row(
-                  children: [
-                    // Seed input
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius:
-                            BorderRadius.circular(ParticleTheme.radiusMedium),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                          child: Container(
-                            height: 48,
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 14),
-                            decoration: BoxDecoration(
-                              color: AppColors.glass,
-                              borderRadius: BorderRadius.circular(
-                                  ParticleTheme.radiusMedium),
-                              border: Border.all(
-                                color: AppColors.glassBorder,
-                                width: 0.5,
+                      border: Border.all(
+                        color: AppColors.glassBorder,
+                        width: 0.5,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.tag_rounded,
+                          size: 16,
+                          color: AppColors.textDim,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: _seedController,
+                            style: AppTypography.body.copyWith(
+                              color: AppColors.textPrimary,
+                              fontFamily: 'monospace',
+                              fontSize: 12,
+                            ),
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                            ],
+                            decoration: InputDecoration(
+                              hintText: 'World seed...',
+                              hintStyle: AppTypography.body.copyWith(
+                                color: AppColors.textDim,
                               ),
+                              border: InputBorder.none,
+                              isDense: true,
                             ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.tag_rounded,
-                                    size: 16, color: AppColors.textDim),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: TextField(
-                                    controller: _seedController,
-                                    style: AppTypography.body.copyWith(
-                                      color: AppColors.textPrimary,
-                                      fontFamily: 'monospace',
-                                      fontSize: 12,
-                                    ),
-                                    keyboardType: TextInputType.number,
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.digitsOnly,
-                                    ],
-                                    decoration: InputDecoration(
-                                      hintText: 'World seed...',
-                                      hintStyle: AppTypography.body.copyWith(
-                                        color: AppColors.textDim,
-                                      ),
-                                      border: InputBorder.none,
-                                      isDense: true,
-                                    ),
-                                    onChanged: (_) => setState(() {}),
-                                  ),
-                                ),
-                                _SmallIconButton(
-                                  icon: Icons.casino_rounded,
-                                  onTap: _randomizeSeed,
-                                ),
-                              ],
-                            ),
+                            onChanged: (_) => setState(() {}),
                           ),
                         ),
-                      ),
+                        _SmallIconButton(
+                          icon: Icons.casino_rounded,
+                          onTap: _randomizeSeed,
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 14),
-                    // Large create button
-                    _CreateWorldButton(
-                      onTap: _createWorld,
-                      creating: _creating,
-                      color: preset.color,
-                    ),
-                  ],
+                  ),
                 ),
+              );
+            }
+
+            return FadeTransition(
+              opacity: _contentFade,
+              child: Column(
+                children: [
+                  // Top bar with back button
+                  Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: ultraCompact ? 8 : 10,
+                    ),
+                    child: Row(
+                      children: [
+                        GlassBackButton(
+                          onTap: () => Navigator.of(context).maybePop(),
+                        ),
+                        SizedBox(width: ultraCompact ? 10 : 16),
+                        Text('New World', style: AppTypography.heading),
+                        const Spacer(),
+                        // Page indicator dots
+                        Row(
+                          children: List.generate(_presets.length, (i) {
+                            final isActive = i == _currentPage;
+                            return AnimatedContainer(
+                              duration: ParticleTheme.fastDuration,
+                              width: isActive ? (ultraCompact ? 16 : 20) : 6,
+                              height: ultraCompact ? 5 : 6,
+                              margin: const EdgeInsets.symmetric(horizontal: 3),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(3),
+                                color: isActive
+                                    ? preset.color
+                                    : AppColors.textDim.withValues(alpha: 0.3),
+                              ),
+                            );
+                          }),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      compact ? 16 : 24,
+                      4,
+                      compact ? 16 : 24,
+                      compact ? 8 : 12,
+                    ),
+                    child: _PresetInsightPanel(
+                      key: const ValueKey('world_preset_insight_panel'),
+                      preset: preset,
+                      seed: _currentSeed,
+                      compact: compact,
+                    ),
+                  ),
+
+                  // Big terrain preview cards -- horizontal swipe
+                  Expanded(
+                    child: PageView.builder(
+                      controller: _pageController,
+                      itemCount: _presets.length,
+                      onPageChanged: (i) => setState(() => _currentPage = i),
+                      itemBuilder: (context, index) {
+                        return AnimatedBuilder(
+                          animation: _pageController,
+                          builder: (context, child) {
+                            double scale = 1.0;
+                            if (_pageController.position.haveDimensions) {
+                              final page = _pageController.page ?? 0.0;
+                              scale = (1 - (page - index).abs() * 0.1).clamp(
+                                0.85,
+                                1.0,
+                              );
+                            }
+                            return Transform.scale(scale: scale, child: child);
+                          },
+                          child: _PresetCard(
+                            preset: _presets[index],
+                            seed: _currentSeed,
+                            isActive: index == _currentPage,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+
+                  // Bottom controls: seed input + create button
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      compact ? 16 : 24,
+                      compact ? 6 : 8,
+                      compact ? 16 : 24,
+                      compact ? 10 : 12,
+                    ),
+                    child: compact
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              buildSeedBar(),
+                              const SizedBox(height: 10),
+                              _CreateWorldButton(
+                                key: const ValueKey('world_create_button'),
+                                onTap: _createWorld,
+                                creating: _creating,
+                                color: preset.color,
+                                height: createButtonHeight,
+                                fullWidth: true,
+                              ),
+                            ],
+                          )
+                        : Row(
+                            children: [
+                              Expanded(child: buildSeedBar()),
+                              const SizedBox(width: 14),
+                              _CreateWorldButton(
+                                key: const ValueKey('world_create_button'),
+                                onTap: _createWorld,
+                                creating: _creating,
+                                color: preset.color,
+                                height: createButtonHeight,
+                                fullWidth: false,
+                              ),
+                            ],
+                          ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
@@ -304,8 +357,7 @@ class _PresetCard extends StatelessWidget {
               color: isActive
                   ? preset.color.withValues(alpha: 0.06)
                   : AppColors.glass,
-              borderRadius:
-                  BorderRadius.circular(ParticleTheme.radiusLarge),
+              borderRadius: BorderRadius.circular(ParticleTheme.radiusLarge),
               border: Border.all(
                 color: isActive
                     ? preset.color.withValues(alpha: 0.4)
@@ -362,9 +414,7 @@ class _PresetCard extends StatelessWidget {
                         child: Icon(
                           preset.icon,
                           size: 22,
-                          color: isActive
-                              ? preset.color
-                              : AppColors.textDim,
+                          color: isActive ? preset.color : AppColors.textDim,
                         ),
                       ),
                       const SizedBox(width: 14),
@@ -408,6 +458,186 @@ class _PresetCard extends StatelessWidget {
   }
 }
 
+class _PresetInsightPanel extends StatelessWidget {
+  const _PresetInsightPanel({
+    super.key,
+    required this.preset,
+    required this.seed,
+    required this.compact,
+  });
+
+  final _WorldPreset preset;
+  final int seed;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final config = preset.buildConfig(seed: seed);
+    final metrics = preset.metrics(config);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          padding: EdgeInsets.all(compact ? 14 : 16),
+          decoration: BoxDecoration(
+            color: AppColors.panelDark.withValues(alpha: 0.72),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: preset.color.withValues(alpha: 0.22),
+              width: 0.8,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      preset.tagline,
+                      key: const ValueKey('world_preset_tagline'),
+                      style: AppTypography.subheading.copyWith(
+                        color: AppColors.textPrimary,
+                        fontSize: compact ? 14 : 15,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(999),
+                      color: preset.color.withValues(alpha: 0.14),
+                    ),
+                    child: Text(
+                      preset.climateLabel,
+                      key: const ValueKey('world_preset_climate'),
+                      style: AppTypography.caption.copyWith(
+                        color: preset.color,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.0,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: preset.traits
+                    .map(
+                      (trait) => _TraitChip(
+                        label: trait,
+                        color: preset.color,
+                      ),
+                    )
+                    .toList(),
+              ),
+              const SizedBox(height: 12),
+              compact
+                  ? Column(
+                      children: metrics
+                          .map((metric) => Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: _MetricStrip(metric: metric, color: preset.color),
+                              ))
+                          .toList(),
+                    )
+                  : Row(
+                      children: metrics
+                          .map(
+                            (metric) => Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: _MetricStrip(metric: metric, color: preset.color),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TraitChip extends StatelessWidget {
+  const _TraitChip({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: Colors.white.withValues(alpha: 0.04),
+        border: Border.all(color: color.withValues(alpha: 0.16), width: 0.7),
+      ),
+      child: Text(
+        label,
+        style: AppTypography.caption.copyWith(
+          color: AppColors.textPrimary.withValues(alpha: 0.88),
+          letterSpacing: 0.7,
+        ),
+      ),
+    );
+  }
+}
+
+class _MetricStrip extends StatelessWidget {
+  const _MetricStrip({required this.metric, required this.color});
+
+  final _WorldMetric metric;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: Colors.black.withValues(alpha: 0.16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06), width: 0.7),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            metric.label,
+            style: AppTypography.caption.copyWith(
+              color: AppColors.textSecondary,
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(height: 6),
+          LinearProgressIndicator(
+            value: metric.value,
+            minHeight: 6,
+            borderRadius: BorderRadius.circular(99),
+            backgroundColor: Colors.white.withValues(alpha: 0.07),
+            color: color,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            metric.description,
+            style: AppTypography.caption.copyWith(
+              color: AppColors.textPrimary.withValues(alpha: 0.82),
+              fontSize: 10.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // =============================================================================
 // Terrain preview painter
 // =============================================================================
@@ -421,6 +651,10 @@ class _TerrainPreviewPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final w = size.width;
     final h = size.height;
+    final config = preset.buildConfig(seed: seed, width: 96, height: 60);
+    final heightmap = preset == _WorldPreset.blank
+        ? List<int>.filled(config.width, (config.height * 0.8).round())
+        : TerrainGenerator.generateHeightmap(config);
 
     // Sky gradient
     final skyPaint = Paint()
@@ -448,19 +682,13 @@ class _TerrainPreviewPainter extends CustomPainter {
       return;
     }
 
-    // Generate multi-octave noise heightmap
-    final segments = 60;
-    final points = <double>[];
-    for (var i = 0; i <= segments; i++) {
-      points.add(_noise(i / segments));
-    }
+    final segmentCount = heightmap.length - 1;
 
     // Background layer (distant hills)
     final bgPath = Path()..moveTo(0, h);
-    for (var i = 0; i <= segments; i++) {
-      final x = (i / segments) * w;
-      final baseY = (preset.baseHeight + 0.1) * h;
-      final terrainY = baseY + points[i] * preset.amplitude * h * 0.4;
+    for (var i = 0; i <= segmentCount; i++) {
+      final x = (i / segmentCount) * w;
+      final terrainY = _mapHeight(heightmap[i], config.height, h, offset: h * 0.08);
       bgPath.lineTo(x, terrainY);
     }
     bgPath.lineTo(w, h);
@@ -472,10 +700,9 @@ class _TerrainPreviewPainter extends CustomPainter {
 
     // Main terrain
     final terrainPath = Path()..moveTo(0, h);
-    for (var i = 0; i <= segments; i++) {
-      final x = (i / segments) * w;
-      final baseY = preset.baseHeight * h;
-      final terrainY = baseY + points[i] * preset.amplitude * h;
+    for (var i = 0; i <= segmentCount; i++) {
+      final x = (i / segmentCount) * w;
+      final terrainY = _mapHeight(heightmap[i], config.height, h);
       terrainPath.lineTo(x, terrainY);
     }
     terrainPath.lineTo(w, h);
@@ -494,10 +721,9 @@ class _TerrainPreviewPainter extends CustomPainter {
 
     // Terrain outline
     final linePath = Path();
-    for (var i = 0; i <= segments; i++) {
-      final x = (i / segments) * w;
-      final baseY = preset.baseHeight * h;
-      final terrainY = baseY + points[i] * preset.amplitude * h;
+    for (var i = 0; i <= segmentCount; i++) {
+      final x = (i / segmentCount) * w;
+      final terrainY = _mapHeight(heightmap[i], config.height, h);
       if (i == 0) {
         linePath.moveTo(x, terrainY);
       } else {
@@ -512,13 +738,15 @@ class _TerrainPreviewPainter extends CustomPainter {
         ..strokeWidth = 1.5,
     );
 
-    // Scatter some element-colored dots to represent placed elements
+    _paintWater(canvas, size, config, heightmap);
+    _paintVegetation(canvas, size, config, heightmap);
+    _paintAtmospherics(canvas, size, config);
+
     final rng = Random(seed + preset.index);
     for (var i = 0; i < 40; i++) {
       final fx = rng.nextDouble();
-      final ix = (fx * segments).floor().clamp(0, segments - 1);
-      final baseY = preset.baseHeight * h;
-      final surfaceY = baseY + points[ix] * preset.amplitude * h;
+      final ix = (fx * segmentCount).floor().clamp(0, segmentCount - 1);
+      final surfaceY = _mapHeight(heightmap[ix], config.height, h);
       final dotX = fx * w;
       final dotY = surfaceY + rng.nextDouble() * (h - surfaceY) * 0.6;
       final dotSize = 2.0 + rng.nextDouble() * 3.0;
@@ -535,20 +763,91 @@ class _TerrainPreviewPainter extends CustomPainter {
     }
   }
 
-  double _noise(double x) {
-    final s = seed;
-    double val = 0;
-    // 3 octaves for richer terrain
-    for (var octave = 0; octave < 3; octave++) {
-      final freq = 20.0 * (1 << octave);
-      final amp = 1.0 / (1 << octave);
-      final ix = (x * freq).floor();
-      final r1 = Random(s + ix * 7 + octave * 1000).nextDouble() - 0.5;
-      final r2 = Random(s + (ix + 1) * 7 + octave * 1000).nextDouble() - 0.5;
-      final t = (x * freq) - ix;
-      val += (r1 + (r2 - r1) * t) * amp;
+  void _paintWater(Canvas canvas, Size size, WorldConfig config, List<int> heightmap) {
+    final waterPaint = Paint()
+      ..color = AppColors.categoryLiquids.withValues(alpha: 0.26)
+      ..style = PaintingStyle.fill;
+    final foamPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.18)
+      ..strokeWidth = 1.2
+      ..style = PaintingStyle.stroke;
+
+    final int? waterLine =
+        config.waterLevel >= 0.3 ? (config.height * 0.55).round() : null;
+    final path = Path();
+    bool started = false;
+    for (var i = 0; i < heightmap.length; i++) {
+      final x = (i / (heightmap.length - 1)) * size.width;
+      final terrainY = _mapHeight(heightmap[i], config.height, size.height);
+      final targetY = waterLine != null
+          ? _mapHeight(waterLine, config.height, size.height)
+          : terrainY - size.height * 0.015;
+      if (targetY < terrainY - 1.5) {
+        if (!started) {
+          path.moveTo(x, targetY);
+          started = true;
+        } else {
+          path.lineTo(x, targetY);
+        }
+      } else if (started) {
+        path.lineTo(x, terrainY);
+      }
     }
-    return val;
+    if (started) {
+      path.lineTo(size.width, size.height);
+      path.lineTo(0, size.height);
+      path.close();
+      canvas.drawPath(path, waterPaint);
+    }
+
+    for (var i = 2; i < heightmap.length - 2; i += 8) {
+      final terrainY = _mapHeight(heightmap[i], config.height, size.height);
+      final nextY = _mapHeight(heightmap[i + 1], config.height, size.height);
+      if ((nextY - terrainY).abs() > 8 && config.waterLevel > 0.2) {
+        final x = (i / (heightmap.length - 1)) * size.width;
+        canvas.drawLine(Offset(x, terrainY - 6), Offset(x, terrainY + 10), foamPaint);
+      }
+    }
+  }
+
+  void _paintVegetation(Canvas canvas, Size size, WorldConfig config, List<int> heightmap) {
+    if (config.vegetation <= 0.05) return;
+    final rng = Random(seed + 9000 + preset.index);
+    final paint = Paint()..color = AppColors.categoryLife.withValues(alpha: 0.42);
+    final stride = config.vegetation > 0.7 ? 5 : 8;
+    for (var i = 2; i < heightmap.length - 2; i += stride) {
+      if (rng.nextDouble() > config.vegetation * 0.55) continue;
+      final x = (i / (heightmap.length - 1)) * size.width;
+      final y = _mapHeight(heightmap[i], config.height, size.height);
+      final height = 4.0 + rng.nextDouble() * 6.0;
+      canvas.drawLine(
+        Offset(x, y - 1),
+        Offset(x, y - height),
+        paint..strokeWidth = config.vegetation > 0.7 ? 2.2 : 1.5,
+      );
+    }
+  }
+
+  void _paintAtmospherics(Canvas canvas, Size size, WorldConfig config) {
+    final rng = Random(seed + 12000 + preset.index);
+    final vaporPaint = Paint();
+    final count = config.waterLevel > 0.45 ? 7 : config.volcanicActivity > 0.2 ? 6 : 3;
+    for (var i = 0; i < count; i++) {
+      final cx = rng.nextDouble() * size.width;
+      final cy = rng.nextDouble() * size.height * 0.35 + 8;
+      final radius = 10.0 + rng.nextDouble() * 18.0;
+      vaporPaint.shader = RadialGradient(
+        colors: [
+          (config.volcanicActivity > 0.25 ? const Color(0x66FF9B6A) : Colors.white).withValues(alpha: 0.13),
+          Colors.transparent,
+        ],
+      ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: radius));
+      canvas.drawCircle(Offset(cx, cy), radius, vaporPaint);
+    }
+  }
+
+  double _mapHeight(int cellY, int gridHeight, double canvasHeight, {double offset = 0}) {
+    return offset + (cellY / gridHeight) * canvasHeight;
   }
 
   @override
@@ -633,6 +932,115 @@ enum _WorldPreset {
   final Color skyColor;
   final double baseHeight;
   final double amplitude;
+  String get tagline {
+    switch (this) {
+      case _WorldPreset.blank:
+        return 'Manual sandbox with no terrain bias.';
+      case _WorldPreset.meadow:
+        return 'Lowland wetlands, soft soil, and broad surface water.';
+      case _WorldPreset.canyon:
+        return 'Vertical relief, exposed stone, and narrow river cuts.';
+      case _WorldPreset.island:
+        return 'Central landmass ringed by ocean and sandy coasts.';
+      case _WorldPreset.underground:
+        return 'Compressed surface with dense caverns and geothermal pockets.';
+      case _WorldPreset.random:
+        return 'Procedural wildcard pulled from the full generator space.';
+    }
+  }
+
+  String get climateLabel {
+    switch (this) {
+      case _WorldPreset.blank:
+        return 'MANUAL';
+      case _WorldPreset.meadow:
+        return 'TEMPERATE';
+      case _WorldPreset.canyon:
+        return 'ARID';
+      case _WorldPreset.island:
+        return 'MARITIME';
+      case _WorldPreset.underground:
+        return 'SUBTERRANEAN';
+      case _WorldPreset.random:
+        return 'UNBOUNDED';
+    }
+  }
+
+  List<String> get traits {
+    switch (this) {
+      case _WorldPreset.blank:
+        return const ['No worldgen', 'Paint-first', 'Fast start'];
+      case _WorldPreset.meadow:
+        return const ['Flood basins', 'Dense vegetation', 'Soft shorelines'];
+      case _WorldPreset.canyon:
+        return const ['Steep walls', 'Exposed stone', 'Channel flow'];
+      case _WorldPreset.island:
+        return const ['Ocean edges', 'Beach bands', 'Central rise'];
+      case _WorldPreset.underground:
+        return const ['Cavern heavy', 'Volcanic heat', 'Ore dense'];
+      case _WorldPreset.random:
+        return const ['Seed driven', 'High variance', 'Discovery focused'];
+    }
+  }
+
+  List<_WorldMetric> metrics(WorldConfig config) {
+    return [
+      _WorldMetric(
+        label: 'Water',
+        value: config.waterLevel.clamp(0.0, 1.0),
+        description: _metricDescription(config.waterLevel),
+      ),
+      _WorldMetric(
+        label: 'Relief',
+        value: (config.terrainScale / 2.5).clamp(0.0, 1.0),
+        description: _metricDescription((config.terrainScale / 2.5).clamp(0.0, 1.0)),
+      ),
+      _WorldMetric(
+        label: 'Biology',
+        value: config.vegetation.clamp(0.0, 1.0),
+        description: _metricDescription(config.vegetation),
+      ),
+    ];
+  }
+
+  String _metricDescription(double value) {
+    if (value >= 0.72) return 'High';
+    if (value >= 0.42) return 'Medium';
+    return 'Low';
+  }
+
+  WorldConfig buildConfig({
+    required int seed,
+    int width = 320,
+    int height = 180,
+  }) {
+    switch (this) {
+      case _WorldPreset.blank:
+        return WorldConfig(seed: seed, width: width, height: height);
+      case _WorldPreset.meadow:
+        return WorldConfig.meadow(seed: seed, width: width, height: height);
+      case _WorldPreset.canyon:
+        return WorldConfig.canyon(seed: seed, width: width, height: height);
+      case _WorldPreset.island:
+        return WorldConfig.island(seed: seed, width: width, height: height);
+      case _WorldPreset.underground:
+        return WorldConfig.underground(seed: seed, width: width, height: height);
+      case _WorldPreset.random:
+        return WorldConfig.random(seed: seed, width: width, height: height);
+    }
+  }
+}
+
+class _WorldMetric {
+  const _WorldMetric({
+    required this.label,
+    required this.value,
+    required this.description,
+  });
+
+  final String label;
+  final double value;
+  final String description;
 }
 
 // =============================================================================
@@ -641,13 +1049,18 @@ enum _WorldPreset {
 
 class _CreateWorldButton extends StatefulWidget {
   const _CreateWorldButton({
+    super.key,
     required this.onTap,
     required this.creating,
     required this.color,
+    this.height = 48,
+    this.fullWidth = false,
   });
   final VoidCallback onTap;
   final bool creating;
   final Color color;
+  final double height;
+  final bool fullWidth;
 
   @override
   State<_CreateWorldButton> createState() => _CreateWorldButtonState();
@@ -675,7 +1088,8 @@ class _CreateWorldButtonState extends State<_CreateWorldButton> {
           duration: ParticleTheme.fastDuration,
           child: AnimatedContainer(
             duration: ParticleTheme.fastDuration,
-            height: 48,
+            height: widget.height,
+            width: widget.fullWidth ? double.infinity : null,
             padding: const EdgeInsets.symmetric(horizontal: 28),
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -684,8 +1098,7 @@ class _CreateWorldButtonState extends State<_CreateWorldButton> {
                   AppColors.accent.withValues(alpha: _hovered ? 0.2 : 0.12),
                 ],
               ),
-              borderRadius:
-                  BorderRadius.circular(ParticleTheme.radiusMedium),
+              borderRadius: BorderRadius.circular(ParticleTheme.radiusMedium),
               border: Border.all(
                 color: widget.color.withValues(alpha: _hovered ? 0.6 : 0.4),
                 width: 1.0,
@@ -773,4 +1186,3 @@ class _SmallIconButtonState extends State<_SmallIconButton> {
     );
   }
 }
-

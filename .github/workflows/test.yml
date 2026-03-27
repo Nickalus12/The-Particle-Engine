@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
   schedule:
     # Weekly Saturday at 06:00 UTC — ThunderCompute training (if budget)
     - cron: "0 6 * * 6"
@@ -34,14 +35,35 @@ jobs:
           channel: stable
           cache: true
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Install dependencies
         run: flutter pub get
 
       - name: Analyze
-        run: flutter analyze --no-fatal-infos
+        run: flutter analyze
 
-      - name: Run Flutter tests
-        run: flutter test --no-pub
+      - name: Run Flutter tests with coverage
+        run: flutter test --coverage --no-pub
+
+      - name: Enforce coverage floor
+        run: python3 tool/check_coverage.py coverage/lcov.info --min 45
+
+      - name: Publish coverage summary
+        if: always()
+        run: |
+          if [ -f .coverage-summary.txt ]; then
+            cat .coverage-summary.txt >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-lcov
+          path: coverage/lcov.info
 
   # -----------------------------------------------------------------------
   # Job 2: Python physics test suite (every push)
@@ -72,15 +94,12 @@ jobs:
         run: |
           flutter pub get
           dart run research/export_frame.dart 100
-        continue-on-error: true
 
       - name: Generate ground truth
         run: python research/physics_oracle.py
-        continue-on-error: true
 
       - name: Generate visual ground truth
         run: python research/visual_oracle.py
-        continue-on-error: true
 
       - name: Run pytest suite
         run: |
@@ -112,7 +131,6 @@ jobs:
         run: |
           cd research
           python -m pytest tests/test_integration.py -v --tb=short
-        continue-on-error: true
 
   # -----------------------------------------------------------------------
   # Job 4: Full benchmark in CI mode (on PR, optional)
@@ -158,10 +176,74 @@ jobs:
 
       - name: Run Dart engine benchmark
         run: dart run research/cloud/fast_benchmark.dart
-        continue-on-error: true
 
   # -----------------------------------------------------------------------
-  # Job 5: Weekly ThunderCompute training (Saturday, budget-gated)
+  # Job 5: Performance telemetry pipeline (push/PR)
+  # -----------------------------------------------------------------------
+  performance-telemetry:
+    name: Performance Telemetry
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Pipeline contract tests
+        run: python -m unittest discover -s tool/performance/tests -p "test_*.py" -v
+
+      - name: Run performance pipeline
+        run: |
+          python tool/performance/run_performance_pipeline.py \
+            --profile pr \
+            --target-timeout-seconds 180 \
+            --require-telemetry-complete
+
+      - name: Upload perf artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-telemetry-artifacts
+          path: reports/performance/runs/**
+
+  # -----------------------------------------------------------------------
+  # Job 6: Weekly ThunderCompute training (Saturday, budget-gated)
+  # -----------------------------------------------------------------------
+  nightly-soak:
+    name: Nightly Soak Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run nightly performance profile
+        run: |
+          python tool/performance/run_performance_pipeline.py \
+            --profile nightly \
+            --require-telemetry-complete
+
+  # -----------------------------------------------------------------------
+  # Job 7: Weekly ThunderCompute training (Saturday, budget-gated)
   # -----------------------------------------------------------------------
   weekly-train:
     name: Weekly Cloud Training
