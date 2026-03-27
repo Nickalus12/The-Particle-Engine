@@ -33,6 +33,7 @@ class SandboxComponent extends PositionComponent
   ui.Image? _gridImage;
 
   bool _decoding = false;
+  int _postProcessFrameCounter = 0;
 
   final ui.Paint _imagePaint = ui.Paint()
     ..filterQuality = ui.FilterQuality.none;
@@ -81,11 +82,15 @@ class SandboxComponent extends PositionComponent
         _decoding = true;
         renderer.buildImage().then((image) async {
           final baseImage = image as ui.Image;
-          // Run GI post-process pipeline on the base image.
-          final GIPostProcess gi = game.sandboxWorld.giPostProcess;
-          gi.dayNightT = game.dayNightTransition;
-          final processed = await gi.process(baseImage);
-          if (processed != baseImage) {
+          final shouldRunPostProcess = _shouldRunPostProcess();
+          ui.Image processed = baseImage;
+          if (shouldRunPostProcess) {
+            // Run GI post-process pipeline on the base image.
+            final GIPostProcess gi = game.sandboxWorld.giPostProcess;
+            gi.dayNightT = game.dayNightTransition;
+            processed = await gi.process(baseImage);
+          }
+          if (!identical(processed, baseImage)) {
             baseImage.dispose();
           }
           _gridImage?.dispose();
@@ -151,60 +156,93 @@ class SandboxComponent extends PositionComponent
 
   @override
   void onTapDown(TapDownEvent event) {
+    if (!game.isDesktop) return;
     lastPaintX = null;
     lastPaintY = null;
     colonySpawnedThisGesture = false;
-    paintAt(event.localPosition);
+    paintAtScreen(event.canvasPosition);
+  }
+
+  bool _shouldRunPostProcess() {
+    if (game.isDesktop) {
+      return true;
+    }
+    // During mobile creation mode, prioritize touch responsiveness.
+    // Reduce expensive post-processing frequency to avoid drag lag.
+    final interval = game.isCreationMode ? 4 : 2;
+    final shouldRun = _postProcessFrameCounter % interval == 0;
+    _postProcessFrameCounter++;
+    return shouldRun;
   }
 
   @override
   void onDragStart(DragStartEvent event) {
     super.onDragStart(event);
+    if (!game.isDesktop) return;
     lastPaintX = null;
     lastPaintY = null;
     colonySpawnedThisGesture = false;
-    paintAt(event.localPosition);
+    paintAtScreen(event.canvasPosition);
   }
 
   @override
   void onDragUpdate(DragUpdateEvent event) {
-    paintAt(event.localEndPosition);
+    if (!game.isDesktop) return;
+    paintAtScreen(event.canvasEndPosition);
   }
 
   @override
   void onDragEnd(DragEndEvent event) {
     super.onDragEnd(event);
+    if (!game.isDesktop) return;
     lastPaintX = null;
     lastPaintY = null;
     colonySpawnedThisGesture = false;
   }
 
+  /// Paint using screen/canvas-space coordinates (camera aware).
+  void paintAtScreen(Vector2 screenPosition) {
+    final (cx, cy) = viewportToGrid(screenPosition);
+    _paintGridAt(cx, cy);
+  }
+
+  /// Paint using world-space coordinates.
   void paintAt(Vector2 position) {
-    // Convert local position to grid coords, wrapping X.
+    // Convert world position to grid coords, wrapping X.
     final rawX = (position.x / cellSize).floor();
     final cx = simulation.wrapX(rawX);
     final cy = (position.y / cellSize).floor();
+    _paintGridAt(cx, cy);
+  }
 
+  /// Paint at grid coordinates, with interpolation from prior gesture point.
+  void _paintGridAt(int cx, int cy) {
     // Bresenham line from last paint position to current for gap-free strokes.
     if (lastPaintX != null && lastPaintY != null) {
       final x0 = lastPaintX!;
       final y0 = lastPaintY!;
       if (x0 != cx || y0 != cy) {
-        _paintLine(x0, y0, cx, cy);
+        final modified = _paintLine(x0, y0, cx, cy);
+        if (modified) {
+          renderer.invalidateAtmosphereCaches();
+        }
         lastPaintX = cx;
         lastPaintY = cy;
         return;
       }
     }
 
-    _paintCell(cx, cy);
+    final modified = _paintCell(cx, cy);
+    if (modified) {
+      renderer.invalidateAtmosphereCaches();
+    }
     lastPaintX = cx;
     lastPaintY = cy;
   }
 
   /// Paint along a Bresenham line from (x0,y0) to (x1,y1), skipping (x0,y0)
   /// since it was already painted on the previous event.
-  void _paintLine(int x0, int y0, int x1, int y1) {
+  bool _paintLine(int x0, int y0, int x1, int y1) {
     final w = simulation.gridW;
     int rawDx = x1 - x0;
     // Shortest path across wrap boundary
@@ -218,13 +256,14 @@ class SandboxComponent extends PositionComponent
     int sx = rawDx >= 0 ? 1 : -1;
     int sy = y0 < y1 ? 1 : -1;
     int err = dx + dy;
+    bool modified = false;
 
     int px = x0;
     int py = y0;
     bool first = true;
     while (true) {
       if (!first) {
-        _paintCell(simulation.wrapX(px), py);
+        modified = _paintCell(simulation.wrapX(px), py) || modified;
       }
       first = false;
       if (px == actualX1 && py == y1) break;
@@ -238,6 +277,7 @@ class SandboxComponent extends PositionComponent
         py += sy;
       }
     }
+    return modified;
   }
 
   /// Whether a colony was already spawned during this drag gesture.
@@ -245,12 +285,53 @@ class SandboxComponent extends PositionComponent
   bool colonySpawnedThisGesture = false;
 
   /// Paint a single brush stamp at grid position (cx, cy).
-  void _paintCell(int cx, int cy) {
+  bool _paintCell(int cx, int cy) {
     final isEraser = selectedElement == El.eraser || selectedElement == El.empty;
     final paintEl = isEraser ? El.empty : selectedElement;
 
     final grid = simulation.grid;
     final gridW = simulation.gridW;
+    bool modified = false;
+
+    if (paintEl == El.ant) {
+      // Ants are entity-based. Avoid painting/clearing a large temporary blob
+      // on every drag update before spawning the colony.
+      if (colonySpawnedThisGesture) return false;
+      colonySpawnedThisGesture = true;
+
+      var nestY = cy;
+      for (var scanY = cy; scanY < simulation.gridH - 1; scanY++) {
+        final belowIdx = (scanY + 1) * gridW + simulation.wrapX(cx);
+        final belowEl = grid[belowIdx];
+        if (!simulation.isEmptyOrGas(belowEl)) {
+          nestY = scanY;
+          break;
+        }
+        if (scanY == simulation.gridH - 2) {
+          nestY = scanY;
+        }
+      }
+
+      final cxNest = cx;
+      final cyNest = nestY;
+      for (var dy2 = -1; dy2 <= 1; dy2++) {
+        for (var dx2 = -1; dx2 <= 1; dx2++) {
+          final nx2 = simulation.wrapX(cxNest + dx2);
+          final ny2 = cyNest + dy2;
+          if (simulation.inBoundsY(ny2)) {
+            final idx2 = ny2 * gridW + nx2;
+            if (grid[idx2] != El.empty) {
+              simulation.clearCell(idx2);
+              simulation.unsettleNeighbors(nx2, ny2);
+              modified = true;
+            }
+          }
+        }
+      }
+      final world = game.sandboxWorld;
+      world.spawnColony(cxNest, cyNest);
+      return modified;
+    }
 
     for (var dy = -brushSize; dy <= brushSize; dy++) {
       for (var dx = -brushSize; dx <= brushSize; dx++) {
@@ -259,6 +340,13 @@ class SandboxComponent extends PositionComponent
           final ny = cy + dy;
           if (simulation.inBoundsY(ny)) {
             final idx = ny * gridW + nx;
+            final existingEl = grid[idx];
+            if (existingEl == paintEl) {
+              continue;
+            }
+            if (paintEl == El.empty && existingEl == El.empty) {
+              continue;
+            }
             simulation.clearCell(idx);
             grid[idx] = paintEl;
             // Initialize mass from element base mass
@@ -273,79 +361,28 @@ class SandboxComponent extends PositionComponent
             simulation.flags[idx] = simulation.simClock ? 0 : 0x80;
             simulation.markDirty(nx, ny);
             simulation.unsettleNeighbors(nx, ny);
+            modified = true;
           }
         }
       }
     }
-
-    // Ant placement: instead of painting a blob of El.ant cells (which creates
-    // dozens of grid-based ants that each run neural networks and freeze the game),
-    // place a SINGLE colony at the tap position. The colony spawns entity-based
-    // ants naturally from its food stores. Much more performant and realistic.
-    if (paintEl == El.ant) {
-      // Only spawn one colony per gesture — prevents hold-to-freeze
-      if (colonySpawnedThisGesture) return;
-      colonySpawnedThisGesture = true;
-      // Undo the grid painting — don't fill cells with El.ant
-      for (var dy2 = -brushSize; dy2 <= brushSize; dy2++) {
-        for (var dx2 = -brushSize; dx2 <= brushSize; dx2++) {
-          if (dx2 * dx2 + dy2 * dy2 <= brushSize * brushSize) {
-            final nx2 = simulation.wrapX(cx + dx2);
-            final ny2 = cy + dy2;
-            if (simulation.inBoundsY(ny2)) {
-              final idx2 = ny2 * gridW + nx2;
-              if (grid[idx2] == El.ant) {
-                simulation.clearCell(idx2);
-              }
-            }
-          }
-        }
-      }
-      // Find the ground surface below the tap point — colony should land on terrain.
-      // Skip empty and ALL gas cells (oxygen, CO2, noble gases, etc.)
-      var nestY = cy;
-      for (var scanY = cy; scanY < simulation.gridH - 1; scanY++) {
-        final belowIdx = (scanY + 1) * gridW + simulation.wrapX(cx);
-        final belowEl = grid[belowIdx];
-        // Found solid/liquid/granular ground
-        if (!simulation.isEmptyOrGas(belowEl)) {
-          nestY = scanY;
-          break;
-        }
-        if (scanY == simulation.gridH - 2) {
-          nestY = scanY;
-        }
-      }
-
-      // Clear a small 3x3 area around the colony origin for ant spawning
-      final cxNest = cx;
-      final cyNest = nestY;
-      for (var dy2 = -1; dy2 <= 1; dy2++) {
-        for (var dx2 = -1; dx2 <= 1; dx2++) {
-          final nx2 = simulation.wrapX(cxNest + dx2);
-          final ny2 = cyNest + dy2;
-          if (simulation.inBoundsY(ny2)) {
-            final idx2 = ny2 * gridW + nx2;
-            if (grid[idx2] != El.empty) {
-              simulation.clearCell(idx2);
-            }
-          }
-        }
-      }
-      // Spawn colony at the ground surface position
-      final world = game.sandboxWorld;
-      world.spawnColony(cxNest, cyNest);
-      return; // Don't process further
-    }
+    return modified;
   }
 
-  (int x, int y) screenToGrid(Vector2 screenPos) {
+  (int x, int y) viewportToGrid(Vector2 viewportPos) {
     final cam = game.camera.viewfinder;
-    final worldX = screenPos.x / cam.zoom + cam.position.x;
-    final worldY = screenPos.y / cam.zoom + cam.position.y;
+    final viewportSize = game.camera.viewport.size;
+    final worldX =
+        cam.position.x + (viewportPos.x - viewportSize.x / 2) / cam.zoom;
+    final worldY =
+        cam.position.y + (viewportPos.y - viewportSize.y / 2) / cam.zoom;
     return (
       simulation.wrapX((worldX / cellSize).floor()),
       (worldY / cellSize).floor(),
     );
   }
+
+  /// Backward-compatible alias while tests and callers migrate to the
+  /// viewport-local naming used by the mobile input contract.
+  (int x, int y) screenToGrid(Vector2 screenPos) => viewportToGrid(screenPos);
 }
