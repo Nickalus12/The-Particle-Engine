@@ -26,6 +26,7 @@ import os
 import subprocess
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -37,125 +38,155 @@ RESEARCH_DIR = SCRIPT_DIR.parent
 PROJECT_DIR = RESEARCH_DIR.parent
 sys.path.insert(0, str(RESEARCH_DIR))
 
-from parameter_contract import write_trial_config as write_manifest_trial_config
+from parameter_contract import (
+    build_optuna_suggestion_spec,
+    select_optuna_manifest_parameters,
+    write_trial_config as write_manifest_trial_config,
+)
 
 STUDY_DB = RESEARCH_DIR / "cloud_optuna_study.db"
 TRIAL_CONFIG = RESEARCH_DIR / "trial_config.json"
 RESULTS_FILE = RESEARCH_DIR / "cloud_optimization_results.json"
 
-# ---------------------------------------------------------------------------
-# Extended parameter space (more params than local optimizer)
-# ---------------------------------------------------------------------------
-DEFAULTS: dict[str, int | float] = {
-    # Densities (9 params)
-    "sand_density": 150,
-    "water_density": 100,
-    "oil_density": 80,
-    "stone_density": 255,
-    "metal_density": 240,
-    "ice_density": 90,
-    "wood_density": 85,
-    "dirt_density": 145,
-    "lava_density": 200,
-    # Gravity (2 params)
-    "sand_gravity": 2,
-    "water_gravity": 1,
-    # Temperature thresholds (4 params)
-    "water_boil_point": 180,
-    "water_freeze_point": 30,
-    "sand_melt_point": 220,
-    "ice_melt_point": 40,
-    # Viscosity (3 params)
-    "oil_viscosity": 2,
-    "mud_viscosity": 3,
-    "lava_viscosity": 4,
-    # Behavioral (3 params)
+LEGACY_EXTRA_DEFAULTS: dict[str, int | float] = {
     "evaporation_rate": 1000,
     "fire_spread_prob": 0.15,
     "erosion_rate": 200,
 }
 
-# Extended params only searched in --extended mode
-EXTENDED_DEFAULTS: dict[str, int | float] = {
-    # Heat conductivity
-    "stone_conductivity": 50,
-    "metal_conductivity": 200,
-    "water_conductivity": 100,
-    # Structural
-    "stone_structural_integrity": 200,
-    "wood_structural_integrity": 80,
-    # Combustion
-    "wood_ignition_temp": 180,
-    "oil_ignition_temp": 160,
-    "plant_ignition_temp": 170,
-    # Acid
-    "acid_dissolve_rate": 150,
-    "acid_strength": 200,
+CLOUD_OPTUNA_PROFILE = "balanced"
+CLOUD_FAST_MANIFEST_PARAMS = select_optuna_manifest_parameters(
+    profile=CLOUD_OPTUNA_PROFILE,
+    runtime_mutable=True,
+)
+CLOUD_EXTENDED_MANIFEST_PARAMS = select_optuna_manifest_parameters(
+    profile=CLOUD_OPTUNA_PROFILE,
+)
+
+DEFAULTS: dict[str, int | float] = {
+    **{
+        str(meta.get("legacy_flat")): meta.get("default")
+        for _, meta in CLOUD_FAST_MANIFEST_PARAMS
+        if meta.get("legacy_flat") is not None
+    },
+    **LEGACY_EXTRA_DEFAULTS,
 }
+EXTENDED_DEFAULTS: dict[str, int | float] = {
+    **{
+        str(meta.get("legacy_flat")): meta.get("default")
+        for _, meta in CLOUD_EXTENDED_MANIFEST_PARAMS
+        if meta.get("legacy_flat") is not None
+    },
+    **LEGACY_EXTRA_DEFAULTS,
+}
+
+
+def _set_cloud_optuna_profile(profile: str) -> None:
+    global CLOUD_OPTUNA_PROFILE, CLOUD_FAST_MANIFEST_PARAMS, CLOUD_EXTENDED_MANIFEST_PARAMS, DEFAULTS, EXTENDED_DEFAULTS
+    CLOUD_OPTUNA_PROFILE = profile
+    CLOUD_FAST_MANIFEST_PARAMS = select_optuna_manifest_parameters(
+        profile=profile,
+        runtime_mutable=True,
+    )
+    CLOUD_EXTENDED_MANIFEST_PARAMS = select_optuna_manifest_parameters(
+        profile=profile,
+    )
+    DEFAULTS = {
+        **{
+            str(meta.get("legacy_flat")): meta.get("default")
+            for _, meta in CLOUD_FAST_MANIFEST_PARAMS
+            if meta.get("legacy_flat") is not None
+        },
+        **LEGACY_EXTRA_DEFAULTS,
+    }
+    EXTENDED_DEFAULTS = {
+        **{
+            str(meta.get("legacy_flat")): meta.get("default")
+            for _, meta in CLOUD_EXTENDED_MANIFEST_PARAMS
+            if meta.get("legacy_flat") is not None
+        },
+        **LEGACY_EXTRA_DEFAULTS,
+    }
+
+
+def _build_cloud_optuna_metadata(*, extended: bool) -> dict[str, Any]:
+    manifest_params = (
+        CLOUD_EXTENDED_MANIFEST_PARAMS if extended else CLOUD_FAST_MANIFEST_PARAMS
+    )
+    group_counts = Counter(str(meta.get("group", "unknown")) for _, meta in manifest_params)
+    return {
+        "profile": CLOUD_OPTUNA_PROFILE,
+        "source_label": "cloud_optuna",
+        "execution_mode": "extended" if extended else "fast",
+        "param_count": len(manifest_params) + len(LEGACY_EXTRA_DEFAULTS),
+        "runtime_mutable_only": not extended,
+        "search_groups": dict(sorted(group_counts.items())),
+    }
+
+
+def _annotate_study(study, *, extended: bool) -> None:
+    metadata = _build_cloud_optuna_metadata(extended=extended)
+    study.set_user_attr("optuna_profile", CLOUD_OPTUNA_PROFILE)
+    study.set_user_attr("optuna_execution_mode", metadata["execution_mode"])
+    study.set_user_attr("optuna_param_count", metadata["param_count"])
+    study.set_user_attr("optuna_runtime_mutable_only", metadata["runtime_mutable_only"])
+    study.set_user_attr("optuna_search_groups", metadata["search_groups"])
 
 
 def suggest_params(trial, extended: bool = False) -> dict[str, Any]:
     """Define the Optuna parameter search space."""
     params: dict[str, Any] = {}
+    manifest_params = (
+        CLOUD_EXTENDED_MANIFEST_PARAMS if extended else CLOUD_FAST_MANIFEST_PARAMS
+    )
 
-    # Core densities
-    params["sand_density"] = trial.suggest_int("sand_density", 120, 180)
-    params["water_density"] = trial.suggest_int("water_density", 80, 120)
-    params["oil_density"] = trial.suggest_int("oil_density", 60, 95)
-    params["stone_density"] = trial.suggest_int("stone_density", 230, 255)
-    params["metal_density"] = trial.suggest_int("metal_density", 235, 255)
-    params["ice_density"] = trial.suggest_int("ice_density", 80, 100)
-    params["wood_density"] = trial.suggest_int("wood_density", 60, 100)
-    params["dirt_density"] = trial.suggest_int("dirt_density", 130, 160)
-    params["lava_density"] = trial.suggest_int("lava_density", 180, 220)
+    for _, meta in manifest_params:
+        spec = build_optuna_suggestion_spec(meta)
+        if spec is None:
+            continue
 
-    # Gravity
-    params["sand_gravity"] = trial.suggest_int("sand_gravity", 1, 3)
-    params["water_gravity"] = trial.suggest_int("water_gravity", 1, 2)
+        name = str(spec["name"])
+        if spec["type"] == "float":
+            kwargs: dict[str, Any] = {}
+            if "step" in spec:
+                kwargs["step"] = float(spec["step"])
+            elif spec.get("log"):
+                kwargs["log"] = True
+            params[name] = trial.suggest_float(
+                name,
+                float(spec["low"]),
+                float(spec["high"]),
+                **kwargs,
+            )
+        else:
+            kwargs = {}
+            if "step" in spec:
+                kwargs["step"] = int(spec["step"])
+            elif spec.get("log"):
+                kwargs["log"] = True
+            params[name] = trial.suggest_int(
+                name,
+                int(spec["low"]),
+                int(spec["high"]),
+                **kwargs,
+            )
 
-    # Temperature thresholds
-    params["water_boil_point"] = trial.suggest_int("water_boil_point", 160, 200)
-    params["water_freeze_point"] = trial.suggest_int("water_freeze_point", 20, 50)
-    params["sand_melt_point"] = trial.suggest_int("sand_melt_point", 200, 250)
-    params["ice_melt_point"] = trial.suggest_int("ice_melt_point", 30, 60)
-
-    # Viscosity
-    params["oil_viscosity"] = trial.suggest_int("oil_viscosity", 1, 4)
-    params["mud_viscosity"] = trial.suggest_int("mud_viscosity", 2, 5)
-    params["lava_viscosity"] = trial.suggest_int("lava_viscosity", 3, 6)
-
-    # Behavioral
     params["evaporation_rate"] = trial.suggest_int("evaporation_rate", 500, 3000)
     params["fire_spread_prob"] = trial.suggest_float(
         "fire_spread_prob", 0.05, 0.40, step=0.05
     )
     params["erosion_rate"] = trial.suggest_int("erosion_rate", 50, 500)
 
-    if extended:
-        params["stone_conductivity"] = trial.suggest_int("stone_conductivity", 20, 100)
-        params["metal_conductivity"] = trial.suggest_int("metal_conductivity", 150, 255)
-        params["water_conductivity"] = trial.suggest_int("water_conductivity", 60, 150)
-        params["stone_structural_integrity"] = trial.suggest_int(
-            "stone_structural_integrity", 150, 255
-        )
-        params["wood_structural_integrity"] = trial.suggest_int(
-            "wood_structural_integrity", 50, 120
-        )
-        params["wood_ignition_temp"] = trial.suggest_int("wood_ignition_temp", 160, 210)
-        params["oil_ignition_temp"] = trial.suggest_int("oil_ignition_temp", 140, 190)
-        params["plant_ignition_temp"] = trial.suggest_int("plant_ignition_temp", 150, 200)
-        params["acid_dissolve_rate"] = trial.suggest_int("acid_dissolve_rate", 80, 250)
-        params["acid_strength"] = trial.suggest_int("acid_strength", 150, 255)
-
     return params
 
 
-def write_trial_config(params: dict[str, Any]) -> Path:
+def write_trial_config(params: dict[str, Any], *, extended: bool = False) -> Path:
     """Write trial parameters to JSON for the benchmark to consume."""
     # Write to a worker-specific file to avoid conflicts
     pid = os.getpid()
     config_path = RESEARCH_DIR / f"trial_config_{pid}.json"
-    return write_manifest_trial_config(config_path, params)
+    metadata = _build_cloud_optuna_metadata(extended=extended)
+    return write_manifest_trial_config(config_path, params, metadata=metadata)
 
 
 def run_benchmark(config_path: Path, fast: bool = True) -> tuple[float, float, float]:
@@ -243,7 +274,7 @@ def _run_full_benchmark(config_path: Path) -> tuple[float, float, float]:
 def objective(trial, extended: bool = False, fast: bool = True) -> tuple[float, float]:
     """Optuna objective: maximize physics and interaction scores."""
     params = suggest_params(trial, extended=extended)
-    config_path = write_trial_config(params)
+    config_path = write_trial_config(params, extended=extended)
 
     try:
         physics, visuals, overall = run_benchmark(config_path, fast=fast)
@@ -262,12 +293,14 @@ def worker_process(
     worker_id: int,
     n_trials: int,
     study_name: str,
+    profile: str,
     extended: bool,
     result_queue: mp.Queue,
 ):
     """Worker process that runs a batch of Optuna trials."""
     import optuna
 
+    _set_cloud_optuna_profile(profile)
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
     storage_url = f"sqlite:///{STUDY_DB}"
@@ -280,6 +313,7 @@ def worker_process(
             seed=42 + worker_id, multivariate=True
         ),
     )
+    _annotate_study(study, extended=extended)
 
     start = time.time()
     completed = 0
@@ -320,6 +354,7 @@ def run_optimization(args: argparse.Namespace) -> None:
     """Launch parallel workers to run optimization."""
     import optuna
 
+    _set_cloud_optuna_profile(args.profile)
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
     n_workers = args.workers
@@ -337,6 +372,7 @@ def run_optimization(args: argparse.Namespace) -> None:
         load_if_exists=True,
         sampler=optuna.samplers.TPESampler(seed=42, multivariate=True),
     )
+    _annotate_study(study, extended=extended)
     existing = len(study.trials)
 
     print()
@@ -349,7 +385,11 @@ def run_optimization(args: argparse.Namespace) -> None:
     print(f"  Total trials:   {trials_per_worker * n_workers}")
     print(f"  Existing:       {existing}")
     print(f"  Extended mode:  {extended}")
-    print(f"  Parameters:     {21 + (10 if extended else 0)}")
+    print(f"  Profile:        {args.profile}")
+    print(
+        f"  Parameters:     "
+        f"{len(EXTENDED_DEFAULTS if extended else DEFAULTS)}"
+    )
     print(f"  Study:          {study_name}")
     print(f"  Database:       {STUDY_DB.name}")
     print()
@@ -364,7 +404,7 @@ def run_optimization(args: argparse.Namespace) -> None:
     for w in range(n_workers):
         p = mp.Process(
             target=worker_process,
-            args=(w, trials_per_worker, study_name, extended, result_queue),
+            args=(w, trials_per_worker, study_name, args.profile, extended, result_queue),
         )
         p.start()
         processes.append(p)
@@ -386,6 +426,7 @@ def run_optimization(args: argparse.Namespace) -> None:
 
     # Reload study for final analysis
     study = optuna.load_study(study_name=study_name, storage=storage_url)
+    _annotate_study(study, extended=extended)
     pareto = study.best_trials
 
     print()
@@ -420,7 +461,7 @@ def run_optimization(args: argparse.Namespace) -> None:
         print(f"\n  Best params saved to: {RESULTS_FILE.name}")
 
         # Also write as trial_config for immediate use
-        write_trial_config(best.params)
+        write_trial_config(best.params, extended=extended)
         print(f"  Trial config written to: trial_config.json")
 
     print()
@@ -430,11 +471,13 @@ def show_results(args: argparse.Namespace) -> None:
     """Display optimization results."""
     import optuna
 
+    _set_cloud_optuna_profile(args.profile)
     storage_url = f"sqlite:///{STUDY_DB}"
     try:
         study = optuna.load_study(
             study_name=args.study_name, storage=storage_url
         )
+        _annotate_study(study, extended=args.extended)
     except Exception:
         print("No study found. Run optimization first.")
         return
@@ -463,8 +506,9 @@ def show_results(args: argparse.Namespace) -> None:
     # Show best params diff
     best = sorted_trials[0]
     print(f"\n  Best trial #{best.number} params vs defaults:")
-    for key in sorted(DEFAULTS.keys()):
-        default = DEFAULTS[key]
+    default_set = EXTENDED_DEFAULTS if args.extended else DEFAULTS
+    for key in sorted(default_set.keys()):
+        default = default_set[key]
         current = best.params.get(key, default)
         if isinstance(default, float):
             diff = abs(current - default) > 0.001
@@ -504,10 +548,27 @@ def main() -> int:
         action="store_true",
         help="Include extended parameter space (31 params instead of 21)",
     )
+    run_p.add_argument(
+        "--profile",
+        choices=["balanced", "mobile", "exploratory"],
+        default="balanced",
+        help="Search-surface profile (default: balanced)",
+    )
 
     show_p = sub.add_parser("show", help="Show results")
     show_p.add_argument("--study-name", default="cloud_particle_engine")
     show_p.add_argument("--top", type=int, default=20)
+    show_p.add_argument(
+        "--profile",
+        choices=["balanced", "mobile", "exploratory"],
+        default="balanced",
+        help="Interpret results against this profile's manifest surface",
+    )
+    show_p.add_argument(
+        "--extended",
+        action="store_true",
+        help="Compare results against the extended manifest-backed defaults",
+    )
 
     args = parser.parse_args()
 

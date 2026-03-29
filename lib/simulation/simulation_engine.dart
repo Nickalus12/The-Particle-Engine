@@ -2,6 +2,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import '../utils/fast_rng.dart';
+import 'physics_runtime.dart';
 import 'element_registry.dart';
 import 'plant_colony.dart';
 
@@ -200,6 +201,12 @@ class SimulationEngine {
   /// Number of vertical slices to divide the grid into for parallel processing.
   int numSlices = 4;
 
+  /// Centralized cadence configuration for the main physics phases.
+  late SimulationPhaseScheduler phaseScheduler;
+
+  PhysicsRuntimeSnapshot _lastPhysicsRuntimeSnapshot =
+      PhysicsRuntimeSnapshot.empty();
+
   /// The size of each vertical slice in pixels.
   int sliceWidth = 0;
 
@@ -254,8 +261,59 @@ class SimulationEngine {
   /// Pass landscape-oriented values (e.g. 320x180) for widescreen layouts.
   SimulationEngine({this.gridW = 320, this.gridH = 180, int? seed}) {
     rng = FastRng(seed ?? DateTime.now().millisecondsSinceEpoch);
+    phaseScheduler = _buildPhaseScheduler();
     _allocate();
   }
+
+  SimulationPhaseScheduler _buildPhaseScheduler() => SimulationPhaseScheduler(
+    schedules: {
+      'apply_wind': SimulationPhaseSchedule(
+        key: 'apply_wind',
+        group: SimulationPhaseGroup.movementGravity,
+        cadence: SimTuning.phaseApplyWindCadence,
+      ),
+      'update_temperature': SimulationPhaseSchedule(
+        key: 'update_temperature',
+        group: SimulationPhaseGroup.chemistryPhaseChange,
+        cadence: SimTuning.phaseTemperatureCadence,
+      ),
+      'update_pressure': SimulationPhaseSchedule(
+        key: 'update_pressure',
+        group: SimulationPhaseGroup.chemistryPhaseChange,
+        cadence: SimTuning.phasePressureCadence,
+      ),
+      'update_ph_charge': SimulationPhaseSchedule(
+        key: 'update_ph_charge',
+        group: SimulationPhaseGroup.electricityLightMoisture,
+        cadence: SimTuning.phasePhChargeCadence,
+      ),
+      'update_vibration': SimulationPhaseSchedule(
+        key: 'update_vibration',
+        group: SimulationPhaseGroup.structuralStress,
+        cadence: SimTuning.phaseVibrationCadence,
+      ),
+      'update_stress': SimulationPhaseSchedule(
+        key: 'update_stress',
+        group: SimulationPhaseGroup.structuralStress,
+        cadence: SimTuning.phaseStressCadence,
+      ),
+      'update_support': SimulationPhaseSchedule(
+        key: 'update_support',
+        group: SimulationPhaseGroup.structuralStress,
+        cadence: SimTuning.phaseSupportCadence,
+      ),
+      'update_wind_field': SimulationPhaseSchedule(
+        key: 'update_wind_field',
+        group: SimulationPhaseGroup.electricityLightMoisture,
+        cadence: SimTuning.phaseWindFieldCadence,
+      ),
+      'grid_slice_processing': const SimulationPhaseSchedule(
+        key: 'grid_slice_processing',
+        group: SimulationPhaseGroup.movementGravity,
+        cadence: 1,
+      ),
+    },
+  );
 
   void _allocate() {
     final totalCells = gridW * gridH;
@@ -413,6 +471,8 @@ class SimulationEngine {
       'gravityDir': gravityDir,
       'windForce': windForce,
       'isNight': isNight,
+      'phaseScheduler': phaseScheduler.toMap(),
+      'physicsRuntimeSnapshot': _lastPhysicsRuntimeSnapshot.toMap(),
     };
   }
 
@@ -468,10 +528,14 @@ class SimulationEngine {
     gravityDir = (snapshot['gravityDir'] as int?) ?? 1;
     windForce = (snapshot['windForce'] as int?) ?? 0;
     isNight = (snapshot['isNight'] as bool?) ?? false;
+    _lastPhysicsRuntimeSnapshot = PhysicsRuntimeSnapshot.empty();
     colonyX = -1;
     colonyY = -1;
     markAllDirty();
   }
+
+  Map<String, dynamic> capturePhysicsRuntimeSnapshot() =>
+      _lastPhysicsRuntimeSnapshot.toMap();
 
   /// Restore a typed list field from snapshot data, falling back to [fallback].
   static void _restoreTyped<T extends List<int>>(
@@ -4150,6 +4214,63 @@ class SimulationEngine {
     }
   }
 
+  int _activeDirtyChunkCount(Uint8List chunks) {
+    var active = 0;
+    for (final chunk in chunks) {
+      if (chunk != 0) {
+        active++;
+      }
+    }
+    return active;
+  }
+
+  void _recordPhaseSample(
+    List<SimulationPhaseSample> samples, {
+    required String key,
+    required SimulationPhaseGroup group,
+    void Function()? callback,
+    int? cellsChangedOverride,
+  }) {
+    final activeChunks = _activeDirtyChunkCount(dirtyChunks);
+    final totalChunks = dirtyChunks.length;
+    if (callback == null) {
+      samples.add(
+        SimulationPhaseSample(
+          key: key,
+          group: group.name,
+          ran: false,
+          durationMs: 0.0,
+          cellsVisited: activeChunks * 16 * 16,
+          cellsChanged: 0,
+          dirtyChunksVisited: activeChunks,
+          dirtyChunksSkipped: totalChunks - activeChunks,
+        ),
+      );
+      return;
+    }
+
+    final beforeNextDirty = _activeDirtyChunkCount(nextDirtyChunks);
+    final watch = Stopwatch()..start();
+    callback();
+    watch.stop();
+    final afterNextDirty = _activeDirtyChunkCount(nextDirtyChunks);
+    final changedChunks = afterNextDirty - beforeNextDirty;
+    samples.add(
+      SimulationPhaseSample(
+        key: key,
+        group: group.name,
+        ran: true,
+        durationMs: watch.elapsedMicroseconds / 1000.0,
+        cellsVisited: activeChunks * 16 * 16,
+        cellsChanged:
+            cellsChangedOverride ??
+            ((changedChunks <= 0 ? 0 : changedChunks) * 16 * 16),
+        dirtyChunksVisited: activeChunks,
+        dirtyChunksSkipped: totalChunks - activeChunks,
+      ),
+    );
+  }
+
   /// Run one frame of physics simulation.
   void step(
     void Function(SimulationEngine engine, int el, int x, int y, int idx)
@@ -4157,47 +4278,136 @@ class SimulationEngine {
   ) {
     simClock = !simClock;
     final currentClockBit = simClock ? 0x80 : 0;
+    final dirtyBefore = _activeDirtyChunkCount(dirtyChunks);
+    final phaseSamples = <SimulationPhaseSample>[];
 
-    processExplosions();
+    _recordPhaseSample(
+      phaseSamples,
+      key: 'process_explosions',
+      group: SimulationPhaseGroup.entityCreatureEffects,
+      callback: processExplosions,
+    );
 
-    if (windForce != 0 && frameCount % 2 == 0) applyWind();
-    if (frameCount % 3 == 0) updateTemperature();
-    if (frameCount % 4 == 0) updatePressure();
-    if (frameCount % 4 == 0) runPHAndChargePass();
-    if (frameCount % 2 == 0) updateVibration();
-    if (frameCount % 4 == 0) updateStress();
-    if (frameCount % 2 == 0) updateSupport();
-    if (frameCount % 30 == 0) updateWindField();
+    _recordPhaseSample(
+      phaseSamples,
+      key: 'apply_wind',
+      group: SimulationPhaseGroup.movementGravity,
+      callback:
+          windForce != 0 && phaseScheduler.shouldRun('apply_wind', frameCount)
+          ? applyWind
+          : null,
+    );
+    _recordPhaseSample(
+      phaseSamples,
+      key: 'update_temperature',
+      group: SimulationPhaseGroup.chemistryPhaseChange,
+      callback: phaseScheduler.shouldRun('update_temperature', frameCount)
+          ? updateTemperature
+          : null,
+    );
+    _recordPhaseSample(
+      phaseSamples,
+      key: 'update_pressure',
+      group: SimulationPhaseGroup.chemistryPhaseChange,
+      callback: phaseScheduler.shouldRun('update_pressure', frameCount)
+          ? updatePressure
+          : null,
+    );
+    _recordPhaseSample(
+      phaseSamples,
+      key: 'update_ph_charge',
+      group: SimulationPhaseGroup.electricityLightMoisture,
+      callback: phaseScheduler.shouldRun('update_ph_charge', frameCount)
+          ? runPHAndChargePass
+          : null,
+    );
+    _recordPhaseSample(
+      phaseSamples,
+      key: 'update_vibration',
+      group: SimulationPhaseGroup.structuralStress,
+      callback: phaseScheduler.shouldRun('update_vibration', frameCount)
+          ? updateVibration
+          : null,
+    );
+    _recordPhaseSample(
+      phaseSamples,
+      key: 'update_stress',
+      group: SimulationPhaseGroup.structuralStress,
+      callback: phaseScheduler.shouldRun('update_stress', frameCount)
+          ? updateStress
+          : null,
+    );
+    _recordPhaseSample(
+      phaseSamples,
+      key: 'update_support',
+      group: SimulationPhaseGroup.structuralStress,
+      callback: phaseScheduler.shouldRun('update_support', frameCount)
+          ? updateSupport
+          : null,
+    );
+    _recordPhaseSample(
+      phaseSamples,
+      key: 'update_wind_field',
+      group: SimulationPhaseGroup.electricityLightMoisture,
+      callback: phaseScheduler.shouldRun('update_wind_field', frameCount)
+          ? updateWindField
+          : null,
+    );
 
     rainbowHue = (rainbowHue + 3) % 360;
     if (lightningFlashFrames > 0) lightningFlashFrames--;
 
     final leftToRight = frameCount.isEven;
 
-    if (parallelUpdate && numSlices > 1) {
-      // PHASE 9: Parallel Grid Slicing
-      // In a real multi-isolate environment, we would dispatch to worker isolates.
-      // Here we simulate the logic for a multi-threaded pass.
-      final sWidth = gridW ~/ numSlices;
-      for (int i = 0; i < numSlices; i++) {
-        final startX = i * sWidth;
-        final endX = (i == numSlices - 1) ? gridW : (i + 1) * sWidth;
-        _processSlice(
-          startX,
-          endX,
-          leftToRight,
-          currentClockBit,
-          simulateElement,
-        );
-      }
-    } else {
-      _processSlice(0, gridW, leftToRight, currentClockBit, simulateElement);
-    }
+    _recordPhaseSample(
+      phaseSamples,
+      key: 'grid_slice_processing',
+      group: SimulationPhaseGroup.movementGravity,
+      callback: () {
+        if (parallelUpdate && numSlices > 1) {
+          final sWidth = gridW ~/ numSlices;
+          for (int i = 0; i < numSlices; i++) {
+            final startX = i * sWidth;
+            final endX = (i == numSlices - 1) ? gridW : (i + 1) * sWidth;
+            _processSlice(
+              startX,
+              endX,
+              leftToRight,
+              currentClockBit,
+              simulateElement,
+            );
+          }
+        } else {
+          _processSlice(
+            0,
+            gridW,
+            leftToRight,
+            currentClockBit,
+            simulateElement,
+          );
+        }
+      },
+      cellsChangedOverride: _activeDirtyChunkCount(nextDirtyChunks) * 16 * 16,
+    );
 
     final tmp = dirtyChunks;
     dirtyChunks = nextDirtyChunks;
     nextDirtyChunks = tmp;
     nextDirtyChunks.fillRange(0, nextDirtyChunks.length, 0);
+
+    final dirtyAfter = _activeDirtyChunkCount(dirtyChunks);
+    _lastPhysicsRuntimeSnapshot = PhysicsRuntimeSnapshot(
+      frame: frameCount,
+      parallelUpdateEnabled: parallelUpdate,
+      numSlices: numSlices,
+      activeDirtyChunksBefore: dirtyBefore,
+      activeDirtyChunksAfter: dirtyAfter,
+      dirtyChunkAmplificationRatio: dirtyBefore <= 0
+          ? 0.0
+          : dirtyAfter / dirtyBefore,
+      phaseSamples: phaseSamples,
+      scheduler: phaseScheduler.toMap(),
+    );
 
     frameCount++;
   }
@@ -4508,6 +4718,16 @@ class SimTuning {
   static int throttleAlgaeGrow = 30; // algae spread interval
   static int throttleCompostDry = 10; // compost drying interval
 
+  // -- Physics phase scheduler --
+  static int phaseApplyWindCadence = 2; // global wind application interval
+  static int phaseTemperatureCadence = 3; // thermal field update interval
+  static int phasePressureCadence = 4; // pressure field update interval
+  static int phasePhChargeCadence = 4; // chemistry/electric field interval
+  static int phaseVibrationCadence = 2; // vibration propagation interval
+  static int phaseStressCadence = 4; // structural stress update interval
+  static int phaseSupportCadence = 2; // support propagation interval
+  static int phaseWindFieldCadence = 30; // large-scale wind field interval
+
   // ===================================================================
   // THRESHOLDS — trigger points for state changes
   // ===================================================================
@@ -4759,6 +4979,14 @@ class SimTuning {
     'throttleFungusGrow': (value) => throttleFungusGrow = value,
     'throttleAlgaeGrow': (value) => throttleAlgaeGrow = value,
     'throttleCompostDry': (value) => throttleCompostDry = value,
+    'phaseApplyWindCadence': (value) => phaseApplyWindCadence = value,
+    'phaseTemperatureCadence': (value) => phaseTemperatureCadence = value,
+    'phasePressureCadence': (value) => phasePressureCadence = value,
+    'phasePhChargeCadence': (value) => phasePhChargeCadence = value,
+    'phaseVibrationCadence': (value) => phaseVibrationCadence = value,
+    'phaseStressCadence': (value) => phaseStressCadence = value,
+    'phaseSupportCadence': (value) => phaseSupportCadence = value,
+    'phaseWindFieldCadence': (value) => phaseWindFieldCadence = value,
     'thresholdPressureHigh': (value) => thresholdPressureHigh = value,
     'thresholdPressureErupt': (value) => thresholdPressureErupt = value,
     'thresholdColumnHeavy': (value) => thresholdColumnHeavy = value,
@@ -5001,6 +5229,15 @@ class SimTuning {
     'throttleFungusGrow': throttleFungusGrow,
     'throttleAlgaeGrow': throttleAlgaeGrow,
     'throttleCompostDry': throttleCompostDry,
+    // Physics phase scheduler
+    'phaseApplyWindCadence': phaseApplyWindCadence,
+    'phaseTemperatureCadence': phaseTemperatureCadence,
+    'phasePressureCadence': phasePressureCadence,
+    'phasePhChargeCadence': phasePhChargeCadence,
+    'phaseVibrationCadence': phaseVibrationCadence,
+    'phaseStressCadence': phaseStressCadence,
+    'phaseSupportCadence': phaseSupportCadence,
+    'phaseWindFieldCadence': phaseWindFieldCadence,
     // Thresholds
     'thresholdPressureHigh': thresholdPressureHigh,
     'thresholdPressureErupt': thresholdPressureErupt,

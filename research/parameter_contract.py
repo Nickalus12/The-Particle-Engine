@@ -24,7 +24,10 @@ def resolve_manifest_path() -> Path:
     return DEFAULT_MANIFEST_PATH
 
 
-def build_trial_config(params: dict[str, Any]) -> dict[str, Any]:
+def build_trial_config(
+    params: dict[str, Any],
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Build a canonical trial-config payload from flat optimizer params."""
     manifest = load_parameter_manifest()
     manifest_path = resolve_manifest_path()
@@ -33,6 +36,11 @@ def build_trial_config(params: dict[str, Any]) -> dict[str, Any]:
         "manifest": str(manifest_path.name),
         "params": dict(params),
     }
+    if metadata:
+        config["optuna"] = dict(metadata)
+        source_label = metadata.get("source_label")
+        if source_label is not None:
+            config["source_label"] = str(source_label)
 
     for canonical_path, meta in manifest.get("parameters", {}).items():
         legacy_flat = meta.get("legacy_flat")
@@ -43,9 +51,13 @@ def build_trial_config(params: dict[str, Any]) -> dict[str, Any]:
     return config
 
 
-def write_trial_config(path: Path, params: dict[str, Any]) -> Path:
+def write_trial_config(
+    path: Path,
+    params: dict[str, Any],
+    metadata: dict[str, Any] | None = None,
+) -> Path:
     """Write a manifest-backed trial config to disk."""
-    config = build_trial_config(params)
+    config = build_trial_config(params, metadata=metadata)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)
     return path
@@ -94,6 +106,105 @@ def canonical_overrides_from_flat_params(params: dict[str, Any]) -> dict[str, An
             continue
         canonical[canonical_path] = params[legacy_flat]
     return canonical
+
+
+def iter_manifest_parameters(
+    *,
+    stage_contains: str | tuple[str, ...] | None = None,
+    runtime_mutable: bool | None = None,
+) -> list[tuple[str, dict[str, Any]]]:
+    """Return manifest parameters filtered by stage/runtime mutability."""
+    manifest = load_parameter_manifest()
+    filters = (
+        (stage_contains,)
+        if isinstance(stage_contains, str)
+        else tuple(stage_contains or ())
+    )
+    entries: list[tuple[str, dict[str, Any]]] = []
+    for canonical_path, raw_meta in manifest.get("parameters", {}).items():
+        meta = dict(raw_meta)
+        stage = str(meta.get("stage", ""))
+        if filters and not any(token in stage for token in filters):
+            continue
+        if (
+            runtime_mutable is not None
+            and bool(meta.get("runtime_mutable")) != runtime_mutable
+        ):
+            continue
+        entries.append((canonical_path, meta))
+    return entries
+
+
+def manifest_defaults(
+    *,
+    stage_contains: str | tuple[str, ...] | None = None,
+    runtime_mutable: bool | None = None,
+) -> dict[str, Any]:
+    """Resolve manifest defaults into a flat optimizer-params dict."""
+    defaults: dict[str, Any] = {}
+    for _, meta in iter_manifest_parameters(
+        stage_contains=stage_contains,
+        runtime_mutable=runtime_mutable,
+    ):
+        legacy_flat = meta.get("legacy_flat")
+        if legacy_flat is None:
+            continue
+        defaults[str(legacy_flat)] = meta.get("default")
+    return defaults
+
+
+def build_optuna_suggestion_spec(meta: dict[str, Any]) -> dict[str, Any] | None:
+    """Normalize manifest metadata into an Optuna-friendly suggestion spec."""
+    legacy_flat = meta.get("legacy_flat")
+    minimum = meta.get("min")
+    maximum = meta.get("max")
+    if legacy_flat is None or minimum is None or maximum is None:
+        return None
+
+    spec: dict[str, Any] = {
+        "name": str(legacy_flat),
+        "type": str(meta.get("type", "int")),
+        "low": minimum,
+        "high": maximum,
+    }
+    if "step" in meta:
+        spec["step"] = meta["step"]
+    if "log" in meta:
+        spec["log"] = bool(meta["log"])
+    return spec
+
+
+def select_optuna_manifest_parameters(
+    *,
+    profile: str = "balanced",
+    runtime_mutable: bool | None = None,
+) -> list[tuple[str, dict[str, Any]]]:
+    """Resolve an Optuna manifest surface for a named optimization profile."""
+    entries = iter_manifest_parameters(
+        stage_contains="optuna",
+        runtime_mutable=runtime_mutable,
+    )
+    if profile in ("balanced", "exploratory"):
+        return entries
+
+    if profile == "mobile":
+        mobile_groups = {
+            "element_transport",
+            "sim_transport",
+            "sim_scheduler",
+            "sim_thresholds",
+            "world_generation",
+        }
+        filtered: list[tuple[str, dict[str, Any]]] = []
+        for canonical_path, meta in entries:
+            profiles = meta.get("optuna_profiles")
+            if isinstance(profiles, list) and profile not in profiles:
+                continue
+            if bool(meta.get("runtime_mutable")) or str(meta.get("group")) in mobile_groups:
+                filtered.append((canonical_path, meta))
+        return filtered
+
+    return entries
 
 
 def _set_nested(target: dict[str, Any], path: list[str], value: Any) -> None:

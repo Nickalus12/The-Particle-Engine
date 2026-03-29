@@ -29,11 +29,15 @@ class ToolBar extends StatefulWidget {
     required this.game,
     this.onInteraction,
     this.reservedBottom = 0,
+    this.panelInteractionKey,
+    this.toggleInteractionKey,
   });
 
   final ParticleEngineGame game;
   final VoidCallback? onInteraction;
   final double reservedBottom;
+  final Key? panelInteractionKey;
+  final Key? toggleInteractionKey;
 
   @override
   State<ToolBar> createState() => _ToolBarState();
@@ -272,6 +276,7 @@ class _ToolBarState extends State<ToolBar> with TickerProviderStateMixin {
                           onTap: _toggleCollapse,
                           size: collapseSize,
                           iconSize: collapseIconSize,
+                          interactionKey: widget.toggleInteractionKey,
                         ),
                         const SizedBox(height: 4),
                         SizeTransition(
@@ -294,6 +299,7 @@ class _ToolBarState extends State<ToolBar> with TickerProviderStateMixin {
                                   sigmaY: 24,
                                 ),
                                 child: Container(
+                                  key: widget.panelInteractionKey,
                                   width: panelWidth,
                                   decoration: BoxDecoration(
                                     gradient: const LinearGradient(
@@ -553,15 +559,18 @@ class _CollapseToggle extends StatelessWidget {
     required this.onTap,
     this.size = 30,
     this.iconSize = 16,
+    this.interactionKey,
   });
   final bool collapsed;
   final VoidCallback onTap;
   final double size;
   final double iconSize;
+  final Key? interactionKey;
 
   @override
   Widget build(BuildContext context) {
     return HudIconBadge(
+      key: interactionKey,
       icon: collapsed
           ? Icons.chevron_left_rounded
           : Icons.chevron_right_rounded,

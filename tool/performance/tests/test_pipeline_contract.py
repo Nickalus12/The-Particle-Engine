@@ -22,6 +22,7 @@ class PipelineContractTests(unittest.TestCase):
             self.assertIn("timeout_seconds", defaults)
             self.assertIn("required_suites", defaults)
             self.assertIn("atmospherics", defaults["required_suites"])
+            self.assertIn("creature_performance", defaults["required_suites"])
 
     def test_telemetry_completeness_detects_missing_suite(self) -> None:
         scenarios = [
@@ -50,7 +51,7 @@ class PipelineContractTests(unittest.TestCase):
 
     def test_pr_profile_target_selection_is_bounded(self) -> None:
         targets = pipeline._build_targets("pr", include_soak=False, soak_level="quick")  # noqa: SLF001
-        self.assertEqual(len(targets), 6)
+        self.assertEqual(len(targets), 7)
         self.assertEqual(targets[0].suite, "game_loop")
         self.assertEqual(
             targets[0].path,
@@ -61,6 +62,7 @@ class PipelineContractTests(unittest.TestCase):
         self.assertEqual(targets[3].suite, "physics_integrity")
         self.assertEqual(targets[4].suite, "atmospherics")
         self.assertEqual(targets[5].suite, "physics_integrity")
+        self.assertEqual(targets[6].suite, "creature_performance")
 
     def test_nightly_profile_includes_soak(self) -> None:
         targets = pipeline._build_targets("nightly", include_soak=True, soak_level="nightly")  # noqa: SLF001
@@ -68,6 +70,8 @@ class PipelineContractTests(unittest.TestCase):
         self.assertIn("engine_soak", suites)
         self.assertIn("physics_fuzz", suites)
         self.assertIn("visual_regression", suites)
+        self.assertIn("creature_performance", suites)
+        self.assertIn("creature_investigative", suites)
 
     def test_parser_supports_visual_artifact_flags(self) -> None:
         parser = pipeline._build_parser()  # noqa: SLF001
@@ -190,6 +194,112 @@ class PipelineContractTests(unittest.TestCase):
         self.assertEqual(comparison["previous_run_id"], "old")
         self.assertEqual(comparison["delta_duration_ms"], 300.0)
         self.assertEqual(comparison["delta_failed_tests"], 1)
+
+    def test_collect_creature_runtime_snapshot_from_scenarios(self) -> None:
+        scenarios = [
+            {
+                "suite": "creature_performance",
+                "scenario": "ant_colony_soak",
+                "metrics": {
+                    "creature_population_alive": 12,
+                    "creature_spawn_success_rate": 0.75,
+                    "creature_tick_ms_p95": 2.4,
+                    "creature_render_ms_p95": 0.8,
+                    "creature_queen_alive_ratio": 1.0,
+                    "creature_visibility_failures": 0,
+                },
+                "tags": {"species": "ant", "device_class": "mobile"},
+            }
+        ]
+        snapshot = pipeline._collect_creature_runtime_snapshot(scenarios)  # noqa: SLF001
+        self.assertEqual(snapshot["species"], "ant")
+        self.assertEqual(snapshot["device_class"], "mobile")
+        self.assertEqual(snapshot["creature_population_alive"], 12.0)
+        self.assertEqual(snapshot["creature_spawn_success_rate"], 0.75)
+
+    def test_collect_physics_runtime_snapshot_from_scenarios(self) -> None:
+        scenarios = [
+            {
+                "suite": "physics_integrity",
+                "scenario": "mixed_materials",
+                "metrics": {
+                    "physics_phase_duration_ms_movement_gravity": 3.2,
+                    "dirty_chunk_amplification_ratio": 1.4,
+                },
+                "tags": {"device_class": "mobile"},
+            }
+        ]
+        snapshot = pipeline._collect_physics_runtime_snapshot(scenarios)  # noqa: SLF001
+        self.assertEqual(snapshot["device_class"], "mobile")
+        self.assertEqual(snapshot["dirty_chunk_amplification_ratio"], 1.4)
+        self.assertEqual(len(snapshot["phase_samples"]), 1)
+
+    def test_collect_worldgen_stage_summary_from_scenarios(self) -> None:
+        scenarios = [
+            {
+                "suite": "physics_integrity",
+                "scenario": "worldgen_contract",
+                "metrics": {
+                    "worldgen_stage_duration_ms_fill_layers": 4.2,
+                    "worldgen_stage_writes_fill_layers": 1200,
+                    "water_coverage_ratio": 0.18,
+                    "unsupported_floating_liquids": 0,
+                },
+                "tags": {"preset": "meadow"},
+            }
+        ]
+        summary = pipeline._collect_worldgen_stage_summary(scenarios)  # noqa: SLF001
+        self.assertEqual(summary["preset"], "meadow")
+        self.assertEqual(summary["topology"]["water_coverage_ratio"], 0.18)
+        self.assertEqual(summary["validation"]["unsupported_floating_liquids"], 0)
+        self.assertEqual(summary["stages"][0]["stage_name"], "fill_layers")
+
+    def test_collect_render_runtime_snapshot_from_scenarios(self) -> None:
+        scenarios = [
+            {
+                "suite": "game_loop",
+                "scenario": "mobile_render_telemetry",
+                "metrics": {
+                    "render_pixel_passes": 30,
+                    "image_build_passes": 12,
+                    "post_process_passes": 6,
+                    "render_skipped_frames": 14,
+                    "wrap_copies_last_frame": 1,
+                    "frame_budget_skips": 2,
+                },
+                "tags": {
+                    "device_class": "mobile",
+                    "interaction": "screen_space_drag",
+                },
+            }
+        ]
+        snapshot = pipeline._collect_render_runtime_snapshot(scenarios)  # noqa: SLF001
+        self.assertEqual(snapshot["device_class"], "mobile")
+        self.assertEqual(snapshot["interaction"], "screen_space_drag")
+        self.assertEqual(snapshot["render_pixel_passes"], 30.0)
+        self.assertEqual(snapshot["render_skipped_frames"], 14.0)
+
+    def test_load_optuna_metadata_from_trial_config_json(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            config_path = Path(td) / "trial_config.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "optuna": {
+                            "profile": "mobile",
+                            "source_label": "local_optuna",
+                            "execution_mode": "fast",
+                            "search_groups": ["scheduler", "worldgen"],
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            metadata = pipeline._load_optuna_metadata(str(config_path))  # noqa: SLF001
+        self.assertEqual(metadata["profile"], "mobile")
+        self.assertEqual(metadata["source_label"], "local_optuna")
+        self.assertEqual(metadata["execution_mode"], "fast")
+        self.assertEqual(metadata["search_groups"], ["scheduler", "worldgen"])
 
 
 if __name__ == "__main__":

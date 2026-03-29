@@ -50,6 +50,9 @@ Future<ParticleEngineGame> _bootGame(
   WidgetTester tester, {
   int gridW = 192,
   int gridH = 108,
+  int mobileRenderInterval = 1,
+  int mobilePostProcessInterval = 1,
+  bool mobileCreatureDetail = true,
 }) async {
   ElementRegistry.init();
 
@@ -58,6 +61,9 @@ Future<ParticleEngineGame> _bootGame(
     gridWidth: gridW,
     gridHeight: gridH,
     cellSize: 3.0,
+    mobileRenderInterval: mobileRenderInterval,
+    mobilePostProcessInterval: mobilePostProcessInterval,
+    mobileCreatureDetail: mobileCreatureDetail,
   );
 
   await tester.pumpWidget(
@@ -140,6 +146,72 @@ void _stressPaint(SandboxWorld world) {
     final y = (yGrid * comp.cellSize).toInt();
     comp.paintAt(Vector2(x.toDouble(), y.toDouble()));
   }
+}
+
+void _stressLocalizedPaint(SandboxWorld world) {
+  final sim = world.simulation;
+  final comp = world.sandboxComponent;
+  comp.selectedElement = El.sand;
+  comp.brushSize = 3;
+  comp.lastPaintX = null;
+  comp.lastPaintY = null;
+
+  final centerX = sim.gridW ~/ 2;
+  final centerY = sim.gridH ~/ 2;
+  for (int i = 0; i < 320; i++) {
+    final dx = ((i * 11) % 19) - 9;
+    final dy = ((i * 7) % 15) - 7;
+    comp.paintAt(
+      Vector2((centerX + dx) * comp.cellSize, (centerY + dy) * comp.cellSize),
+    );
+  }
+}
+
+void _stressMobileLikeScreenPaint(SandboxWorld world, ParticleEngineGame game) {
+  final comp = world.sandboxComponent;
+  final viewport = game.camera.viewport.size;
+  comp.selectedElement = El.water;
+  comp.brushSize = 3;
+  comp.lastPaintX = null;
+  comp.lastPaintY = null;
+
+  // Zig-zag in viewport coordinates to emulate mobile drag painting cadence.
+  for (int i = 0; i < 180; i++) {
+    if (i % 36 == 0) {
+      comp.lastPaintX = null;
+      comp.lastPaintY = null;
+    }
+    final tx = 18.0 + (viewport.x - 36.0) * ((i % 60) / 59.0);
+    final wave = math.sin(i / 7.5) * (viewport.y * 0.2);
+    final ty = (viewport.y * 0.5) + wave;
+    comp.paintAtScreen(Vector2(tx, ty));
+  }
+}
+
+Map<String, num> _placementMetricMap(SandboxWorld world) {
+  final snapshot = world.capturePlacementMetricsSnapshot();
+  return <String, num>{
+    'placement_stamps_total': snapshot.paintStampsTotal,
+    'placement_cells_modified_total': snapshot.cellsModifiedTotal,
+    'placement_cells_painted_total': snapshot.cellsPaintedTotal,
+    'placement_cells_erased_total': snapshot.cellsErasedTotal,
+    'placement_line_segments_total': snapshot.lineSegmentsTotal,
+    'placement_line_points_total': snapshot.linePointsTotal,
+    'placement_noop_stamps_total': snapshot.noopStampsTotal,
+    'placement_cells_per_stamp': snapshot.cellsPerStamp,
+  };
+}
+
+Map<String, num> _renderMetricMap(SandboxWorld world) {
+  final snapshot = world.captureRenderMetricsSnapshot();
+  return <String, num>{
+    'render_pixel_passes': snapshot.renderPixelPasses,
+    'image_build_passes': snapshot.imageBuildPasses,
+    'post_process_passes': snapshot.postProcessPasses,
+    'render_skipped_frames': snapshot.skippedFrames,
+    'wrap_copies_last_frame': snapshot.wrapCopiesLastFrame,
+    'frame_budget_skips': snapshot.frameBudgetSkips,
+  };
 }
 
 void _expectFrameBudget(
@@ -245,6 +317,7 @@ void main() {
       tester,
     ) async {
       final game = await _bootGame(tester);
+      game.sandboxWorld.sandboxComponent.resetPlacementMetrics();
 
       _seedHydrothermalScenario(game.sandboxWorld);
       await _measureFrames(tester, frames: 40);
@@ -275,6 +348,132 @@ void main() {
           'prepaint_mean_ms': prePaint.meanMs,
           'prepaint_p95_ms': prePaint.p95Ms,
         },
+      );
+      await PerfReporter.instance.record(
+        suite: 'game_loop',
+        scenario: 'brush_placement_telemetry',
+        metrics: _placementMetricMap(game.sandboxWorld),
+        tags: const <String, Object?>{
+          'device_class': 'desktop',
+          'interaction': 'world_space',
+        },
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      game.pauseEngine();
+    });
+
+    testWidgets('localized paint bursts stay within bounded frame budget', (
+      tester,
+    ) async {
+      final game = await _bootGame(tester);
+      game.sandboxWorld.sandboxComponent.resetPlacementMetrics();
+      _seedHydrothermalScenario(game.sandboxWorld);
+      await _measureFrames(tester, frames: 40);
+
+      final baseline = await _measureFrames(tester, frames: 90);
+
+      _stressLocalizedPaint(game.sandboxWorld);
+      await _measureFrames(tester, frames: 15);
+      final afterBurst = await _measureFrames(tester, frames: 120);
+
+      expect(
+        afterBurst.meanMs,
+        lessThan(math.max(20.0, baseline.meanMs * 2.8 + 2.5)),
+        reason:
+            'Localized burst mean ${afterBurst.meanMs.toStringAsFixed(2)}ms too high',
+      );
+      expect(
+        afterBurst.p95Ms,
+        lessThan(math.max(34.0, baseline.p95Ms * 3.0 + 4.0)),
+        reason:
+            'Localized burst p95 ${afterBurst.p95Ms.toStringAsFixed(2)}ms too high',
+      );
+
+      await _recordStats(
+        'localized_placement_burst',
+        afterBurst,
+        tags: <String, Object?>{
+          'baseline_mean_ms': baseline.meanMs,
+          'baseline_p95_ms': baseline.p95Ms,
+        },
+      );
+      await PerfReporter.instance.record(
+        suite: 'game_loop',
+        scenario: 'localized_placement_telemetry',
+        metrics: _placementMetricMap(game.sandboxWorld),
+        tags: const <String, Object?>{
+          'device_class': 'desktop',
+          'interaction': 'world_space_burst',
+        },
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      game.pauseEngine();
+    });
+
+    testWidgets('mobile-like screen-space placement remains within budget', (
+      tester,
+    ) async {
+      final game = await _bootGame(
+        tester,
+        mobileRenderInterval: 3,
+        mobilePostProcessInterval: 5,
+        mobileCreatureDetail: false,
+      );
+      game.sandboxWorld.sandboxComponent.resetPlacementMetrics();
+      _seedHydrothermalScenario(game.sandboxWorld);
+
+      await _measureFrames(tester, frames: 30);
+      final baseline = await _measureFrames(tester, frames: 80);
+
+      _stressMobileLikeScreenPaint(game.sandboxWorld, game);
+      await _measureFrames(tester, frames: 15);
+      final after = await _measureFrames(tester, frames: 120);
+
+      expect(
+        after.meanMs,
+        lessThan(math.max(22.0, baseline.meanMs * 3.2 + 2.0)),
+        reason:
+            'Mobile-like paint mean ${after.meanMs.toStringAsFixed(2)}ms too high',
+      );
+      expect(
+        after.p95Ms,
+        lessThan(math.max(36.0, baseline.p95Ms * 3.2 + 4.0)),
+        reason:
+            'Mobile-like paint p95 ${after.p95Ms.toStringAsFixed(2)}ms too high',
+      );
+
+      await _recordStats(
+        'mobile_screen_space_placement_stress',
+        after,
+        tags: <String, Object?>{
+          'baseline_mean_ms': baseline.meanMs,
+          'baseline_p95_ms': baseline.p95Ms,
+        },
+      );
+      await PerfReporter.instance.record(
+        suite: 'game_loop',
+        scenario: 'mobile_screen_space_placement_telemetry',
+        metrics: _placementMetricMap(game.sandboxWorld),
+        tags: const <String, Object?>{
+          'device_class': 'mobile',
+          'interaction': 'screen_space_drag',
+        },
+      );
+      await PerfReporter.instance.record(
+        suite: 'game_loop',
+        scenario: 'mobile_render_telemetry',
+        metrics: _renderMetricMap(game.sandboxWorld),
+        tags: const <String, Object?>{
+          'device_class': 'mobile',
+          'interaction': 'screen_space_drag',
+        },
+      );
+      expect(
+        game.sandboxWorld.captureRenderMetricsSnapshot().skippedFrames,
+        greaterThan(0),
+        reason: 'Expected throttled mobile render cadence to skip some frames',
       );
 
       await tester.pumpWidget(const SizedBox.shrink());

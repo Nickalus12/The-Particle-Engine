@@ -57,7 +57,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _renderer = renderer;
     _seedShowcaseWorld(sim);
 
-    _simTicker = AnimationController(vsync: this, duration: const Duration(seconds: 1))..repeat();
+    _simTicker = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 1),
+    )..repeat();
     _simTicker.addListener(_tickSimulation);
 
     _entranceController = AnimationController(
@@ -150,7 +153,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (context, _, _) => screen,
-        transitionsBuilder: (context, anim, _, child) => FadeTransition(opacity: anim, child: child),
+        transitionsBuilder: (context, anim, _, child) =>
+            FadeTransition(opacity: anim, child: child),
         transitionDuration: ParticleTheme.normalDuration,
       ),
     );
@@ -163,14 +167,35 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
+  void _quickStartBalancedWorld() {
+    _navigateTo(
+      SandboxScreen(
+        worldConfig: WorldConfig.meadow(seed: 424242),
+        worldName: 'Quick Start Meadow',
+      ),
+    );
+  }
+
+  void _quickStartBlankCanvas() {
+    _navigateTo(
+      const SandboxScreen(worldName: 'Quick Start Blank', isBlankCanvas: true),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
     final size = media.size;
     final bool compact = size.width < 980;
     final bool veryCompact = size.width < 700;
-    final double heroWidth = compact ? min(size.width - 32, 720.0) : min(size.width * 0.48, 760.0);
-    final double headlineSize = veryCompact ? 42 : compact ? 58 : 76;
+    final double heroWidth = compact
+        ? min(size.width - 32, 720.0)
+        : min(size.width * 0.48, 760.0);
+    final double headlineSize = veryCompact
+        ? 42
+        : compact
+        ? 58
+        : 76;
     final double contentTop = veryCompact ? 20 : 28;
 
     return Scaffold(
@@ -179,14 +204,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         children: [
           Positioned.fill(
             child: _simImage != null
-                ? CustomPaint(painter: _SimImagePainter(_simImage!), size: Size.infinite)
+                ? CustomPaint(
+                    painter: _SimImagePainter(_simImage!),
+                    size: Size.infinite,
+                  )
                 : const ColoredBox(color: AppColors.background),
           ),
           Positioned.fill(
             child: AnimatedBuilder(
               animation: _atmosphereController,
               builder: (context, _) => CustomPaint(
-                painter: _MenuAtmospherePainter(progress: _atmosphereController.value, glow: _heroGlow.value),
+                painter: _MenuAtmospherePainter(
+                  progress: _atmosphereController.value,
+                  glow: _heroGlow.value,
+                ),
               ),
             ),
           ),
@@ -230,9 +261,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 1500),
                 child: SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(veryCompact ? 16 : 28, contentTop, veryCompact ? 16 : 28, 20),
+                  padding: EdgeInsets.fromLTRB(
+                    veryCompact ? 16 : 28,
+                    contentTop,
+                    veryCompact ? 16 : 28,
+                    20,
+                  ),
                   child: FadeTransition(
-                    opacity: CurvedAnimation(parent: _entranceController, curve: Curves.easeOut),
+                    opacity: CurvedAnimation(
+                      parent: _entranceController,
+                      curve: Curves.easeOut,
+                    ),
                     child: AnimatedBuilder(
                       animation: _glowController,
                       builder: (context, child) => Transform.translate(
@@ -243,7 +282,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           ? Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildHero(context, heroWidth, headlineSize, compact, veryCompact),
+                                _buildHero(
+                                  context,
+                                  heroWidth,
+                                  headlineSize,
+                                  compact,
+                                  veryCompact,
+                                ),
                                 const SizedBox(height: 22),
                                 _buildActionsCard(context, compact: true),
                               ],
@@ -251,9 +296,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           : Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                SizedBox(width: heroWidth, child: _buildHero(context, heroWidth, headlineSize, compact, veryCompact)),
+                                SizedBox(
+                                  width: heroWidth,
+                                  child: _buildHero(
+                                    context,
+                                    heroWidth,
+                                    headlineSize,
+                                    compact,
+                                    veryCompact,
+                                  ),
+                                ),
                                 const SizedBox(width: 26),
-                                Expanded(child: _buildActionsCard(context, compact: false)),
+                                Expanded(
+                                  child: _buildActionsCard(
+                                    context,
+                                    compact: false,
+                                  ),
+                                ),
                               ],
                             ),
                     ),
@@ -267,7 +326,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildHero(BuildContext context, double heroWidth, double headlineSize, bool compact, bool veryCompact) {
+  Widget _buildHero(
+    BuildContext context,
+    double heroWidth,
+    double headlineSize,
+    bool compact,
+    bool veryCompact,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -321,7 +386,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           spacing: 10,
           runSpacing: 10,
           children: const [
-            _InfoPill(icon: Icons.water_drop_outlined, label: 'Fluid-driven terrain'),
+            _InfoPill(
+              icon: Icons.water_drop_outlined,
+              label: 'Fluid-driven terrain',
+            ),
             _InfoPill(icon: Icons.air, label: 'Reactive clouds and vapor'),
             _InfoPill(icon: Icons.landscape_outlined, label: 'Dynamic geology'),
           ],
@@ -335,7 +403,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
         color: Colors.black.withValues(alpha: 0.22),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.12), width: 0.8),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.12),
+          width: 0.8,
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -385,11 +456,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             'Start clean, jump back into your autosave, or inspect existing worlds without leaving the live simulation backdrop.',
             style: AppTypography.body.copyWith(fontSize: 14, height: 1.55),
           ),
+          const SizedBox(height: 16),
+          _QuickLaunchStrip(
+            canContinue: canContinue,
+            checkingAutoSave: _checkingAutoSave,
+            onQuickStart: _quickStartBalancedWorld,
+            onQuickBlank: _quickStartBlankCanvas,
+            onContinue: _continueGame,
+            onLoad: () => _navigateTo(const LoadScreen()),
+          ),
           const SizedBox(height: 20),
           _LargeMenuButton(
             key: const ValueKey('home_create_button'),
             title: 'Create World',
-            subtitle: 'Build a fresh sandbox with procedural terrain and scenario controls.',
+            subtitle:
+                'Build a fresh sandbox with procedural terrain and scenario controls.',
             accent: const Color(0xFF58B4FF),
             icon: Icons.public,
             onTap: () => _navigateTo(const WorldCreateScreen()),
@@ -397,7 +478,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           const SizedBox(height: 12),
           _LargeMenuButton(
             key: const ValueKey('home_load_button'),
-            title: canContinue ? 'Continue Autosave' : 'Load World',
+            title: canContinue ? 'Continue Autosave' : 'Load Saved World',
             subtitle: canContinue
                 ? 'Resume your latest saved world immediately.'
                 : 'Browse saved worlds and restore a previous simulation state.',
@@ -414,14 +495,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             onTap: _checkingAutoSave
                 ? null
                 : canContinue
-                    ? _continueGame
-                    : () => _navigateTo(const LoadScreen()),
+                ? _continueGame
+                : () => _navigateTo(const LoadScreen()),
+          ),
+          const SizedBox(height: 12),
+          _SessionStatusStrip(
+            canContinue: canContinue,
+            checkingAutoSave: _checkingAutoSave,
           ),
           const SizedBox(height: 12),
           _LargeMenuButton(
             key: const ValueKey('home_settings_button'),
             title: 'Settings',
-            subtitle: 'Tune simulation feel, performance, audio, and accessibility options.',
+            subtitle:
+                'Tune simulation feel, performance, audio, and accessibility options.',
             accent: const Color(0xFFC98BFF),
             icon: Icons.tune,
             onTap: () => _navigateTo(const SettingsScreen()),
@@ -442,6 +529,228 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 }
 
+class _QuickLaunchStrip extends StatelessWidget {
+  const _QuickLaunchStrip({
+    required this.canContinue,
+    required this.checkingAutoSave,
+    required this.onQuickStart,
+    required this.onQuickBlank,
+    required this.onContinue,
+    required this.onLoad,
+  });
+
+  final bool canContinue;
+  final bool checkingAutoSave;
+  final VoidCallback onQuickStart;
+  final VoidCallback onQuickBlank;
+  final VoidCallback onContinue;
+  final VoidCallback onLoad;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        _QuickLaunchChip(
+          key: const ValueKey('home_quick_start_button'),
+          label: 'Quick Start',
+          icon: Icons.flash_on_rounded,
+          accent: const Color(0xFF50C2FF),
+          onTap: onQuickStart,
+        ),
+        _QuickLaunchChip(
+          key: const ValueKey('home_quick_blank_button'),
+          label: 'Blank Canvas',
+          icon: Icons.grid_on_rounded,
+          accent: const Color(0xFFB6E06E),
+          onTap: onQuickBlank,
+        ),
+        _QuickLaunchChip(
+          key: const ValueKey('home_quick_continue_button'),
+          label: canContinue ? 'Continue' : 'Saved Worlds',
+          icon: canContinue
+              ? Icons.play_circle_fill_rounded
+              : Icons.folder_copy_rounded,
+          accent: const Color(0xFFFFA265),
+          enabled: !checkingAutoSave,
+          trailing: checkingAutoSave
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 1.8),
+                )
+              : null,
+          onTap: canContinue ? onContinue : onLoad,
+        ),
+      ],
+    );
+  }
+}
+
+class _QuickLaunchChip extends StatelessWidget {
+  const _QuickLaunchChip({
+    super.key,
+    required this.label,
+    required this.icon,
+    required this.accent,
+    this.enabled = true,
+    this.trailing,
+    this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color accent;
+  final bool enabled;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: enabled ? 1 : 0.65,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          borderRadius: BorderRadius.circular(999),
+          child: Ink(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              color: Colors.black.withValues(alpha: 0.26),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.08),
+                width: 0.8,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: accent.withValues(alpha: 0.16),
+                  ),
+                  child: Icon(icon, size: 13, color: accent),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: AppTypography.caption.copyWith(
+                    fontSize: 11.5,
+                    letterSpacing: 0.45,
+                    color: AppColors.textPrimary.withValues(alpha: 0.9),
+                  ),
+                ),
+                if (trailing != null) ...[const SizedBox(width: 8), trailing!],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SessionStatusStrip extends StatelessWidget {
+  const _SessionStatusStrip({
+    required this.canContinue,
+    required this.checkingAutoSave,
+  });
+
+  final bool canContinue;
+  final bool checkingAutoSave;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const ValueKey('home_session_status_strip'),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: Colors.black.withValues(alpha: 0.18),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.08),
+          width: 0.8,
+        ),
+      ),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 8,
+        children: [
+          _StatusCell(
+            icon: Icons.save_rounded,
+            label: 'Autosave',
+            value: checkingAutoSave
+                ? 'Checking...'
+                : canContinue
+                ? 'Ready'
+                : 'Not found',
+            accent: canContinue
+                ? const Color(0xFF66E699)
+                : const Color(0xFFFFB07A),
+          ),
+          const _StatusCell(
+            icon: Icons.phone_android_rounded,
+            label: 'Mobile Profile',
+            value: 'Balanced 60fps',
+            accent: Color(0xFF67B8FF),
+          ),
+          const _StatusCell(
+            icon: Icons.pets_rounded,
+            label: 'Creatures',
+            value: 'Ants Recovery Enabled',
+            accent: Color(0xFFE2C072),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusCell extends StatelessWidget {
+  const _StatusCell({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.accent,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 15, color: accent.withValues(alpha: 0.95)),
+        const SizedBox(width: 6),
+        Text(
+          '$label: ',
+          style: AppTypography.caption.copyWith(
+            fontSize: 11,
+            color: AppColors.textSecondary.withValues(alpha: 0.95),
+          ),
+        ),
+        Text(
+          value,
+          style: AppTypography.caption.copyWith(
+            fontSize: 11,
+            color: AppColors.textPrimary.withValues(alpha: 0.9),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _SimImagePainter extends CustomPainter {
   const _SimImagePainter(this.image);
 
@@ -449,7 +758,12 @@ class _SimImagePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final src = Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble());
+    final src = Rect.fromLTWH(
+      0,
+      0,
+      image.width.toDouble(),
+      image.height.toDouble(),
+    );
     final dst = Rect.fromLTWH(0, 0, size.width, size.height);
     paintImage(
       canvas: canvas,
@@ -470,7 +784,8 @@ class _SimImagePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _SimImagePainter oldDelegate) => oldDelegate.image != image;
+  bool shouldRepaint(covariant _SimImagePainter oldDelegate) =>
+      oldDelegate.image != image;
 }
 
 class _MenuAtmospherePainter extends CustomPainter {
@@ -490,16 +805,15 @@ class _MenuAtmospherePainter extends CustomPainter {
     for (int i = 0; i < 9; i++) {
       final t = (progress + i * 0.11) % 1.0;
       final dx = size.width * (0.12 + (i * 0.09)) + sin(t * pi * 2 + i) * 18;
-      final dy = size.height * (0.18 + (i.isEven ? 0.12 : 0.2)) + cos(t * pi * 2 + i * 0.7) * 30;
+      final dy =
+          size.height * (0.18 + (i.isEven ? 0.12 : 0.2)) +
+          cos(t * pi * 2 + i * 0.7) * 30;
       final radius = 70 + (i % 4) * 18 + glow * 10;
-      emberPaint.shader = ui.Gradient.radial(
-        Offset(dx, dy),
-        radius,
-        [
-          (i.isEven ? const Color(0x40FF8A4C) : const Color(0x303DB5FF)).withValues(alpha: 0.16 + glow * 0.07),
-          Colors.transparent,
-        ],
-      );
+      emberPaint.shader = ui.Gradient.radial(Offset(dx, dy), radius, [
+        (i.isEven ? const Color(0x40FF8A4C) : const Color(0x303DB5FF))
+            .withValues(alpha: 0.16 + glow * 0.07),
+        Colors.transparent,
+      ]);
       canvas.drawCircle(Offset(dx, dy), radius, emberPaint);
     }
 
@@ -507,10 +821,14 @@ class _MenuAtmospherePainter extends CustomPainter {
       final y = size.height * (0.58 + i * 0.08);
       final path = Path()..moveTo(0, y);
       for (double x = 0; x <= size.width; x += 14) {
-        final offset = sin((x / size.width) * pi * 3 + progress * pi * 2 + i) * (7 + i * 2);
+        final offset =
+            sin((x / size.width) * pi * 3 + progress * pi * 2 + i) *
+            (7 + i * 2);
         path.lineTo(x, y + offset);
       }
-      wavePaint.color = (i.isEven ? const Color(0x665FC5FF) : const Color(0x55FF9E57)).withValues(alpha: 0.22 - i * 0.03);
+      wavePaint.color =
+          (i.isEven ? const Color(0x665FC5FF) : const Color(0x55FF9E57))
+              .withValues(alpha: 0.22 - i * 0.03);
       canvas.drawPath(path, wavePaint);
     }
   }
@@ -554,7 +872,10 @@ class _LargeMenuButton extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(24),
               color: Colors.black.withValues(alpha: 0.18),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.09), width: 0.8),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.09),
+                width: 0.8,
+              ),
               boxShadow: [
                 BoxShadow(
                   color: accent.withValues(alpha: 0.16),
@@ -600,14 +921,20 @@ class _LargeMenuButton extends StatelessWidget {
                           subtitle,
                           style: AppTypography.body.copyWith(
                             fontSize: 13,
-                            color: AppColors.textSecondary.withValues(alpha: 0.94),
+                            color: AppColors.textSecondary.withValues(
+                              alpha: 0.94,
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(width: 12),
-                  trailing ?? Icon(Icons.arrow_forward_rounded, color: Colors.white.withValues(alpha: 0.86)),
+                  trailing ??
+                      Icon(
+                        Icons.arrow_forward_rounded,
+                        color: Colors.white.withValues(alpha: 0.86),
+                      ),
                 ],
               ),
             ),
@@ -631,14 +958,29 @@ class _MetricBadge extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         color: Colors.black.withValues(alpha: 0.24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08), width: 0.8),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.08),
+          width: 0.8,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(value, style: AppTypography.stat.copyWith(fontSize: 18, color: Colors.white)),
+          Text(
+            value,
+            style: AppTypography.stat.copyWith(
+              fontSize: 18,
+              color: Colors.white,
+            ),
+          ),
           const SizedBox(height: 2),
-          Text(label, style: AppTypography.caption.copyWith(letterSpacing: 0.8, color: AppColors.textSecondary)),
+          Text(
+            label,
+            style: AppTypography.caption.copyWith(
+              letterSpacing: 0.8,
+              color: AppColors.textSecondary,
+            ),
+          ),
         ],
       ),
     );
@@ -657,7 +999,10 @@ class _InfoPill extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
         color: Colors.black.withValues(alpha: 0.2),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08), width: 0.8),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.08),
+          width: 0.8,
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -666,7 +1011,13 @@ class _InfoPill extends StatelessWidget {
           children: [
             Icon(icon, size: 16, color: Colors.white.withValues(alpha: 0.8)),
             const SizedBox(width: 8),
-            Text(label, style: AppTypography.caption.copyWith(fontSize: 11, color: AppColors.textPrimary.withValues(alpha: 0.84))),
+            Text(
+              label,
+              style: AppTypography.caption.copyWith(
+                fontSize: 11,
+                color: AppColors.textPrimary.withValues(alpha: 0.84),
+              ),
+            ),
           ],
         ),
       ),
@@ -686,7 +1037,10 @@ class _FooterBadge extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
         color: Colors.white.withValues(alpha: 0.03),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06), width: 0.8),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.06),
+          width: 0.8,
+        ),
       ),
       child: Text(
         label,

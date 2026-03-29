@@ -284,6 +284,270 @@
       ],
       "title": "Atmospherics Morphology",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 42
+      },
+      "id": 10,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(particle_engine_quality_score_bucket{profile=~\"$profile\"}[10m])))",
+          "refId": "A"
+        }
+      ],
+      "title": "Quality Score (P50)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 42
+      },
+      "id": 11,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(particle_engine_quality_gate_failed_total{profile=~\"$profile\"}[24h]))",
+          "refId": "A"
+        }
+      ],
+      "title": "Quality Gate Failures (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 42
+      },
+      "id": 12,
+      "targets": [
+        {
+          "expr": "sum by (component) (histogram_quantile(0.5, sum by (component, le) (rate(particle_engine_quality_component_score_bucket{profile=~\"$profile\"}[10m]))))",
+          "legendFormat": "{{component}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Quality Component Scores",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 50
+      },
+      "id": 13,
+      "targets": [
+        {
+          "expr": "sum by (grade) (increase(particle_engine_quality_grade_total{profile=~\"$profile\"}[24h]))",
+          "legendFormat": "Grade {{grade}}",
+          "refId": "A"
+        }
+      ],
+      "title": "PR vs Nightly Grade Distribution (24h)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 50
+      },
+      "id": 14,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(particle_engine_quality_component_score_bucket{profile=~\"$profile\",component=\"mobile_score\"}[10m])))",
+          "legendFormat": "mobile_score p50",
+          "refId": "A"
+        }
+      ],
+      "title": "Mobile Lane Score Trend",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 58
+      },
+      "id": 15,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le, species, device_class) (rate(particle_engine_creature_population_bucket{profile=~\"$profile\"}[10m])))",
+          "legendFormat": "{{species}}/{{device_class}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Creature Population Trend",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 58
+      },
+      "id": 16,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le, species, device_class) (rate(particle_engine_creature_spawn_success_ratio_bucket{profile=~\"$profile\"}[10m])))",
+          "legendFormat": "{{species}}/{{device_class}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Creature Spawn Success Ratio",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 66
+      },
+      "id": 17,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, percentile, species, device_class) (rate(particle_engine_creature_tick_duration_ms_bucket{profile=~\"$profile\"}[10m])))",
+          "legendFormat": "tick {{percentile}} {{species}}/{{device_class}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, percentile, species, device_class) (rate(particle_engine_creature_render_duration_ms_bucket{profile=~\"$profile\"}[10m])))",
+          "legendFormat": "render {{percentile}} {{species}}/{{device_class}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Creature Tick/Render Budget",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 66
+      },
+      "id": 18,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(particle_engine_creature_visibility_failures_total{profile=~\"$profile\"}[24h]))",
+          "refId": "A"
+        }
+      ],
+      "title": "Creature Visibility Failures (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 66
+      },
+      "id": 19,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le, species, device_class) (rate(particle_engine_creature_queen_alive_ratio_bucket{profile=~\"$profile\"}[10m])))",
+          "legendFormat": "{{species}}/{{device_class}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Queen Alive Ratio",
+      "type": "timeseries"
     }
   ],
   "refresh": "10s",
@@ -332,6 +596,6 @@
   "timezone": "",
   "title": "Particle Engine Performance Overview",
   "uid": "particle-perf-overview",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

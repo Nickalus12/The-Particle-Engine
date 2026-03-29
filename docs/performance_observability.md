@@ -60,6 +60,30 @@ Outputs:
 - Append history: `research/telemetry/perf_history.jsonl`
 - Visual artifact manifest (JSONL): `reports/performance/runs/<run_id>/visual_artifacts.jsonl`
 
+## 2b) Run quality score pipeline
+
+Use the front-to-back quality aggregator to compute weighted scores and gate status:
+
+```powershell
+python tool/performance/run_quality_pipeline.py `
+  --profile pr `
+  --mode ingest `
+  --artifact-root reports/performance/runs
+```
+
+Or execute lanes directly from the quality orchestrator:
+
+```powershell
+python tool/performance/run_quality_pipeline.py --profile nightly --mode run
+```
+
+Quality outputs are written into `run.json` summary fields:
+
+- `quality_score_total`, `quality_grade`
+- `quality_gate_failed`, `quality_gate_reason`, `quality_threshold`
+- `component_scores`, `component_weights`
+- `quality_components[]` detailed component records
+
 Visual artifact pipeline options:
 
 - `--emit-visual-artifacts/--no-emit-visual-artifacts`

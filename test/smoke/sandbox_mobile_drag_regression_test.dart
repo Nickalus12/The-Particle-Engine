@@ -178,4 +178,54 @@ void main() {
       reason: 'World generation mode must remain paintable during drag input.',
     );
   });
+
+  testWidgets('mobile paint still works in left lane below toolbar controls', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SandboxScreen(isBlankCanvas: true),
+      ),
+    );
+
+    await _waitForSandboxReady(tester);
+    await tester.tap(find.byIcon(Icons.brush_rounded));
+    await tester.pump(const Duration(milliseconds: 350));
+
+    final game = _gameFromWidgetTree(tester);
+    final sim = game.sandboxWorld.simulation;
+    final sandbox = game.sandboxWorld.sandboxComponent;
+    final viewportRect = tester.getRect(
+      find.byWidgetPredicate((widget) => widget is GameWidget<ParticleEngineGame>),
+    );
+    final toolbarRect =
+        tester.getRect(find.byKey(const ValueKey('tool_bar_container')));
+    final bottomBarRect =
+        tester.getRect(find.byKey(const ValueKey('element_bottom_bar_container')));
+
+    final tapPoint = Offset(
+      toolbarRect.center.dx,
+      (toolbarRect.bottom + bottomBarRect.top) / 2,
+    );
+
+    await tester.tapAt(tapPoint);
+    await tester.pump(const Duration(milliseconds: 120));
+
+    final local = tapPoint - viewportRect.topLeft;
+    final (x, y) = sandbox.viewportToGrid(Vector2(local.dx, local.dy));
+    final idx = y * sim.gridW + x;
+    expect(
+      sim.grid[idx],
+      isNot(El.empty),
+      reason:
+          'Touching below toolbar controls should still reach world painting.',
+    );
+  });
 }

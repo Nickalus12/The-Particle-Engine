@@ -122,5 +122,28 @@ void main() {
       expect(now, isTrue);
       expect(await storage.exists('save_0.json'), isTrue);
     });
+
+    test('renameSlot updates metadata name for existing slot', () async {
+      final storage = InMemorySaveStorage();
+      final service = SaveService(storage: storage);
+
+      await service.save(_state(frame: 21), slot: 2, name: 'Old Name');
+      await service.renameSlot(2, 'New Name');
+      final slots = await service.listSlots();
+      final renamed = slots.firstWhere((slot) => slot.slot == 2);
+
+      expect(renamed.name, 'New Name');
+      expect(renamed.frameCount, 21);
+    });
+
+    test('renameSlot throws when metadata is missing', () async {
+      final storage = InMemorySaveStorage();
+      final service = SaveService(storage: storage);
+
+      await expectLater(
+        service.renameSlot(4, 'No Meta'),
+        throwsA(isA<StateError>()),
+      );
+    });
   });
 }

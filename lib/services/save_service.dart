@@ -2,7 +2,8 @@ import 'dart:convert';
 
 import '../models/game_state.dart';
 import 'save_storage_stub.dart'
-    if (dart.library.io) 'save_storage_io.dart' as save_storage;
+    if (dart.library.io) 'save_storage_io.dart'
+    as save_storage;
 
 abstract class SaveStorageAdapter {
   Future<void> write(String name, String value);
@@ -15,7 +16,7 @@ abstract class SaveStorageAdapter {
 
 class PlatformSaveStorageAdapter implements SaveStorageAdapter {
   PlatformSaveStorageAdapter([save_storage.SaveStorage? storage])
-      : _storage = storage ?? save_storage.createSaveStorage();
+    : _storage = storage ?? save_storage.createSaveStorage();
 
   final save_storage.SaveStorage _storage;
 
@@ -76,22 +77,24 @@ class SaveSlotMeta {
   final int fileSizeBytes;
 
   Map<String, dynamic> toJson() => {
-        'slot': slot,
-        'name': name,
-        'savedAt': savedAt.toIso8601String(),
-        'gridW': gridW,
-        'gridH': gridH,
-        'frameCount': frameCount,
-        'colonyCount': colonyCount,
-      };
+    'slot': slot,
+    'name': name,
+    'savedAt': savedAt.toIso8601String(),
+    'gridW': gridW,
+    'gridH': gridH,
+    'frameCount': frameCount,
+    'colonyCount': colonyCount,
+  };
 
-  factory SaveSlotMeta.fromJson(Map<String, dynamic> json,
-      {int fileSizeBytes = 0}) {
+  factory SaveSlotMeta.fromJson(
+    Map<String, dynamic> json, {
+    int fileSizeBytes = 0,
+  }) {
     return SaveSlotMeta(
       slot: json['slot'] as int,
       name: json['name'] as String? ?? 'Untitled',
-      savedAt: DateTime.tryParse(json['savedAt'] as String? ?? '') ??
-          DateTime.now(),
+      savedAt:
+          DateTime.tryParse(json['savedAt'] as String? ?? '') ?? DateTime.now(),
       gridW: json['gridW'] as int? ?? 0,
       gridH: json['gridH'] as int? ?? 0,
       frameCount: json['frameCount'] as int? ?? 0,
@@ -129,11 +132,14 @@ class SaveService {
   /// Whether auto-save is enabled.
   bool autoSaveEnabled = true;
 
-  SaveService({
-    SaveStorageAdapter? storage,
-    DateTime Function()? now,
-  })  : _storage = storage ?? PlatformSaveStorageAdapter(),
-        _now = now ?? DateTime.now;
+  double get autoSaveProgress {
+    final progress = _elapsedAutoSaveSeconds / autoSaveInterval.inSeconds;
+    return progress.clamp(0.0, 1.0);
+  }
+
+  SaveService({SaveStorageAdapter? storage, DateTime Function()? now})
+    : _storage = storage ?? PlatformSaveStorageAdapter(),
+      _now = now ?? DateTime.now;
 
   final SaveStorageAdapter _storage;
   final DateTime Function() _now;
@@ -219,6 +225,39 @@ class SaveService {
   Future<void> delete(int slot) async {
     await _storage.delete(_slotFileName(slot));
     await _storage.delete(_metaFileName(slot));
+  }
+
+  /// Rename the save metadata in [slot].
+  ///
+  /// Throws [StateError] when metadata is missing/corrupted or [newName] is empty.
+  Future<void> renameSlot(int slot, String newName) async {
+    final trimmed = newName.trim();
+    if (trimmed.isEmpty) {
+      throw StateError('Save name cannot be empty');
+    }
+
+    final rawMeta = await _storage.read(_metaFileName(slot));
+    if (rawMeta == null) {
+      throw StateError('Save metadata not found for slot $slot');
+    }
+
+    final json = jsonDecode(rawMeta) as Map<String, dynamic>;
+    final fileSize = await _storage.length(_slotFileName(slot));
+    final existing = SaveSlotMeta.fromJson(json, fileSizeBytes: fileSize);
+    final updated = SaveSlotMeta(
+      slot: existing.slot,
+      name: trimmed,
+      savedAt: existing.savedAt,
+      gridW: existing.gridW,
+      gridH: existing.gridH,
+      frameCount: existing.frameCount,
+      colonyCount: existing.colonyCount,
+      fileSizeBytes: existing.fileSizeBytes,
+    );
+    await _storage.writeAtomic(
+      _metaFileName(slot),
+      jsonEncode(updated.toJson()),
+    );
   }
 
   /// Delete all saves.

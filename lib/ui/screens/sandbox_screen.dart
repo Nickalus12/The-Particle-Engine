@@ -7,6 +7,7 @@ import '../../models/game_state.dart';
 import '../../simulation/world_gen/world_config.dart';
 import '../theme/colors.dart';
 import '../widgets/element_bottom_bar.dart';
+import '../widgets/sandbox_enjoyment_overlay.dart';
 import '../widgets/tool_bar.dart';
 
 /// Hosts the [GameWidget] with the element bar integrated into the layout.
@@ -48,7 +49,8 @@ class SandboxScreen extends StatefulWidget {
 class _SandboxScreenState extends State<SandboxScreen> {
   final GlobalKey _gameViewportKey = GlobalKey();
   final GlobalKey _bottomBarKey = GlobalKey();
-  final GlobalKey _toolBarKey = GlobalKey();
+  final GlobalKey _toolBarPanelKey = GlobalKey();
+  final GlobalKey _toolBarToggleKey = GlobalKey();
   ParticleEngineGame? _game;
   int _activeTouchPointers = 0;
   bool _mobilePaintGestureActive = false;
@@ -81,6 +83,9 @@ class _SandboxScreenState extends State<SandboxScreen> {
       gridWidth: profile.gridWidth,
       gridHeight: profile.gridHeight,
       cellSize: profile.cellSize,
+      mobileRenderInterval: profile.mobileRenderInterval,
+      mobilePostProcessInterval: profile.mobilePostProcessInterval,
+      mobileCreatureDetail: profile.mobileCreatureDetail,
     );
     assert(() {
       debugPrint(
@@ -148,7 +153,8 @@ class _SandboxScreenState extends State<SandboxScreen> {
 
   bool _isHudInteractionPoint(Offset globalPosition) {
     return _isInsideWidgetRect(_bottomBarKey, globalPosition) ||
-        _isInsideWidgetRect(_toolBarKey, globalPosition);
+        _isInsideWidgetRect(_toolBarPanelKey, globalPosition) ||
+        _isInsideWidgetRect(_toolBarToggleKey, globalPosition);
   }
 
   void _onMobilePointerDown(PointerDownEvent event) {
@@ -221,9 +227,19 @@ class _SandboxScreenState extends State<SandboxScreen> {
       key: const ValueKey('sandbox_screen'),
       backgroundColor: AppColors.background,
       body: Listener(
-        onPointerDown: game.onPointerDown,
-        onPointerMove: game.onPointerMove,
-        onPointerUp: game.onPointerUp,
+        onPointerDown: (event) {
+          game.onPointerDown(event);
+          _onMobilePointerDown(event);
+        },
+        onPointerMove: (event) {
+          game.onPointerMove(event);
+          _onMobilePointerMove(event);
+        },
+        onPointerUp: (event) {
+          game.onPointerUp(event);
+          _onMobilePointerUp();
+        },
+        onPointerCancel: (_) => _onMobilePointerUp(),
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -238,25 +254,16 @@ class _SandboxScreenState extends State<SandboxScreen> {
                 ],
               ),
             ),
-            ValueListenableBuilder<bool>(
-              valueListenable: game.showBottomBar,
-              builder: (context, visible, _) {
-                if (game.isDesktop) {
-                  return const SizedBox.shrink();
-                }
-                return Positioned.fill(
-                  child: IgnorePointer(
-                    ignoring: !visible,
-                    child: Listener(
-                      behavior: HitTestBehavior.translucent,
-                      onPointerDown: _onMobilePointerDown,
-                      onPointerMove: _onMobilePointerMove,
-                      onPointerUp: (_) => _onMobilePointerUp(),
-                      onPointerCancel: (_) => _onMobilePointerUp(),
-                    ),
-                  ),
-                );
-              },
+            Positioned.fill(
+              child: ValueListenableBuilder<bool>(
+                valueListenable: game.showBottomBar,
+                builder: (context, visible, _) {
+                  return SandboxEnjoymentOverlay(
+                    game: game,
+                    bottomInset: visible ? bottomBarReserve : 0,
+                  );
+                },
+              ),
             ),
             ValueListenableBuilder<bool>(
               valueListenable: game.showBottomBar,
@@ -273,9 +280,9 @@ class _SandboxScreenState extends State<SandboxScreen> {
                       curve: Curves.easeOutCubic,
                       child: visible
                           ? ElementBottomBar(
-                              key: _bottomBarKey,
                               game: game,
                               onInteraction: game.notifyHudInteraction,
+                              interactionKey: _bottomBarKey,
                             )
                           : const SizedBox.shrink(),
                     ),
@@ -297,13 +304,14 @@ class _SandboxScreenState extends State<SandboxScreen> {
                       duration: const Duration(milliseconds: 220),
                       curve: Curves.easeOutCubic,
                       child: SizedBox(
-                        key: _toolBarKey,
                         width: 120,
                         child: visible
                             ? ToolBar(
                                 game: game,
                                 onInteraction: game.notifyHudInteraction,
                                 reservedBottom: bottomBarReserve,
+                                panelInteractionKey: _toolBarPanelKey,
+                                toggleInteractionKey: _toolBarToggleKey,
                               )
                             : const SizedBox.shrink(),
                       ),

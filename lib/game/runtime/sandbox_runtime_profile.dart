@@ -13,28 +13,43 @@ class SandboxRuntimeProfile {
     required this.gridWidth,
     required this.gridHeight,
     required this.cellSize,
+    required this.mobileRenderInterval,
+    required this.mobilePostProcessInterval,
+    required this.mobileCreatureDetail,
   });
 
   final int gridWidth;
   final int gridHeight;
   final double cellSize;
+  final int mobileRenderInterval;
+  final int mobilePostProcessInterval;
+  final bool mobileCreatureDetail;
 
   static const SandboxRuntimeProfile desktop = SandboxRuntimeProfile(
     gridWidth: 320,
     gridHeight: 180,
     cellSize: 4.0,
+    mobileRenderInterval: 1,
+    mobilePostProcessInterval: 1,
+    mobileCreatureDetail: true,
   );
 
   static const SandboxRuntimeProfile tablet = SandboxRuntimeProfile(
-    gridWidth: 288,
-    gridHeight: 162,
+    gridWidth: 256,
+    gridHeight: 144,
     cellSize: 4.0,
+    mobileRenderInterval: 2,
+    mobilePostProcessInterval: 4,
+    mobileCreatureDetail: false,
   );
 
   static const SandboxRuntimeProfile phone = SandboxRuntimeProfile(
-    gridWidth: 240,
-    gridHeight: 135,
+    gridWidth: 208,
+    gridHeight: 117,
     cellSize: 4.0,
+    mobileRenderInterval: 3,
+    mobilePostProcessInterval: 6,
+    mobileCreatureDetail: false,
   );
 
   /// Resolve the runtime profile for the current device class.

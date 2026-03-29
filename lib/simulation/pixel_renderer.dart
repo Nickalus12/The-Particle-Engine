@@ -64,6 +64,11 @@ class PixelRenderer {
 
   int _prevNightT256 = 0;
 
+  bool enableGlow = true;
+  bool enableMicroParticles = true;
+  int glowUpdateInterval = 6;
+  int atmosphereCacheInterval = 8;
+
   PixelRenderer(this.engine);
 
   Uint8List get pixels => _pixels;
@@ -188,6 +193,7 @@ class PixelRenderer {
   }
 
   void spawnParticle(int x, int y, int r, int g, int b, int frames) {
+    if (!enableMicroParticles) return;
     if (_microParticles.length >= _maxMicroParticles) return;
     final p = Int32List(6);
     p[0] = x;
@@ -200,6 +206,14 @@ class PixelRenderer {
   }
 
   void tickMicroParticles() {
+    if (!enableMicroParticles) {
+      if (_microParticles.isNotEmpty) {
+        _microParticles.clear();
+      }
+      engine.reactionFlashes.clear();
+      engine.recentExplosions.clear();
+      return;
+    }
     final rng = engine.rng;
     for (int i = _microParticles.length - 1; i >= 0; i--) {
       final p = _microParticles[i];
@@ -409,9 +423,12 @@ class PixelRenderer {
     final t = engine.isNight ? dayNightT : 0.0;
     final fc = engine.frameCount;
 
-    // Update ground level cache every 8 frames
+    final cacheInterval = atmosphereCacheInterval < 1
+        ? 1
+        : atmosphereCacheInterval;
+    // Update ground level/cave light cache on a tunable cadence.
     _groundLevelAge++;
-    if (_groundLevelAge >= 8) {
+    if (_groundLevelAge >= cacheInterval) {
       _updateGroundLevel();
       _updateCaveLightLevel();
       _groundLevelAge = 0;
@@ -447,7 +464,16 @@ class PixelRenderer {
     final skyHorB = 192 + (((48 - 192) * t256) >> 8);
     final horizonStartY = h * 88 ~/ 100;
 
-    final doGlow = fc % 6 == 0;
+    if (!enableGlow && _glowBuffersValid) {
+      _glowR.fillRange(0, total, 0);
+      _glowG.fillRange(0, total, 0);
+      _glowB.fillRange(0, total, 0);
+      _glowBuffersValid = false;
+    }
+    final resolvedGlowInterval = glowUpdateInterval < 1
+        ? 1
+        : glowUpdateInterval;
+    final doGlow = enableGlow && fc % resolvedGlowInterval == 0;
 
     final nightBoost = (t256 * 30) >> 8; // ≈ t * 30
     final nightBoostG = nightBoost ~/ 5; // ≈ nightBoost * 0.2

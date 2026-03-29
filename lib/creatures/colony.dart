@@ -5,10 +5,14 @@ import '../simulation/simulation_engine.dart';
 import '../utils/math_helpers.dart';
 import 'ant.dart';
 import 'creature_phenotype.dart';
+import 'colony_events.dart';
 import 'genome_library.dart';
 import 'neat/colony_evolution.dart';
 import 'neat/neat_config.dart';
 import 'pheromone_system.dart';
+import 'species_spawn_profile.dart';
+
+enum ColonyHealthState { bootstrapping, stable, collapsing }
 
 /// A living ant colony — a superorganism with queen, castes, brood, and nest.
 ///
@@ -31,15 +35,13 @@ class Colony {
     int gridW = 320,
     int gridH = 180,
     int? seed,
-  })  : _rng = Random(seed ?? (originX * 10000 + originY)),
-        foodPheromones = PheromoneSystem(width: gridW, height: gridH),
-        homePheromones = PheromoneSystem(width: gridW, height: gridH),
-        dangerPheromones = PheromoneSystem(width: gridW, height: gridH),
-        evolution = ColonyEvolution(
-          config: const NeatConfig(),
-          seed: seed,
-        ),
-        colonyHue = ((id * 2654435761) >> 16) & 0xFF {
+  }) : _rng = Random(seed ?? (originX * 10000 + originY)),
+       foodPheromones = PheromoneSystem(width: gridW, height: gridH),
+       homePheromones = PheromoneSystem(width: gridW, height: gridH),
+       dangerPheromones = PheromoneSystem(width: gridW, height: gridH),
+       evolution = ColonyEvolution(config: const NeatConfig(), seed: seed),
+       colonyHue = ((id * 2654435761) >> 16) & 0xFF,
+       _spawnProfile = SpeciesSpawnProfiles.forSpecies(species) {
     evolution.initialize();
     _computeColonyColor();
     _seedFromLibrary();
@@ -99,6 +101,7 @@ class Colony {
   int originX;
   int originY;
   final Random _rng;
+  final SpeciesSpawnProfile _spawnProfile;
 
   // ---------------------------------------------------------------------------
   // Colony visual identity
@@ -135,6 +138,25 @@ class Colony {
 
   int totalSpawned = 0;
   int totalDied = 0;
+  int spawnAttempts = 0;
+  int spawnSucceeded = 0;
+  final Map<String, int> spawnFailureReasons = {};
+  final Map<DeathCause, int> deathCauseCounts = {};
+  int thinkTicks = 0;
+  int minimalTicks = 0;
+  int queenAliveTicks = 0;
+  int queenDeadTicks = 0;
+  ColonyHealthState healthState = ColonyHealthState.bootstrapping;
+  final List<int> _populationOverTime = <int>[];
+  final ColonyEvents events = ColonyEvents();
+  bool _firstFoodDeliveryRecorded = false;
+  int _lastLowFoodWarningTick = -999999;
+  int _lastFoodDeliveryEventTick = -999999;
+  int _lastFloodWarningTick = -999999;
+  int _lastEnemyWarningTick = -999999;
+  int _populationMilestoneIndex = -1;
+  bool _queenLossAnnounced = false;
+  int totalFoodDelivered = 0;
 
   // ---------------------------------------------------------------------------
   // Queen state
@@ -177,6 +199,7 @@ class Colony {
       ants.isNotEmpty || foodStored > 0 || ageTicks < 300 || eggsCount > 0;
   int get population => ants.length;
   bool get hasQueen => queen != null && queen!.alive;
+  List<int> get populationOverTime => List.unmodifiable(_populationOverTime);
 
   // ---------------------------------------------------------------------------
   // Nest chambers
@@ -191,6 +214,10 @@ class Colony {
 
   int _thinkOffset = 0;
   static const int _maxThinksPerTick = 50;
+  static const int _bootstrapGuardrailTicks = 1800; // ~60s at 30fps
+  static const int _bootstrapMinFood = 12;
+  static const double _bootstrapMinEnergy = 0.22;
+  static const int _bootstrapPopulationThreshold = 12;
 
   // ---------------------------------------------------------------------------
   // Core tick
@@ -212,6 +239,11 @@ class Colony {
     if (species == CreatureSpecies.ant) {
       if (queen == null && !isOrphaned && ageTicks <= 60) {
         _spawnQueen(sim);
+      }
+      if (hasQueen) {
+        queenAliveTicks++;
+      } else {
+        queenDeadTicks++;
       }
     }
 
@@ -249,6 +281,9 @@ class Colony {
     dangerPheromones.decay();
 
     _collectNestFood(sim);
+    _applyBootstrapGuardrails();
+    _recordPopulationAndHealth();
+    _emitEnvironmentalWarnings(sim, allColonies);
   }
 
   // ---------------------------------------------------------------------------
@@ -256,8 +291,12 @@ class Colony {
   // ---------------------------------------------------------------------------
 
   void _spawnQueen(SimulationEngine sim) {
+    _recordSpawnAttempt();
     final spawnPos = _findSpawnPosition(sim);
-    if (spawnPos == null) return;
+    if (spawnPos == null) {
+      _recordSpawnFailure(_lastSpawnFailureReason ?? 'radius_exhausted');
+      return;
+    }
 
     final genomeIdx = evolution.selectGenomeForSpawn(_rng);
     final genome = evolution.population.genomes[genomeIdx];
@@ -286,6 +325,15 @@ class Colony {
     ants.add(queenAnt);
     queen = queenAnt;
     totalSpawned++;
+    _recordSpawnSuccess();
+    events.record(
+      ColonyEvent(
+        tick: ageTicks,
+        type: ColonyEventType.milestone,
+        severity: EventSeverity.milestone,
+        message: 'Queen established at the nest',
+      ),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -332,9 +380,13 @@ class Colony {
 
   /// Spawn a new adult ant from a matured larva.
   void _spawnFromBrood(SimulationEngine sim) {
-    if (ants.length >= 200) return;
+    if (ants.length >= _spawnProfile.maxPopulation) return;
+    _recordSpawnAttempt();
     final spawnPos = _findSpawnPosition(sim);
-    if (spawnPos == null) return;
+    if (spawnPos == null) {
+      _recordSpawnFailure(_lastSpawnFailureReason ?? 'radius_exhausted');
+      return;
+    }
 
     final genomeIdx = evolution.selectGenomeForSpawn(_rng);
     final genome = evolution.population.genomes[genomeIdx];
@@ -356,6 +408,7 @@ class Colony {
     ant.phenotype = makePhenotype(genome, role: ant.role);
     ants.add(ant);
     totalSpawned++;
+    _recordSpawnSuccess();
   }
 
   // ---------------------------------------------------------------------------
@@ -367,34 +420,36 @@ class Colony {
     if (hasQueen) return;
     if (isOrphaned) return;
 
-    if (foodStored < 5) return;
-    if (ants.length >= 200) return;
+    if (foodStored < _spawnProfile.spawnFoodCost) return;
+    if (ants.length >= _spawnProfile.maxPopulation) return;
 
     final spawnChance = ants.isEmpty ? 0.3 : (ants.length < 10 ? 0.08 : 0.02);
     if (!MathHelpers.chance(spawnChance)) return;
 
     _spawnCreature(sim);
-    foodStored -= 5;
+    foodStored -= _spawnProfile.spawnFoodCost;
   }
 
   /// Spawn creatures for non-ant species (flat spawn, no queen/brood).
   void _maybeSpawnCreatures(SimulationEngine sim) {
-    if (foodStored < 3) return;
-    // Species-specific population caps.
-    final maxPop = species == CreatureSpecies.fish ? 30 : 50;
-    if (ants.length >= maxPop) return;
+    if (foodStored < _spawnProfile.spawnFoodCost) return;
+    if (ants.length >= _spawnProfile.maxPopulation) return;
 
     final spawnChance = ants.isEmpty ? 0.5 : (ants.length < 5 ? 0.1 : 0.03);
     if (!MathHelpers.chance(spawnChance)) return;
 
     _spawnCreature(sim);
-    foodStored -= 3;
+    foodStored -= _spawnProfile.spawnFoodCost;
   }
 
   /// Spawn a single creature with the colony's species and correct phenotype.
   void _spawnCreature(SimulationEngine sim) {
+    _recordSpawnAttempt();
     final spawnPos = _findSpawnPosition(sim);
-    if (spawnPos == null) return;
+    if (spawnPos == null) {
+      _recordSpawnFailure(_lastSpawnFailureReason ?? 'radius_exhausted');
+      return;
+    }
 
     final genomeIdx = evolution.selectGenomeForSpawn(_rng);
     final genome = evolution.population.genomes[genomeIdx];
@@ -417,16 +472,22 @@ class Colony {
     } else {
       creature.role = AntRole.worker; // Non-ant species use worker role.
     }
-    creature.phenotype = makePhenotype(creature.brain.genome, role: creature.role);
+    creature.phenotype = makePhenotype(
+      creature.brain.genome,
+      role: creature.role,
+    );
     ants.add(creature);
     totalSpawned++;
+    _recordSpawnSuccess();
   }
 
   /// Create the correct phenotype for this colony's species.
   CreaturePhenotype makePhenotype(dynamic genome, {AntRole? role}) {
     final behavior = genome.behaviorVector as List<double>?;
-    final seed = genome.connections.values
-        .fold<int>(0, (h, c) => h ^ c.weight.hashCode);
+    final seed = genome.connections.values.fold<int>(
+      0,
+      (h, c) => h ^ c.weight.hashCode,
+    );
     if (role == AntRole.queen) {
       return CreaturePhenotype.forQueen(behavior, seed);
     }
@@ -448,18 +509,41 @@ class Colony {
     }
   }
 
+  String? _lastSpawnFailureReason;
+
   (int, int)? _findSpawnPosition(SimulationEngine sim) {
+    _lastSpawnFailureReason = null;
     if (_isSpawnable(sim, originX, originY)) return (originX, originY);
+    var speciesConstraintFail = false;
     for (var radius = 1; radius <= 5; radius++) {
       for (var dy = -radius; dy <= radius; dy++) {
         for (var dx = -radius; dx <= radius; dx++) {
           if (dx.abs() != radius && dy.abs() != radius) continue;
           final sx = originX + dx;
           final sy = originY + dy;
+          final wrappedX = sim.wrapX(sx);
+          if (sim.inBoundsY(sy)) {
+            final el = sim.grid[sy * sim.gridW + wrappedX];
+            if (!_spawnProfile.canSpawnOnElement(el)) {
+              speciesConstraintFail = true;
+            }
+          }
           if (_isSpawnable(sim, sx, sy)) return (sx, sy);
         }
       }
     }
+    final originWrappedX = sim.wrapX(originX);
+    if (sim.inBoundsY(originY)) {
+      final originEl = sim.grid[originY * sim.gridW + originWrappedX];
+      if (!_spawnProfile.canSpawnOnElement(originEl)) {
+        _lastSpawnFailureReason = speciesConstraintFail
+            ? 'species_constraint_fail'
+            : 'origin_blocked';
+      }
+    } else {
+      _lastSpawnFailureReason = 'origin_blocked';
+    }
+    _lastSpawnFailureReason ??= 'radius_exhausted';
     return null;
   }
 
@@ -467,11 +551,7 @@ class Colony {
     px = sim.wrapX(px);
     if (!sim.inBoundsY(py)) return false;
     final el = sim.grid[py * sim.gridW + px];
-    // Fish must spawn in water.
-    if (species == CreatureSpecies.fish) {
-      return el == El.water;
-    }
-    return el == El.empty || el == El.smoke || el == El.steam;
+    return _spawnProfile.canSpawnOnElement(el);
   }
 
   /// Select caste for a new ant based on colony needs.
@@ -506,8 +586,12 @@ class Colony {
     final scoutNeed =
         SimTuning.casteScoutRatio / 100.0 - (scouts / (total + 1));
 
-    final maxNeed = [workerNeed, soldierNeed, nurseNeed, scoutNeed]
-        .reduce((a, b) => a > b ? a : b);
+    final maxNeed = [
+      workerNeed,
+      soldierNeed,
+      nurseNeed,
+      scoutNeed,
+    ].reduce((a, b) => a > b ? a : b);
 
     if (maxNeed == workerNeed) return AntRole.worker;
     if (maxNeed == soldierNeed) return AntRole.soldier;
@@ -536,6 +620,9 @@ class Colony {
     for (var i = 0; i < totalAnts; i++) {
       final ant = ants[i];
       if (!ant.alive) continue;
+      if (_bootstrapGuardrailsActive && ant.energy < _bootstrapMinEnergy) {
+        ant.energy = _bootstrapMinEnergy;
+      }
 
       final shouldThink =
           totalAnts <= _maxThinksPerTick ||
@@ -543,6 +630,7 @@ class Colony {
           (i < (_thinkOffset + thinksThisTick) - totalAnts);
 
       if (shouldThink) {
+        thinkTicks++;
         final nearbyEnemies = _findNearbyEnemies(ant, enemies);
         final survived = ant.tick(
           sim: sim,
@@ -555,6 +643,7 @@ class Colony {
           _deadAntsQueue.add(ant);
         }
       } else {
+        minimalTicks++;
         _minimalTick(ant, sim);
       }
     }
@@ -657,6 +746,11 @@ class Colony {
     for (final dead in _deadAntsQueue) {
       evolution.reportFitness(dead.genomeIndex, dead.fitness.score);
       totalDied++;
+      final cause = dead.deathCause;
+      if (cause != null) {
+        deathCauseCounts[cause] = (deathCauseCounts[cause] ?? 0) + 1;
+        events.antDied(ageTicks, cause.name);
+      }
 
       // Track queen death.
       if (dead.role == AntRole.queen) {
@@ -753,6 +847,7 @@ class Colony {
   }
 
   void _collectNestFood(SimulationEngine sim) {
+    var deliveredThisTick = 0;
     for (var dy = -2; dy <= 2; dy++) {
       for (var dx = -2; dx <= 2; dx++) {
         final nx = sim.wrapX(originX + dx);
@@ -768,14 +863,25 @@ class Colony {
           sim.life[idx] = 0;
           sim.markDirty(nx, ny);
           // If larvae exist, some food goes directly to larvae.
-          if (larvaeCount > 0 && larvaeFood < larvaeCount * SimTuning.larvaFoodPerGrow) {
+          if (larvaeCount > 0 &&
+              larvaeFood < larvaeCount * SimTuning.larvaFoodPerGrow) {
             larvaeFood++;
           } else {
             foodStored++;
           }
+          deliveredThisTick++;
+          if (!_firstFoodDeliveryRecorded) {
+            _firstFoodDeliveryRecorded = true;
+            events.firstFoodDelivery(ageTicks);
+            _lastFoodDeliveryEventTick = ageTicks;
+          } else if (ageTicks - _lastFoodDeliveryEventTick > 240) {
+            events.foodDelivered(ageTicks);
+            _lastFoodDeliveryEventTick = ageTicks;
+          }
         }
       }
     }
+    totalFoodDelivered += deliveredThisTick;
   }
 
   // ---------------------------------------------------------------------------
@@ -820,6 +926,169 @@ class Colony {
   int get antsCarryingFood => ants.where((a) => a.carryingFood).length;
   int get antsCarryingDirt => ants.where((a) => a.carryingDirt).length;
   int get broodTotal => eggsCount + larvaeCount;
+  bool get hasFoodDeliveryHistory => _firstFoodDeliveryRecorded;
+  int get peakPopulation => _populationOverTime.isEmpty
+      ? population
+      : _populationOverTime.reduce(max);
+  bool get _bootstrapGuardrailsActive =>
+      species == CreatureSpecies.ant &&
+      ageTicks <= _bootstrapGuardrailTicks &&
+      population <= _bootstrapPopulationThreshold;
+
+  void _recordSpawnAttempt() {
+    spawnAttempts++;
+  }
+
+  void _recordSpawnSuccess() {
+    spawnSucceeded++;
+    events.antSpawned(ageTicks);
+  }
+
+  void _recordSpawnFailure(String reason) {
+    spawnFailureReasons[reason] = (spawnFailureReasons[reason] ?? 0) + 1;
+  }
+
+  void _recordPopulationAndHealth() {
+    final previousHealthState = healthState;
+    final queenMissing =
+        species == CreatureSpecies.ant && !hasQueen && ageTicks > 120;
+    if (queenMissing && !_queenLossAnnounced) {
+      events.record(
+        ColonyEvent(
+          tick: ageTicks,
+          type: ColonyEventType.antDied,
+          severity: EventSeverity.critical,
+          message: 'Queen lost. Colony cohesion is failing.',
+        ),
+      );
+      _queenLossAnnounced = true;
+    }
+    if (foodStored <= 4 && ageTicks - _lastLowFoodWarningTick > 180) {
+      events.lowFood(ageTicks, foodStored);
+      _lastLowFoodWarningTick = ageTicks;
+    }
+    _populationOverTime.add(population);
+    if (_populationOverTime.length > 1200) {
+      _populationOverTime.removeAt(0);
+    }
+    if (population == 0 || isOrphaned) {
+      healthState = ColonyHealthState.collapsing;
+    } else if (ageTicks < 600 || population < 5) {
+      healthState = ColonyHealthState.bootstrapping;
+    } else {
+      healthState = ColonyHealthState.stable;
+    }
+    if (previousHealthState != healthState) {
+      if (healthState == ColonyHealthState.stable) {
+        events.record(
+          ColonyEvent(
+            tick: ageTicks,
+            type: ColonyEventType.milestone,
+            severity: EventSeverity.milestone,
+            message: 'Colony stabilized and is self-sustaining',
+          ),
+        );
+      } else if (healthState == ColonyHealthState.collapsing) {
+        events.record(
+          ColonyEvent(
+            tick: ageTicks,
+            type: ColonyEventType.nestFlooded,
+            severity: EventSeverity.critical,
+            message: 'Colony is collapsing. Restore food or protect the queen.',
+          ),
+        );
+      }
+    }
+
+    const milestones = <int>[5, 12, 25, 50];
+    while (_populationMilestoneIndex + 1 < milestones.length &&
+        population >= milestones[_populationMilestoneIndex + 1]) {
+      _populationMilestoneIndex++;
+      events.milestonePopulation(
+        ageTicks,
+        milestones[_populationMilestoneIndex],
+      );
+    }
+  }
+
+  void _applyBootstrapGuardrails() {
+    if (!_bootstrapGuardrailsActive) return;
+    if (foodStored < _bootstrapMinFood) {
+      foodStored = _bootstrapMinFood;
+    }
+    if (queen != null && queen!.alive && queen!.energy < _bootstrapMinEnergy) {
+      queen!.energy = _bootstrapMinEnergy;
+    }
+  }
+
+  void _emitEnvironmentalWarnings(
+    SimulationEngine sim,
+    List<Colony> allColonies,
+  ) {
+    if (_isNestFlooded(sim) && ageTicks - _lastFloodWarningTick > 240) {
+      events.nestFlooded(ageTicks);
+      _lastFloodWarningTick = ageTicks;
+    }
+    final enemy = _nearestEnemyColony(allColonies);
+    if (enemy != null && ageTicks - _lastEnemyWarningTick > 300) {
+      events.enemyDetected(ageTicks, enemy.id + 1);
+      _lastEnemyWarningTick = ageTicks;
+    }
+  }
+
+  bool _isNestFlooded(SimulationEngine sim) {
+    for (var dy = -1; dy <= 1; dy++) {
+      for (var dx = -1; dx <= 1; dx++) {
+        final nx = sim.wrapX(originX + dx);
+        final ny = originY + dy;
+        if (!sim.inBoundsY(ny)) {
+          continue;
+        }
+        if (sim.grid[ny * sim.gridW + nx] == El.water) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  Colony? _nearestEnemyColony(List<Colony> allColonies) {
+    Colony? enemy;
+    var bestDistance = 999999;
+    for (final other in allColonies) {
+      if (other.id == id || !other.isAlive) {
+        continue;
+      }
+      final distance =
+          (other.originX - originX).abs() + (other.originY - originY).abs();
+      if (distance < 18 && distance < bestDistance) {
+        bestDistance = distance;
+        enemy = other;
+      }
+    }
+    return enemy;
+  }
+
+  Map<String, Object?> runtimeCounters() {
+    final deathCauses = <String, int>{};
+    for (final entry in deathCauseCounts.entries) {
+      deathCauses[entry.key.name] = entry.value;
+    }
+    return <String, Object?>{
+      'spawn_attempted': spawnAttempts,
+      'spawn_succeeded': spawnSucceeded,
+      'spawn_failure_reasons': Map<String, int>.from(spawnFailureReasons),
+      'death_causes': deathCauses,
+      'population_over_time': List<int>.from(_populationOverTime),
+      'queen_state': hasQueen ? 'alive' : 'missing',
+      'queen_alive_ticks': queenAliveTicks,
+      'queen_dead_ticks': queenDeadTicks,
+      'think_ticks': thinkTicks,
+      'minimal_ticks': minimalTicks,
+      'health_state': healthState.name,
+      'species_profile': _spawnProfile.key,
+    };
+  }
 
   Map<AntRole, int> get roleDistribution {
     final dist = <AntRole, int>{};

@@ -31,7 +31,7 @@ DEFAULT_SQLITE = ROOT / "research" / "telemetry" / "perf_history.sqlite"
 DEFAULT_HISTORY_JSONL = ROOT / "research" / "telemetry" / "perf_history.jsonl"
 DEFAULT_RUNS_DIR = ROOT / "reports" / "performance" / "runs"
 EXPORT_OTLP_SCRIPT = ROOT / "tool" / "performance" / "export_otlp.py"
-RUN_SCHEMA_VERSION = 3
+RUN_SCHEMA_VERSION = 7
 
 
 PROFILE_DEFAULTS: dict[str, dict[str, Any]] = {
@@ -39,7 +39,7 @@ PROFILE_DEFAULTS: dict[str, dict[str, Any]] = {
         "include_soak": False,
         "soak_level": "quick",
         "timeout_seconds": 180,
-        "required_suites": {"game_loop", "physics_integrity", "atmospherics"},
+        "required_suites": {"game_loop", "physics_integrity", "atmospherics", "creature_performance"},
     },
     "nightly": {
         "include_soak": True,
@@ -52,6 +52,8 @@ PROFILE_DEFAULTS: dict[str, dict[str, Any]] = {
             "engine_soak",
             "visual_regression",
             "atmospherics",
+            "creature_performance",
+            "creature_investigative",
         },
     },
     "investigative": {
@@ -64,6 +66,8 @@ PROFILE_DEFAULTS: dict[str, dict[str, Any]] = {
             "physics_fuzz",
             "visual_regression",
             "atmospherics",
+            "creature_performance",
+            "creature_investigative",
         },
     },
 }
@@ -328,6 +332,8 @@ def _build_comparison(current: dict[str, Any], previous: dict[str, Any] | None) 
         "previous_run_id": None if previous is None else previous["run_id"],
         "delta_duration_ms": None,
         "delta_failed_tests": None,
+        "delta_quality_score_total": None,
+        "delta_component_scores": {},
     }
     if previous is None:
         return comparison
@@ -339,6 +345,16 @@ def _build_comparison(current: dict[str, Any], previous: dict[str, Any] | None) 
     comparison["delta_failed_tests"] = (
         current["summary"]["failed_tests"] - int(previous["failed_tests"])
     )
+    current_quality = float(current["summary"].get("quality_score_total", 0.0))
+    previous_quality = float(previous.get("quality_score_total", 0.0) or 0.0)
+    comparison["delta_quality_score_total"] = current_quality - previous_quality
+    current_components = current["summary"].get("component_scores", {})
+    if isinstance(current_components, dict):
+        comparison["delta_component_scores"] = {
+            str(k): float(v)
+            for k, v in current_components.items()
+            if isinstance(v, (int, float))
+        }
     return comparison
 
 
@@ -439,6 +455,76 @@ def _evaluate_visual_gate(
     return gate_active, failed
 
 
+def _sanitize_optuna_metadata(metadata: Any) -> dict[str, Any]:
+    if not isinstance(metadata, dict):
+        return {}
+    allowed_scalar_keys = {
+        "profile",
+        "source_label",
+        "execution_mode",
+        "param_count",
+        "runtime_mutable_count",
+        "runtime_mutable_only",
+    }
+    cleaned: dict[str, Any] = {}
+    for key in allowed_scalar_keys:
+        value = metadata.get(key)
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            if value not in ("", None):
+                cleaned[key] = value
+    search_groups = metadata.get("search_groups")
+    if isinstance(search_groups, list):
+        cleaned["search_groups"] = [str(item)[:40] for item in search_groups[:8]]
+    return cleaned
+
+
+def _load_optuna_metadata(metadata_path: str = "") -> dict[str, Any]:
+    metadata: dict[str, Any] = {}
+    candidate_path = metadata_path or os.environ.get("OPTUNA_METADATA_JSON", "")
+    if candidate_path:
+        try:
+            payload = json.loads(Path(candidate_path).read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                if isinstance(payload.get("optuna"), dict):
+                    metadata.update(payload["optuna"])
+                else:
+                    metadata.update(payload)
+        except (OSError, json.JSONDecodeError):
+            pass
+
+    env_map = {
+        "profile": "OPTUNA_PROFILE",
+        "source_label": "OPTUNA_SOURCE_LABEL",
+        "execution_mode": "OPTUNA_EXECUTION_MODE",
+        "param_count": "OPTUNA_PARAM_COUNT",
+        "runtime_mutable_count": "OPTUNA_RUNTIME_MUTABLE_COUNT",
+        "runtime_mutable_only": "OPTUNA_RUNTIME_MUTABLE_ONLY",
+    }
+    for key, env_name in env_map.items():
+        if key in metadata:
+            continue
+        raw = os.environ.get(env_name)
+        if raw in (None, ""):
+            continue
+        if key.endswith("_count"):
+            try:
+                metadata[key] = int(raw)
+            except ValueError:
+                metadata[key] = raw
+        elif key == "runtime_mutable_only":
+            metadata[key] = raw.lower() in {"1", "true", "yes", "on"}
+        else:
+            metadata[key] = raw
+
+    if "search_groups" not in metadata:
+        raw_groups = os.environ.get("OPTUNA_SEARCH_GROUPS", "")
+        if raw_groups:
+            metadata["search_groups"] = [
+                item.strip() for item in raw_groups.split(",") if item.strip()
+            ]
+    return _sanitize_optuna_metadata(metadata)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run performance suites and persist observability telemetry."
@@ -496,6 +582,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--artifact-root",
         default="",
         help="Optional root directory for visual artifact image outputs.",
+    )
+    parser.add_argument(
+        "--optuna-metadata-json",
+        default=os.environ.get("OPTUNA_METADATA_JSON", ""),
+        help="Optional path to Optuna metadata or trial_config.json for run attribution.",
     )
     parser.add_argument(
         "--emit-visual-artifacts",
@@ -637,8 +728,20 @@ def _build_targets(profile: str, include_soak: bool, soak_level: str) -> list[Ta
             suite="physics_integrity",
         )
     )
+    targets.append(
+        TargetSpec(
+            path="test/performance/simulation/creature_performance_test.dart",
+            suite="creature_performance",
+        )
+    )
 
     if profile in {"nightly", "investigative"}:
+        targets.append(
+            TargetSpec(
+                path="test/performance/simulation/creature_species_investigative_test.dart",
+                suite="creature_investigative",
+            )
+        )
         targets.append(
             TargetSpec(
                 path="test/performance/simulation/scenario_property_fuzz_test.dart",
@@ -685,6 +788,178 @@ def _assess_telemetry_completeness(
     }
     missing = sorted(s for s in required_suites if s not in suites_present)
     return len(missing) == 0, missing
+
+
+def _collect_creature_runtime_snapshot(scenarios: list[dict[str, Any]]) -> dict[str, Any]:
+    snapshot: dict[str, Any] = {
+        "creature_population_alive": 0.0,
+        "creature_spawn_success_rate": 0.0,
+        "creature_tick_ms_p50": 0.0,
+        "creature_tick_ms_p95": 0.0,
+        "creature_render_ms_p50": 0.0,
+        "creature_render_ms_p95": 0.0,
+        "creature_queen_alive_ratio": 0.0,
+        "creature_visibility_failures": 0.0,
+        "species": "ant",
+        "device_class": "desktop",
+    }
+    for scenario in scenarios:
+        if not isinstance(scenario, dict):
+            continue
+        if str(scenario.get("suite", "")).strip() != "creature_performance":
+            continue
+        metrics = scenario.get("metrics", {})
+        if not isinstance(metrics, dict):
+            continue
+        for key in (
+            "creature_population_alive",
+            "creature_spawn_success_rate",
+            "creature_tick_ms_p50",
+            "creature_tick_ms_p95",
+            "creature_render_ms_p50",
+            "creature_render_ms_p95",
+            "creature_queen_alive_ratio",
+            "creature_visibility_failures",
+        ):
+            if key in metrics:
+                snapshot[key] = float(metrics[key])
+        tags = scenario.get("tags", {})
+        if isinstance(tags, dict):
+            if "species" in tags:
+                snapshot["species"] = str(tags["species"])
+            if "device_class" in tags:
+                snapshot["device_class"] = str(tags["device_class"])
+    return snapshot
+
+
+def _collect_physics_runtime_snapshot(scenarios: list[dict[str, Any]]) -> dict[str, Any]:
+    snapshot: dict[str, Any] = {
+        "phase_samples": [],
+        "dirty_chunk_amplification_ratio": 0.0,
+        "profile": "unknown",
+        "device_class": "desktop",
+    }
+    phase_metric_map = {
+        "movement_gravity": "physics_phase_duration_ms_movement_gravity",
+        "chemistry_phase_change": "physics_phase_duration_ms_chemistry_phase_change",
+        "electricity_light_moisture": "physics_phase_duration_ms_electricity_light_moisture",
+        "structural_stress": "physics_phase_duration_ms_structural_stress",
+        "entity_creature_effects": "physics_phase_duration_ms_entity_creature_effects",
+    }
+    for scenario in scenarios:
+        if not isinstance(scenario, dict):
+            continue
+        metrics = scenario.get("metrics", {})
+        if not isinstance(metrics, dict):
+            continue
+        tags = scenario.get("tags", {})
+        if isinstance(tags, dict) and "device_class" in tags:
+            snapshot["device_class"] = str(tags["device_class"])
+        for phase, metric_key in phase_metric_map.items():
+            if metric_key in metrics:
+                snapshot["phase_samples"].append(
+                    {
+                        "key": phase,
+                        "group": phase,
+                        "ran": True,
+                        "duration_ms": float(metrics[metric_key]),
+                        "cells_visited": int(float(metrics.get(f"{metric_key}_cells_visited", 0.0))),
+                        "cells_changed": int(float(metrics.get(f"{metric_key}_cells_changed", 0.0))),
+                        "dirty_chunks_visited": int(float(metrics.get(f"{metric_key}_dirty_chunks_visited", 0.0))),
+                        "dirty_chunks_skipped": int(float(metrics.get(f"{metric_key}_dirty_chunks_skipped", 0.0))),
+                    }
+                )
+        if "dirty_chunk_amplification_ratio" in metrics:
+            snapshot["dirty_chunk_amplification_ratio"] = float(metrics["dirty_chunk_amplification_ratio"])
+    return snapshot
+
+
+def _collect_worldgen_stage_summary(scenarios: list[dict[str, Any]]) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "preset": "unknown",
+        "stages": [],
+        "topology": {},
+        "validation": {},
+    }
+    for scenario in scenarios:
+        if not isinstance(scenario, dict):
+            continue
+        metrics = scenario.get("metrics", {})
+        if not isinstance(metrics, dict):
+            continue
+        tags = scenario.get("tags", {})
+        if isinstance(tags, dict) and "preset" in tags:
+            summary["preset"] = str(tags["preset"])
+        for key, value in metrics.items():
+            if key.startswith("worldgen_stage_duration_ms_"):
+                stage_name = key.removeprefix("worldgen_stage_duration_ms_")
+                summary["stages"].append(
+                    {
+                        "stage_name": stage_name,
+                        "duration_ms": float(value),
+                        "writes": int(float(metrics.get(f"worldgen_stage_writes_{stage_name}", 0.0))),
+                        "overwrites": int(float(metrics.get(f"worldgen_stage_overwrites_{stage_name}", 0.0))),
+                        "validation_failures": int(float(metrics.get(f"worldgen_stage_validation_failures_{stage_name}", 0.0))),
+                    }
+                )
+        for metric_key in (
+            "water_coverage_ratio",
+            "cave_air_ratio",
+            "surface_roughness",
+            "hazard_density",
+            "atmosphere_coverage_ratio",
+            "colony_count",
+        ):
+            if metric_key in metrics:
+                summary["topology"][metric_key] = float(metrics[metric_key])
+        for metric_key in (
+            "unsupported_floating_liquids",
+            "thermal_anomalies",
+            "invalid_colony_placements",
+            "atmosphere_conflicts",
+        ):
+            if metric_key in metrics:
+                summary["validation"][metric_key] = int(float(metrics[metric_key]))
+    return summary
+
+
+def _collect_render_runtime_snapshot(scenarios: list[dict[str, Any]]) -> dict[str, Any]:
+    snapshot: dict[str, Any] = {
+        "render_pixel_passes": 0.0,
+        "image_build_passes": 0.0,
+        "post_process_passes": 0.0,
+        "render_skipped_frames": 0.0,
+        "wrap_copies_last_frame": 0.0,
+        "frame_budget_skips": 0.0,
+        "device_class": "desktop",
+        "interaction": "unknown",
+    }
+    render_metric_keys = (
+        "render_pixel_passes",
+        "image_build_passes",
+        "post_process_passes",
+        "render_skipped_frames",
+        "wrap_copies_last_frame",
+        "frame_budget_skips",
+    )
+    for scenario in scenarios:
+        if not isinstance(scenario, dict):
+            continue
+        metrics = scenario.get("metrics", {})
+        if not isinstance(metrics, dict):
+            continue
+        matching_keys = [key for key in render_metric_keys if key in metrics]
+        if not matching_keys:
+            continue
+        for key in matching_keys:
+            snapshot[key] = float(metrics[key])
+        tags = scenario.get("tags", {})
+        if isinstance(tags, dict):
+            if "device_class" in tags:
+                snapshot["device_class"] = str(tags["device_class"])
+            if "interaction" in tags:
+                snapshot["interaction"] = str(tags["interaction"])
+    return snapshot
 
 
 def main() -> int:
@@ -735,6 +1010,10 @@ def main() -> int:
             target_timeouts += 1
 
     scenarios = _load_scenario_metrics(scenario_metrics_path)
+    creature_runtime_snapshot = _collect_creature_runtime_snapshot(scenarios)
+    physics_runtime_snapshot = _collect_physics_runtime_snapshot(scenarios)
+    worldgen_stage_summary = _collect_worldgen_stage_summary(scenarios)
+    render_runtime_snapshot = _collect_render_runtime_snapshot(scenarios)
     visual_artifacts = _load_visual_artifacts(visual_metrics_path) if args.emit_visual_artifacts else []
     telemetry_complete, missing_suites = _assess_telemetry_completeness(
         scenarios,
@@ -746,6 +1025,7 @@ def main() -> int:
     duration_ms = harness_duration_ms if harness_duration_ms > 0 else sum(
         case.duration_ms for case in all_cases
     )
+    optuna_metadata = _load_optuna_metadata(args.optuna_metadata_json)
 
     run_payload: dict[str, Any] = {
         "schema_version": RUN_SCHEMA_VERSION,
@@ -766,6 +1046,13 @@ def main() -> int:
             "telemetry_complete": telemetry_complete,
             "total_visual_cases": len(visual_artifacts),
             "failed_visual_cases": failed_visual_cases,
+            "quality_score_total": 0.0,
+            "quality_grade": "F",
+            "quality_gate_failed": False,
+            "quality_gate_reason": "not_computed_by_performance_pipeline",
+            "quality_threshold": 0.0,
+            "component_scores": {},
+            "component_weights": {},
             "duration_ms": duration_ms,
         },
         "telemetry": {
@@ -797,10 +1084,33 @@ def main() -> int:
             for art in visual_artifacts
         ],
         "visual_artifact_root": str(visual_root),
+        "creature_runtime_snapshot": creature_runtime_snapshot,
+        "physics_runtime_snapshot": physics_runtime_snapshot,
+        "worldgen_stage_summary": worldgen_stage_summary,
+        "render_runtime_snapshot": render_runtime_snapshot,
+        "quality_components": [],
+        "optuna": optuna_metadata,
     }
 
     run_json = run_dir / "run.json"
     run_json.write_text(json.dumps(run_payload, indent=2, sort_keys=True), encoding="utf-8")
+    creature_snapshot_json = run_dir / "creature_runtime_snapshot.json"
+    creature_snapshot_json.write_text(
+        json.dumps(creature_runtime_snapshot, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    (run_dir / "physics_runtime_snapshot.json").write_text(
+        json.dumps(physics_runtime_snapshot, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    (run_dir / "worldgen_stage_summary.json").write_text(
+        json.dumps(worldgen_stage_summary, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    (run_dir / "render_runtime_snapshot.json").write_text(
+        json.dumps(render_runtime_snapshot, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
 
     if args.require_telemetry_complete and not telemetry_complete:
         print(

@@ -37,6 +37,10 @@ void main() {
 
       expect(first.grid, orderedEquals(second.grid));
       expect(first.temperature, orderedEquals(second.temperature));
+      expect(
+        first.worldGenSummary?.toMap(),
+        equals(second.worldGenSummary?.toMap()),
+      );
     });
 
     test('meadow world generates visible shoreline hydrology', () {
@@ -71,42 +75,65 @@ void main() {
 
       final centerStart = config.width ~/ 2 - 20;
       final centerEnd = config.width ~/ 2 + 20;
-      final centerAvg = heightmap
-              .sublist(centerStart, centerEnd)
-              .reduce((a, b) => a + b) /
+      final centerAvg =
+          heightmap.sublist(centerStart, centerEnd).reduce((a, b) => a + b) /
           (centerEnd - centerStart);
-      final edgeAvg = [
-        ...heightmap.sublist(0, 25),
-        ...heightmap.sublist(config.width - 25),
-      ].reduce((a, b) => a + b) /
+      final edgeAvg =
+          [
+            ...heightmap.sublist(0, 25),
+            ...heightmap.sublist(config.width - 25),
+          ].reduce((a, b) => a + b) /
           50;
 
       expect(centerAvg, greaterThan(edgeAvg + 12));
     });
 
-    test('underground preset creates compressed surface and substantial cave air', () {
-      final config = WorldConfig.underground(seed: 41, width: 220, height: 120);
-      final heightmap = TerrainGenerator.generateHeightmap(config);
-      final world = WorldGenerator.generate(config);
+    test(
+      'underground preset creates compressed surface and substantial cave air',
+      () {
+        final config = WorldConfig.underground(
+          seed: 41,
+          width: 220,
+          height: 120,
+        );
+        final heightmap = TerrainGenerator.generateHeightmap(config);
+        final world = WorldGenerator.generate(config);
 
-      final avgSurface = heightmap.reduce((a, b) => a + b) / heightmap.length;
-      var caveAir = 0;
-      for (var x = 0; x < config.width; x++) {
-        for (var y = heightmap[x] + 6; y < config.height - 10; y++) {
-          final cell = world.get(x, y);
-          if (cell == El.empty || cell == El.oxygen) caveAir++;
+        final avgSurface = heightmap.reduce((a, b) => a + b) / heightmap.length;
+        var caveAir = 0;
+        for (var x = 0; x < config.width; x++) {
+          for (var y = heightmap[x] + 6; y < config.height - 10; y++) {
+            final cell = world.get(x, y);
+            if (cell == El.empty || cell == El.oxygen) caveAir++;
+          }
         }
-      }
 
-      expect(avgSurface, lessThan(config.height * 0.16));
-      expect(caveAir, greaterThan(1800));
-    });
+        expect(avgSurface, lessThan(config.height * 0.16));
+        expect(caveAir, greaterThan(1800));
+      },
+    );
 
     test('random preset remains deterministic for a fixed seed', () {
       final firstConfig = WorldConfig.random(seed: 88, width: 180, height: 100);
-      final secondConfig = WorldConfig.random(seed: 88, width: 180, height: 100);
+      final secondConfig = WorldConfig.random(
+        seed: 88,
+        width: 180,
+        height: 100,
+      );
 
       expect(firstConfig.toMap(), equals(secondConfig.toMap()));
+    });
+
+    test('world generation emits staged summary and validation artifacts', () {
+      final config = WorldConfig.meadow(seed: 12, width: 180, height: 100);
+      final world = WorldGenerator.generate(config);
+      final summary = world.worldGenSummary;
+
+      expect(summary, isNotNull);
+      expect(summary!.stages, isNotEmpty);
+      expect(summary.stages.first.stageName, 'heightmap');
+      expect(summary.topology.waterCoverageRatio, greaterThan(0.0));
+      expect(summary.validation.totalFailures, greaterThanOrEqualTo(0));
     });
   });
 }

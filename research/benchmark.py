@@ -85,6 +85,12 @@ DOMAIN_WEIGHTS: dict[str, dict[str, float]] = {
     },
 }
 
+OVERALL_DOMAIN_WEIGHT_PROFILES: dict[str, dict[str, float]] = {
+    "balanced": {"Physics": 0.50, "Visuals": 0.20, "Infrastructure": 0.30},
+    "mobile": {"Physics": 0.40, "Visuals": 0.15, "Infrastructure": 0.45},
+    "exploratory": {"Physics": 0.55, "Visuals": 0.15, "Infrastructure": 0.30},
+}
+
 # ---------------------------------------------------------------------------
 # Test file -> category mapping
 # ---------------------------------------------------------------------------
@@ -114,6 +120,95 @@ FILE_TO_CATEGORY: dict[str, str] = {
 
 # Slow test files that --quick skips
 SLOW_FILES = {"test_chaos.py", "test_performance.py", "test_benchmark.py", "test_stability.py"}
+
+
+def _normalize_optuna_profile(profile: str | None) -> str:
+    normalized = (profile or "balanced").strip().lower()
+    if normalized in OVERALL_DOMAIN_WEIGHT_PROFILES:
+        return normalized
+    return "balanced"
+
+
+def _sanitize_optuna_metadata(metadata: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(metadata, dict):
+        return {}
+    allowed_scalar_keys = {
+        "profile",
+        "source_label",
+        "execution_mode",
+        "param_count",
+        "runtime_mutable_count",
+        "runtime_mutable_only",
+    }
+    allowed_list_keys = {"search_groups"}
+    cleaned: dict[str, Any] = {}
+    for key in allowed_scalar_keys:
+        if key not in metadata:
+            continue
+        value = metadata.get(key)
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            cleaned[key] = value
+    for key in allowed_list_keys:
+        value = metadata.get(key)
+        if isinstance(value, list):
+            cleaned[key] = [str(item)[:40] for item in value[:8]]
+    return cleaned
+
+
+def _load_optuna_metadata(
+    *,
+    optuna_profile: str | None = None,
+    source_label: str | None = None,
+    metadata_path: str | None = None,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {}
+    candidate_path = metadata_path or os.environ.get("OPTUNA_METADATA_JSON")
+    if candidate_path:
+        try:
+            payload = json.loads(Path(candidate_path).read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                if isinstance(payload.get("optuna"), dict):
+                    metadata.update(payload["optuna"])
+                else:
+                    metadata.update(payload)
+        except (OSError, json.JSONDecodeError):
+            pass
+
+    env_keys = {
+        "profile": "OPTUNA_PROFILE",
+        "source_label": "OPTUNA_SOURCE_LABEL",
+        "execution_mode": "OPTUNA_EXECUTION_MODE",
+        "param_count": "OPTUNA_PARAM_COUNT",
+        "runtime_mutable_count": "OPTUNA_RUNTIME_MUTABLE_COUNT",
+    }
+    for target_key, env_key in env_keys.items():
+        raw = os.environ.get(env_key)
+        if raw not in (None, "") and target_key not in metadata:
+            if target_key.endswith("_count"):
+                try:
+                    metadata[target_key] = int(raw)
+                except ValueError:
+                    metadata[target_key] = raw
+            else:
+                metadata[target_key] = raw
+
+    if "search_groups" not in metadata:
+        raw_groups = os.environ.get("OPTUNA_SEARCH_GROUPS")
+        if raw_groups:
+            metadata["search_groups"] = [
+                item.strip() for item in raw_groups.split(",") if item.strip()
+            ]
+
+    if optuna_profile:
+        metadata["profile"] = optuna_profile
+    if source_label:
+        metadata["source_label"] = source_label
+
+    metadata["profile"] = _normalize_optuna_profile(
+        str(metadata.get("profile", "balanced"))
+    )
+    metadata.setdefault("source_label", "manual_benchmark")
+    return _sanitize_optuna_metadata(metadata)
 
 
 # ---------------------------------------------------------------------------
@@ -274,6 +369,9 @@ def run_benchmark(
     json_output: bool = False,
     compare: bool = False,
     show_progress: bool = True,
+    optuna_profile: str = "balanced",
+    optuna_source_label: str = "manual_benchmark",
+    optuna_metadata_path: str = "",
 ) -> dict[str, Any]:
     """Run the full benchmark suite and return results dict."""
     start_time = time.time()
@@ -356,10 +454,17 @@ def run_benchmark(
 
     elapsed = time.time() - start_time
 
+    optuna_metadata = _load_optuna_metadata(
+        optuna_profile=optuna_profile,
+        source_label=optuna_source_label,
+        metadata_path=optuna_metadata_path,
+    )
+    scoring_profile = _normalize_optuna_profile(optuna_metadata.get("profile"))
+
     # Compute scores
     scores = compute_scores(collector.results)
     domain_scores = compute_domain_scores(scores)
-    overall = compute_overall_score(domain_scores)
+    overall = compute_overall_score(domain_scores, profile=scoring_profile)
 
     # Load history for trends
     last_run = load_last_run()
@@ -386,6 +491,8 @@ def run_benchmark(
         "duration_seconds": round(elapsed, 2),
         "duration_human": format_duration(elapsed),
         "overall_score": round(overall, 1),
+        "scoring_profile": scoring_profile,
+        "domain_weight_profile": OVERALL_DOMAIN_WEIGHT_PROFILES[scoring_profile],
         "total_passed": sum(d["passed"] for d in collector.results.values()),
         "total_failed": sum(d["failed"] for d in collector.results.values()),
         "total_skipped": sum(d["skipped"] for d in collector.results.values()),
@@ -400,6 +507,7 @@ def run_benchmark(
         "recommendations": recommendations,
         "history_sparkline": sparkline(history_scores) if len(history_scores) > 1 else "",
         "exit_code": ret_code,
+        "optuna": optuna_metadata,
     }
 
     # Save to history
@@ -484,9 +592,13 @@ def compute_domain_scores(scores: dict[str, dict]) -> dict[str, dict]:
     return domain_scores
 
 
-def compute_overall_score(domain_scores: dict[str, dict]) -> float:
-    """Weighted overall score: Physics 50%, Visuals 20%, Infrastructure 30%."""
-    domain_weights = {"Physics": 0.50, "Visuals": 0.20, "Infrastructure": 0.30}
+def compute_overall_score(
+    domain_scores: dict[str, dict], *, profile: str = "balanced"
+) -> float:
+    """Weighted overall score using a profile-aware domain emphasis."""
+    domain_weights = OVERALL_DOMAIN_WEIGHT_PROFILES[
+        _normalize_optuna_profile(profile)
+    ]
     total = 0.0
     for domain, weight in domain_weights.items():
         if domain in domain_scores:
@@ -566,10 +678,12 @@ def save_run(result: dict) -> None:
         "git_dirty": result.get("git_dirty", False),
         "duration_seconds": result["duration_seconds"],
         "overall_score": result["overall_score"],
+        "scoring_profile": result.get("scoring_profile", "balanced"),
         "total_passed": result["total_passed"],
         "total_failed": result["total_failed"],
         "total_skipped": result["total_skipped"],
         "total_tests": result["total_tests"],
+        "optuna": _sanitize_optuna_metadata(result.get("optuna")),
         "domain_scores": {
             d: {"score": v["score"]} for d, v in result["domain_scores"].items()
         },
@@ -1124,6 +1238,22 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     parser.add_argument("--compare", action="store_true", help="Compare to last run")
     parser.add_argument("--history", action="store_true", help="Show score history")
+    parser.add_argument(
+        "--optuna-profile",
+        default=os.environ.get("OPTUNA_PROFILE", "balanced"),
+        choices=sorted(OVERALL_DOMAIN_WEIGHT_PROFILES.keys()),
+        help="Profile-aware benchmark weighting for tuned or mobile-biased runs.",
+    )
+    parser.add_argument(
+        "--optuna-source-label",
+        default=os.environ.get("OPTUNA_SOURCE_LABEL", "manual_benchmark"),
+        help="Source label persisted with benchmark history and JSON output.",
+    )
+    parser.add_argument(
+        "--optuna-metadata-json",
+        default=os.environ.get("OPTUNA_METADATA_JSON", ""),
+        help="Optional path to Optuna metadata or trial_config.json for context.",
+    )
     args = parser.parse_args()
 
     if args.history:
@@ -1136,6 +1266,9 @@ def main() -> int:
         visual_only=args.visual_only,
         json_output=args.json_output,
         compare=args.compare,
+        optuna_profile=args.optuna_profile,
+        optuna_source_label=args.optuna_source_label,
+        optuna_metadata_path=args.optuna_metadata_json,
     )
 
     return 0 if result["overall_score"] >= 50 else 1

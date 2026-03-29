@@ -24,10 +24,11 @@ void main(List<String> args) {
   final frames = args.isNotEmpty ? int.parse(args[0]) : 100;
   ElementRegistry.init();
   final configPath = _resolveTrialConfigPath(args);
-  final engine = SimulationEngine(gridW: 320, gridH: 180, seed: 42);
   final trialConfig = configPath == null ? null : _loadTrialConfig(configPath);
-  final overrideReport =
-      trialConfig == null ? null : _applyTrialConfig(trialConfig);
+  final overrideReport = trialConfig == null
+      ? null
+      : _applyTrialConfig(trialConfig);
+  final engine = SimulationEngine(gridW: 320, gridH: 180, seed: 42);
   final renderer = PixelRenderer(engine);
   renderer.init();
   renderer.generateStars();
@@ -45,12 +46,12 @@ void main(List<String> args) {
   File('research/frame.rgba').writeAsBytesSync(renderer.pixels);
   File('research/grid.bin').writeAsBytesSync(engine.grid);
   File('research/temp.bin').writeAsBytesSync(engine.temperature);
-  File('research/velx.bin').writeAsBytesSync(
-    Uint8List.view(engine.velX.buffer),
-  );
-  File('research/vely.bin').writeAsBytesSync(
-    Uint8List.view(engine.velY.buffer),
-  );
+  File(
+    'research/velx.bin',
+  ).writeAsBytesSync(Uint8List.view(engine.velX.buffer));
+  File(
+    'research/vely.bin',
+  ).writeAsBytesSync(Uint8List.view(engine.velY.buffer));
   File('research/life.bin').writeAsBytesSync(engine.life);
   File('research/flags.bin').writeAsBytesSync(engine.flags);
 
@@ -68,6 +69,8 @@ void main(List<String> args) {
         : <String, dynamic>{
             'path': configPath,
             'sourceLabel': trialConfig?['source_label'] ?? 'external',
+            'optuna':
+                _asStringMap(trialConfig?['optuna']) ?? trialConfig?['optuna'],
             'applied': overrideReport!['applied'],
             'ignored': overrideReport['ignored'],
             'effectiveConfig': _buildEffectiveConfigSnapshot(trialConfig),
@@ -76,11 +79,13 @@ void main(List<String> args) {
       for (int i = 0; i < El.count; i++) elementNames[i]: i,
     },
   };
-  File('research/frame_meta.json')
-      .writeAsStringSync(const JsonEncoder.withIndent('  ').convert(meta));
+  File(
+    'research/frame_meta.json',
+  ).writeAsStringSync(const JsonEncoder.withIndent('  ').convert(meta));
 
   print(
-      'Exported: frame.rgba, grid.bin, temp.bin, velx.bin, vely.bin, life.bin, flags.bin');
+    'Exported: frame.rgba, grid.bin, temp.bin, velx.bin, vely.bin, life.bin, flags.bin',
+  );
 }
 
 String? _resolveTrialConfigPath(List<String> args) {
@@ -507,7 +512,8 @@ void _applyElementOverride(
   int? electronMobility,
   int? dielectric,
 }) {
-  final hasChange = density != null ||
+  final hasChange =
+      density != null ||
       gravity != null ||
       viscosity != null ||
       meltPoint != null ||
@@ -558,8 +564,7 @@ void _applyElementOverride(
     elementReactivity[elementId] = reactivity.clamp(0, 255);
   }
   if (reductionPotential != null) {
-    elementReductionPotential[elementId] =
-        reductionPotential.clamp(-128, 127);
+    elementReductionPotential[elementId] = reductionPotential.clamp(-128, 127);
   }
   if (bondEnergy != null) {
     elementBondEnergy[elementId] = bondEnergy.clamp(0, 255);
@@ -580,7 +585,9 @@ void _applyElementOverride(
   applied.add('element:$name');
 }
 
-Map<String, dynamic> _buildEffectiveConfigSnapshot(Map<String, dynamic>? config) {
+Map<String, dynamic> _buildEffectiveConfigSnapshot(
+  Map<String, dynamic>? config,
+) {
   final trackedElements = <String, int>{
     'water': El.water,
     'sand': El.sand,
@@ -601,6 +608,7 @@ Map<String, dynamic> _buildEffectiveConfigSnapshot(Map<String, dynamic>? config)
     'contractVersion': config?['contract_version'] ?? 1,
     'manifest': config?['manifest'] ?? 'parameter_manifest.json',
     'sourceLabel': config?['source_label'] ?? 'runtime_export',
+    'optuna': _asStringMap(config?['optuna']) ?? config?['optuna'],
     'elements': {
       for (final entry in trackedElements.entries)
         entry.key: _elementSnapshot(entry.value),
@@ -612,6 +620,14 @@ Map<String, dynamic> _buildEffectiveConfigSnapshot(Map<String, dynamic>? config)
       'dirtWaterErosionBase': SimTuning.dirtWaterErosionBase,
       'plantAcidDamage': SimTuning.plantAcidDamage,
       'thresholdPressureErupt': SimTuning.thresholdPressureErupt,
+      'phaseApplyWindCadence': SimTuning.phaseApplyWindCadence,
+      'phaseTemperatureCadence': SimTuning.phaseTemperatureCadence,
+      'phasePressureCadence': SimTuning.phasePressureCadence,
+      'phasePhChargeCadence': SimTuning.phasePhChargeCadence,
+      'phaseVibrationCadence': SimTuning.phaseVibrationCadence,
+      'phaseStressCadence': SimTuning.phaseStressCadence,
+      'phaseSupportCadence': SimTuning.phaseSupportCadence,
+      'phaseWindFieldCadence': SimTuning.phaseWindFieldCadence,
     },
   };
 }

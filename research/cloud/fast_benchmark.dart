@@ -27,7 +27,8 @@ void main(List<String> args) {
   if (args.isNotEmpty) {
     final configFile = File(args[0]);
     if (configFile.existsSync()) {
-      config = jsonDecode(configFile.readAsStringSync()) as Map<String, dynamic>;
+      config =
+          jsonDecode(configFile.readAsStringSync()) as Map<String, dynamic>;
       _applyTrialConfig(config);
     }
   }
@@ -42,8 +43,14 @@ void main(List<String> args) {
   final conservationScore = _testConservation();
   final structuralScore = _testStructural();
 
-  final physics = (sandScore + waterScore + fireScore + temperatureScore +
-          conservationScore + structuralScore + densityScore) /
+  final physics =
+      (sandScore +
+          waterScore +
+          fireScore +
+          temperatureScore +
+          conservationScore +
+          structuralScore +
+          densityScore) /
       7.0;
   final interactions = interactionScore;
   final overall = physics * 0.7 + interactions * 0.3;
@@ -222,9 +229,13 @@ double _testWaterPhysics() {
       if (waterPerX[x] > 0) occupiedCounts.add(waterPerX[x]);
     }
     if (occupiedCounts.length > 1) {
-      final mean = occupiedCounts.reduce((a, b) => a + b) / occupiedCounts.length;
-      final variance = occupiedCounts.map((c) => (c - mean) * (c - mean))
-          .reduce((a, b) => a + b) / occupiedCounts.length;
+      final mean =
+          occupiedCounts.reduce((a, b) => a + b) / occupiedCounts.length;
+      final variance =
+          occupiedCounts
+              .map((c) => (c - mean) * (c - mean))
+              .reduce((a, b) => a + b) /
+          occupiedCounts.length;
       final cv = mean > 0 ? sqrt(variance) / mean : 1.0;
       // CV of 0 = perfectly even = 25 pts. CV of 1+ = very uneven = 0 pts.
       score += 25.0 * (1.0 - cv.clamp(0.0, 1.0));
@@ -328,7 +339,9 @@ double _testInteractions() {
       e.grid[15 * 40 + x] = El.water;
     }
     e.markAllDirty();
-    for (int i = 0; i < 80; i++) { e.step(simulateElement); }
+    for (int i = 0; i < 80; i++) {
+      e.step(simulateElement);
+    }
     int stone = 0, steam = 0;
     for (int i = 0; i < 40 * 30; i++) {
       if (e.grid[i] == El.stone) stone++;
@@ -386,7 +399,9 @@ double _testInteractions() {
     e.life[20 * 40 + 14] = 1;
     e.temperature[20 * 40 + 14] = 200;
     e.markAllDirty();
-    for (int i = 0; i < 80; i++) { e.step(simulateElement); }
+    for (int i = 0; i < 80; i++) {
+      e.step(simulateElement);
+    }
     int fire = 0, smoke = 0;
     for (int i = 0; i < 40 * 30; i++) {
       if (e.grid[i] == El.fire) fire++;
@@ -421,10 +436,10 @@ double _testDensityOrdering() {
   // This forces the simulation to sort them by density.
   // From top: lava (heavy), sand (medium-heavy), water (medium), oil (light)
   for (int x = 1; x < 19; x++) {
-    e.grid[15 * 20 + x] = El.oil;    // lightest - placed high
-    e.grid[20 * 20 + x] = El.water;  // medium
-    e.grid[25 * 20 + x] = El.sand;   // heavy
-    e.grid[10 * 20 + x] = El.lava;   // heaviest - placed at top
+    e.grid[15 * 20 + x] = El.oil; // lightest - placed high
+    e.grid[20 * 20 + x] = El.water; // medium
+    e.grid[25 * 20 + x] = El.sand; // heavy
+    e.grid[10 * 20 + x] = El.lava; // heaviest - placed at top
   }
   e.markAllDirty();
 
@@ -463,7 +478,8 @@ double _testDensityOrdering() {
     for (int i = 0; i < cells.length; i++) {
       for (int j = i + 1; j < cells.length; j++) {
         final a = cells[i], b = cells[j];
-        if (densityMap[a.el]! == densityMap[b.el]!) continue; // same density, skip
+        if (densityMap[a.el]! == densityMap[b.el]!)
+          continue; // same density, skip
         totalPairs++;
         // a has lower y (higher position). If a is lighter, that's correct.
         if (densityMap[a.el]! < densityMap[b.el]!) {
@@ -628,7 +644,7 @@ double _testConservation() {
   for (int x = 5; x < 18; x++) {
     e.grid[35 * 60 + x] = El.stone; // floor
   }
-  e.grid[30 * 60 + 5] = El.stone;  // left wall
+  e.grid[30 * 60 + 5] = El.stone; // left wall
   e.grid[31 * 60 + 5] = El.stone;
   e.grid[32 * 60 + 5] = El.stone;
   e.grid[33 * 60 + 5] = El.stone;
@@ -668,7 +684,9 @@ double _testConservation() {
   final sandScore = 50.0 * (1.0 - sandDrift.clamp(0.0, 1.0));
 
   // Water conservation (50 pts) — allow some steam loss but penalize heavy loss
-  final waterRatio = initialWater > 0 ? finalWater / initialWater.toDouble() : 1.0;
+  final waterRatio = initialWater > 0
+      ? finalWater / initialWater.toDouble()
+      : 1.0;
   // Perfect = 1.0, tolerate down to 0.7 gracefully
   final waterScore = 50.0 * waterRatio.clamp(0.0, 1.0);
 
@@ -723,8 +741,14 @@ double _testStructural() {
   for (int y = 0; y < 39; y++) {
     for (int x = 5; x < 15; x++) {
       final el = e.grid[y * 40 + x];
-      if (el == El.sand) { sandAvgY += y; sandCount++; }
-      if (el == El.water) { waterAvgY += y; waterCount++; }
+      if (el == El.sand) {
+        sandAvgY += y;
+        sandCount++;
+      }
+      if (el == El.water) {
+        waterAvgY += y;
+        waterCount++;
+      }
     }
   }
   if (sandCount > 0 && waterCount > 0) {
@@ -743,8 +767,14 @@ double _testStructural() {
   for (int y = 0; y < 39; y++) {
     for (int x = 22; x < 32; x++) {
       final el = e.grid[y * 40 + x];
-      if (el == El.oil) { oilAvgY += y; oilCount++; }
-      if (el == El.water) { water2AvgY += y; water2Count++; }
+      if (el == El.oil) {
+        oilAvgY += y;
+        oilCount++;
+      }
+      if (el == El.water) {
+        water2AvgY += y;
+        water2Count++;
+      }
     }
   }
   if (oilCount > 0 && water2Count > 0) {
@@ -766,10 +796,11 @@ double _testStructural() {
 void _applyTrialConfig(Map<String, dynamic> config) {
   final params = _coerceMap(config['params']) ?? config;
   final elements = _coerceMap(config['elements']);
+  final simTuning =
+      _coerceMap(config['sim_tuning']) ?? _coerceMap(config['simTuning']);
 
   // Helper to read int param
-  int p(String key, int fallback) =>
-      (params[key] as num?)?.toInt() ?? fallback;
+  int p(String key, int fallback) => (params[key] as num?)?.toInt() ?? fallback;
 
   int nested(String element, String key, int fallback) {
     final elementMap = _coerceMap(elements?[element]);
@@ -777,28 +808,85 @@ void _applyTrialConfig(Map<String, dynamic> config) {
   }
 
   // Densities
-  elementDensity[El.sand] = nested('sand', 'density', p('sand_density', elementDensity[El.sand]));
-  elementDensity[El.water] = nested('water', 'density', p('water_density', elementDensity[El.water]));
-  elementDensity[El.oil] = nested('oil', 'density', p('oil_density', elementDensity[El.oil]));
-  elementDensity[El.stone] = nested('stone', 'density', p('stone_density', elementDensity[El.stone]));
-  elementDensity[El.metal] = nested('metal', 'density', p('metal_density', elementDensity[El.metal]));
-  elementDensity[El.ice] = nested('ice', 'density', p('ice_density', elementDensity[El.ice]));
-  elementDensity[El.wood] = nested('wood', 'density', p('wood_density', elementDensity[El.wood]));
-  elementDensity[El.dirt] = nested('dirt', 'density', p('dirt_density', elementDensity[El.dirt]));
-  elementDensity[El.lava] = nested('lava', 'density', p('lava_density', elementDensity[El.lava]));
+  elementDensity[El.sand] = nested(
+    'sand',
+    'density',
+    p('sand_density', elementDensity[El.sand]),
+  );
+  elementDensity[El.water] = nested(
+    'water',
+    'density',
+    p('water_density', elementDensity[El.water]),
+  );
+  elementDensity[El.oil] = nested(
+    'oil',
+    'density',
+    p('oil_density', elementDensity[El.oil]),
+  );
+  elementDensity[El.stone] = nested(
+    'stone',
+    'density',
+    p('stone_density', elementDensity[El.stone]),
+  );
+  elementDensity[El.metal] = nested(
+    'metal',
+    'density',
+    p('metal_density', elementDensity[El.metal]),
+  );
+  elementDensity[El.ice] = nested(
+    'ice',
+    'density',
+    p('ice_density', elementDensity[El.ice]),
+  );
+  elementDensity[El.wood] = nested(
+    'wood',
+    'density',
+    p('wood_density', elementDensity[El.wood]),
+  );
+  elementDensity[El.dirt] = nested(
+    'dirt',
+    'density',
+    p('dirt_density', elementDensity[El.dirt]),
+  );
+  elementDensity[El.lava] = nested(
+    'lava',
+    'density',
+    p('lava_density', elementDensity[El.lava]),
+  );
 
   // Gravity
-  elementGravity[El.sand] = nested('sand', 'gravity', p('sand_gravity', elementGravity[El.sand]));
-  elementGravity[El.water] = nested('water', 'gravity', p('water_gravity', elementGravity[El.water]));
+  elementGravity[El.sand] = nested(
+    'sand',
+    'gravity',
+    p('sand_gravity', elementGravity[El.sand]),
+  );
+  elementGravity[El.water] = nested(
+    'water',
+    'gravity',
+    p('water_gravity', elementGravity[El.water]),
+  );
 
   // Viscosity
-  elementViscosity[El.oil] = nested('oil', 'viscosity', p('oil_viscosity', elementViscosity[El.oil]));
-  elementViscosity[El.mud] = nested('mud', 'viscosity', p('mud_viscosity', elementViscosity[El.mud]));
-  elementViscosity[El.lava] = nested('lava', 'viscosity', p('lava_viscosity', elementViscosity[El.lava]));
+  elementViscosity[El.oil] = nested(
+    'oil',
+    'viscosity',
+    p('oil_viscosity', elementViscosity[El.oil]),
+  );
+  elementViscosity[El.mud] = nested(
+    'mud',
+    'viscosity',
+    p('mud_viscosity', elementViscosity[El.mud]),
+  );
+  elementViscosity[El.lava] = nested(
+    'lava',
+    'viscosity',
+    p('lava_viscosity', elementViscosity[El.lava]),
+  );
 
   // Surface tension
   final waterConfig = _coerceMap(elements?['water']);
-  if (params.containsKey('water_surface_tension') || waterConfig?.containsKey('surfaceTension') == true) {
+  if (params.containsKey('water_surface_tension') ||
+      waterConfig?.containsKey('surfaceTension') == true) {
     elementSurfaceTension[El.water] = nested(
       'water',
       'surfaceTension',
@@ -806,7 +894,8 @@ void _applyTrialConfig(Map<String, dynamic> config) {
     );
   }
   final oilConfig = _coerceMap(elements?['oil']);
-  if (params.containsKey('oil_surface_tension') || oilConfig?.containsKey('surfaceTension') == true) {
+  if (params.containsKey('oil_surface_tension') ||
+      oilConfig?.containsKey('surfaceTension') == true) {
     elementSurfaceTension[El.oil] = nested(
       'oil',
       'surfaceTension',
@@ -814,12 +903,52 @@ void _applyTrialConfig(Map<String, dynamic> config) {
     );
   }
   final acidConfig = _coerceMap(elements?['acid']);
-  if (params.containsKey('acid_surface_tension') || acidConfig?.containsKey('surfaceTension') == true) {
+  if (params.containsKey('acid_surface_tension') ||
+      acidConfig?.containsKey('surfaceTension') == true) {
     elementSurfaceTension[El.acid] = nested(
       'acid',
       'surfaceTension',
       p('acid_surface_tension', elementSurfaceTension[El.acid]),
     );
+  }
+
+  if (simTuning != null) {
+    final overrides = <String, dynamic>{};
+    simTuning.forEach((key, value) {
+      if (value is num) {
+        overrides[key] = value;
+      }
+    });
+    if (overrides.isNotEmpty) {
+      SimTuning.applyOverrides(overrides);
+    }
+  }
+
+  final tuningAliases = <String, String>{
+    'water_pressure_push': 'waterPressurePush',
+    'water_hydraulic_rate': 'waterHydraulicRate',
+    'fire_oxygen_consume': 'fireOxygenConsume',
+    'dirt_water_erosion': 'dirtWaterErosionBase',
+    'plant_acid_damage': 'plantAcidDamage',
+    'threshold_pressure_erupt': 'thresholdPressureErupt',
+    'phase_apply_wind_cadence': 'phaseApplyWindCadence',
+    'phase_temperature_cadence': 'phaseTemperatureCadence',
+    'phase_pressure_cadence': 'phasePressureCadence',
+    'phase_ph_charge_cadence': 'phasePhChargeCadence',
+    'phase_vibration_cadence': 'phaseVibrationCadence',
+    'phase_stress_cadence': 'phaseStressCadence',
+    'phase_support_cadence': 'phaseSupportCadence',
+    'phase_wind_field_cadence': 'phaseWindFieldCadence',
+  };
+  final aliasedOverrides = <String, dynamic>{};
+  tuningAliases.forEach((sourceKey, targetKey) {
+    final value = params[sourceKey];
+    if (value is num) {
+      aliasedOverrides[targetKey] = value;
+    }
+  });
+  if (aliasedOverrides.isNotEmpty) {
+    SimTuning.applyOverrides(aliasedOverrides);
   }
 }
 

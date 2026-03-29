@@ -32,6 +32,10 @@ def _sample_run() -> dict:
             "telemetry_complete": False,
             "total_visual_cases": 2,
             "failed_visual_cases": 1,
+            "quality_score_total": 78.5,
+            "quality_grade": "C",
+            "quality_gate_failed": False,
+            "quality_threshold": 75.0,
             "duration_ms": 1234.5,
         },
         "test_cases": [
@@ -63,6 +67,16 @@ def _sample_run() -> dict:
                 "pass": True,
             }
         ],
+        "quality_components": [
+            {
+                "component_key": "correctness_score",
+                "score": 82.0,
+                "weight": 35.0,
+                "raw_pass_rate": 0.82,
+                "status": "pass",
+                "details": {"total_tests": 100, "failed_tests": 18},
+            }
+        ],
     }
 
 
@@ -86,6 +100,10 @@ class StorageContractTests(unittest.TestCase):
                 "telemetry_complete",
                 "total_visual_cases",
                 "failed_visual_cases",
+                "quality_score_total",
+                "quality_grade",
+                "quality_gate_failed",
+                "quality_threshold",
             }
             self.assertTrue(required.issubset(names))
 
@@ -96,9 +114,11 @@ class StorageContractTests(unittest.TestCase):
             case_count = conn.execute("SELECT COUNT(*) FROM perf_test_cases").fetchone()[0]
             scenario_count = conn.execute("SELECT COUNT(*) FROM perf_scenarios").fetchone()[0]
             visual_count = conn.execute("SELECT COUNT(*) FROM perf_visual_artifacts").fetchone()[0]
+            quality_count = conn.execute("SELECT COUNT(*) FROM perf_quality_components").fetchone()[0]
             self.assertEqual(case_count, 1)
             self.assertEqual(scenario_count, 2)
             self.assertEqual(visual_count, 1)
+            self.assertEqual(quality_count, 1)
             conn.close()
 
     def test_get_previous_run_returns_latest_non_current(self) -> None:

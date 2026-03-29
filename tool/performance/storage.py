@@ -49,6 +49,10 @@ class SQLitePerfStore:
               telemetry_complete INTEGER NOT NULL DEFAULT 1,
               total_visual_cases INTEGER NOT NULL DEFAULT 0,
               failed_visual_cases INTEGER NOT NULL DEFAULT 0,
+              quality_score_total REAL NOT NULL DEFAULT 0,
+              quality_grade TEXT NOT NULL DEFAULT 'F',
+              quality_gate_failed INTEGER NOT NULL DEFAULT 0,
+              quality_threshold REAL NOT NULL DEFAULT 0,
               duration_ms REAL NOT NULL
             );
 
@@ -83,6 +87,17 @@ class SQLitePerfStore:
               pass INTEGER NOT NULL,
               FOREIGN KEY(run_id) REFERENCES perf_runs(run_id)
             );
+
+            CREATE TABLE IF NOT EXISTS perf_quality_components (
+              run_id TEXT NOT NULL,
+              component_key TEXT NOT NULL,
+              score REAL NOT NULL,
+              weight REAL NOT NULL,
+              raw_pass_rate REAL NOT NULL,
+              status TEXT NOT NULL,
+              details_json TEXT NOT NULL,
+              FOREIGN KEY(run_id) REFERENCES perf_runs(run_id)
+            );
             """
         )
         self._ensure_column("perf_runs", "schema_version", "INTEGER NOT NULL DEFAULT 1")
@@ -93,6 +108,10 @@ class SQLitePerfStore:
         self._ensure_column("perf_runs", "telemetry_complete", "INTEGER NOT NULL DEFAULT 1")
         self._ensure_column("perf_runs", "total_visual_cases", "INTEGER NOT NULL DEFAULT 0")
         self._ensure_column("perf_runs", "failed_visual_cases", "INTEGER NOT NULL DEFAULT 0")
+        self._ensure_column("perf_runs", "quality_score_total", "REAL NOT NULL DEFAULT 0")
+        self._ensure_column("perf_runs", "quality_grade", "TEXT NOT NULL DEFAULT 'F'")
+        self._ensure_column("perf_runs", "quality_gate_failed", "INTEGER NOT NULL DEFAULT 0")
+        self._ensure_column("perf_runs", "quality_threshold", "REAL NOT NULL DEFAULT 0")
         self._conn.commit()
 
     def _ensure_column(self, table: str, column: str, decl: str) -> None:
@@ -109,8 +128,9 @@ class SQLitePerfStore:
               run_id, schema_version, timestamp_utc, git_sha, git_branch, host,
               platform, profile, soak_level, total_tests, failed_tests,
               failed_cases, failed_targets, timed_out_targets, telemetry_complete,
-              total_visual_cases, failed_visual_cases, duration_ms
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              total_visual_cases, failed_visual_cases, quality_score_total,
+              quality_grade, quality_gate_failed, quality_threshold, duration_ms
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run["run_id"],
@@ -130,6 +150,10 @@ class SQLitePerfStore:
                 1 if run["summary"].get("telemetry_complete", True) else 0,
                 run["summary"].get("total_visual_cases", 0),
                 run["summary"].get("failed_visual_cases", 0),
+                float(run["summary"].get("quality_score_total", 0.0)),
+                str(run["summary"].get("quality_grade", "F")),
+                1 if run["summary"].get("quality_gate_failed", False) else 0,
+                float(run["summary"].get("quality_threshold", 0.0)),
                 run["summary"]["duration_ms"],
             ),
         )
@@ -200,12 +224,36 @@ class SQLitePerfStore:
                 visual_rows,
             )
 
+        quality_rows: list[tuple[str, str, float, float, float, str, str]] = []
+        for component in run.get("quality_components", []):
+            quality_rows.append(
+                (
+                    run["run_id"],
+                    str(component.get("component_key", "unknown")),
+                    float(component.get("score", 0.0)),
+                    float(component.get("weight", 0.0)),
+                    float(component.get("raw_pass_rate", 0.0)),
+                    str(component.get("status", "unknown")),
+                    json.dumps(component.get("details", {}), sort_keys=True),
+                )
+            )
+        if quality_rows:
+            self._conn.executemany(
+                """
+                INSERT INTO perf_quality_components (
+                  run_id, component_key, score, weight, raw_pass_rate, status, details_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                quality_rows,
+            )
+
         self._conn.commit()
 
     def get_previous_run(self, run_id: str) -> dict[str, Any] | None:
         row = self._conn.execute(
             """
             SELECT run_id, timestamp_utc, total_tests, failed_tests, duration_ms
+                 , quality_score_total
             FROM perf_runs
             WHERE run_id != ?
             ORDER BY timestamp_utc DESC
@@ -221,6 +269,7 @@ class SQLitePerfStore:
             "total_tests": row[2],
             "failed_tests": row[3],
             "duration_ms": row[4],
+            "quality_score_total": row[5] if len(row) > 5 else 0.0,
         }
 
     def close(self) -> None:
@@ -274,6 +323,10 @@ class DuckDBPerfStore:
               telemetry_complete BOOLEAN,
               total_visual_cases INTEGER,
               failed_visual_cases INTEGER,
+              quality_score_total DOUBLE,
+              quality_grade VARCHAR,
+              quality_gate_failed BOOLEAN,
+              quality_threshold DOUBLE,
               duration_ms DOUBLE
             )
             """
@@ -305,11 +358,24 @@ class DuckDBPerfStore:
             )
             """
         )
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS perf_quality_components (
+              run_id VARCHAR,
+              component_key VARCHAR,
+              score DOUBLE,
+              weight DOUBLE,
+              raw_pass_rate DOUBLE,
+              status VARCHAR,
+              details_json VARCHAR
+            )
+            """
+        )
 
     def insert_run(self, run: dict[str, Any]) -> None:
         self._conn.execute(
             """
-            INSERT OR REPLACE INTO perf_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO perf_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run["run_id"],
@@ -329,6 +395,10 @@ class DuckDBPerfStore:
                 bool(run["summary"].get("telemetry_complete", True)),
                 run["summary"].get("total_visual_cases", 0),
                 run["summary"].get("failed_visual_cases", 0),
+                float(run["summary"].get("quality_score_total", 0.0)),
+                str(run["summary"].get("quality_grade", "F")),
+                bool(run["summary"].get("quality_gate_failed", False)),
+                float(run["summary"].get("quality_threshold", 0.0)),
                 run["summary"]["duration_ms"],
             ),
         )
@@ -370,6 +440,24 @@ class DuckDBPerfStore:
                 "INSERT INTO perf_visual_artifacts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 visual_rows,
             )
+        quality_rows: list[tuple[str, str, float, float, float, str, str]] = []
+        for component in run.get("quality_components", []):
+            quality_rows.append(
+                (
+                    run["run_id"],
+                    str(component.get("component_key", "unknown")),
+                    float(component.get("score", 0.0)),
+                    float(component.get("weight", 0.0)),
+                    float(component.get("raw_pass_rate", 0.0)),
+                    str(component.get("status", "unknown")),
+                    json.dumps(component.get("details", {}), sort_keys=True),
+                )
+            )
+        if quality_rows:
+            self._conn.executemany(
+                "INSERT INTO perf_quality_components VALUES (?, ?, ?, ?, ?, ?, ?)",
+                quality_rows,
+            )
 
     def close(self) -> None:
         self._conn.close()
@@ -409,6 +497,10 @@ class PostgresPerfStore:
                   telemetry_complete BOOLEAN NOT NULL DEFAULT TRUE,
                   total_visual_cases INTEGER NOT NULL DEFAULT 0,
                   failed_visual_cases INTEGER NOT NULL DEFAULT 0,
+                  quality_score_total DOUBLE PRECISION NOT NULL DEFAULT 0,
+                  quality_grade TEXT NOT NULL DEFAULT 'F',
+                  quality_gate_failed BOOLEAN NOT NULL DEFAULT FALSE,
+                  quality_threshold DOUBLE PRECISION NOT NULL DEFAULT 0,
                   duration_ms DOUBLE PRECISION NOT NULL
                 )
                 """
@@ -440,6 +532,19 @@ class PostgresPerfStore:
                 )
                 """
             )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS perf_quality_components (
+                  run_id TEXT NOT NULL,
+                  component_key TEXT NOT NULL,
+                  score DOUBLE PRECISION NOT NULL,
+                  weight DOUBLE PRECISION NOT NULL,
+                  raw_pass_rate DOUBLE PRECISION NOT NULL,
+                  status TEXT NOT NULL,
+                  details_json JSONB NOT NULL
+                )
+                """
+            )
         self._conn.commit()
 
     def insert_run(self, run: dict[str, Any]) -> None:
@@ -450,8 +555,9 @@ class PostgresPerfStore:
                   run_id, schema_version, timestamp_utc, git_sha, git_branch,
                   host, platform, profile, soak_level, total_tests, failed_tests,
                   failed_cases, failed_targets, timed_out_targets, telemetry_complete,
-                  total_visual_cases, failed_visual_cases, duration_ms
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                  total_visual_cases, failed_visual_cases, quality_score_total,
+                  quality_grade, quality_gate_failed, quality_threshold, duration_ms
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT(run_id) DO UPDATE SET
                   schema_version = EXCLUDED.schema_version,
                   timestamp_utc = EXCLUDED.timestamp_utc,
@@ -469,6 +575,10 @@ class PostgresPerfStore:
                   telemetry_complete = EXCLUDED.telemetry_complete,
                   total_visual_cases = EXCLUDED.total_visual_cases,
                   failed_visual_cases = EXCLUDED.failed_visual_cases,
+                  quality_score_total = EXCLUDED.quality_score_total,
+                  quality_grade = EXCLUDED.quality_grade,
+                  quality_gate_failed = EXCLUDED.quality_gate_failed,
+                  quality_threshold = EXCLUDED.quality_threshold,
                   duration_ms = EXCLUDED.duration_ms
                 """,
                 (
@@ -489,6 +599,10 @@ class PostgresPerfStore:
                     bool(run["summary"].get("telemetry_complete", True)),
                     run["summary"].get("total_visual_cases", 0),
                     run["summary"].get("failed_visual_cases", 0),
+                    float(run["summary"].get("quality_score_total", 0.0)),
+                    str(run["summary"].get("quality_grade", "F")),
+                    bool(run["summary"].get("quality_gate_failed", False)),
+                    float(run["summary"].get("quality_threshold", 0.0)),
                     run["summary"]["duration_ms"],
                 ),
             )
@@ -527,6 +641,23 @@ class PostgresPerfStore:
                         float(artifact.get("psnr", 0.0)),
                         float(artifact.get("diff_ratio", 1.0)),
                         bool(artifact.get("pass", False)),
+                    ),
+                )
+            for component in run.get("quality_components", []):
+                cur.execute(
+                    """
+                    INSERT INTO perf_quality_components (
+                      run_id, component_key, score, weight, raw_pass_rate, status, details_json
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
+                    """,
+                    (
+                        run["run_id"],
+                        str(component.get("component_key", "unknown")),
+                        float(component.get("score", 0.0)),
+                        float(component.get("weight", 0.0)),
+                        float(component.get("raw_pass_rate", 0.0)),
+                        str(component.get("status", "unknown")),
+                        json.dumps(component.get("details", {}), sort_keys=True),
                     ),
                 )
         self._conn.commit()

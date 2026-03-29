@@ -6,6 +6,7 @@ import 'package:flame/components.dart';
 import '../../creatures/ant.dart';
 import '../../creatures/colony.dart';
 import '../../creatures/creature_registry.dart';
+import '../particle_engine_game.dart';
 import '../../simulation/element_registry.dart';
 import '../../simulation/simulation_engine.dart';
 
@@ -14,14 +15,17 @@ import '../../simulation/simulation_engine.dart';
 ///
 /// All integer math. No heap allocation in render loop.
 /// Uses pre-computed phenotype when available, falls back to defaults.
-class CreatureRenderer extends PositionComponent {
+class CreatureRenderer extends PositionComponent
+    with HasGameReference<ParticleEngineGame> {
   CreatureRenderer({
     required this.registry,
     required this.simulation,
+    required this.cellSize,
   });
 
   final CreatureRegistry registry;
   final SimulationEngine simulation;
+  final double cellSize;
 
   // -------------------------------------------------------------------------
   // Frame counter
@@ -113,32 +117,44 @@ class CreatureRenderer extends PositionComponent {
   void render(ui.Canvas canvas) {
     super.render(canvas);
     _frameCount++;
+    canvas.save();
+    canvas.scale(cellSize, cellSize);
 
     final paint = _paint;
+    final mobileDetail = game.mobileCreatureDetail;
     final gridW = simulation.gridW;
     final gridH = simulation.gridH;
+    final renderedByColony = <int, int>{};
+    final view = _visibleViewportBounds(gridW, gridH);
 
     // Lazy-init trail accumulator.
     final totalCells = gridW * gridH;
-    if (_trailAccumulator == null || _trailAccumulator!.length != totalCells) {
+    if ((mobileDetail || _trails.isNotEmpty) &&
+        (_trailAccumulator == null ||
+            _trailAccumulator!.length != totalCells)) {
       _trailAccumulator = Uint8List(totalCells);
     }
 
     // Decay trail accumulator every 60 frames.
-    _trailDecayCounter++;
-    if (_trailDecayCounter >= 60) {
-      _trailDecayCounter = 0;
-      final acc = _trailAccumulator!;
-      for (var i = 0; i < acc.length; i++) {
-        if (acc[i] > 0) acc[i]--;
+    if (mobileDetail) {
+      _trailDecayCounter++;
+      if (_trailDecayCounter >= 60) {
+        _trailDecayCounter = 0;
+        final acc = _trailAccumulator!;
+        for (var i = 0; i < acc.length; i++) {
+          if (acc[i] > 0) acc[i]--;
+        }
       }
     }
+    final renderTrails = mobileDetail;
+    final renderHighways = mobileDetail && (_frameCount & 1) == 0;
 
-    // Render trail accumulator (colony highways).
-    _renderHighways(canvas, paint, gridW, gridH);
-
-    // Render per-ant trails (behind creatures).
-    _renderTrails(canvas, paint);
+    if (renderHighways) {
+      _renderHighways(canvas, paint, gridW, gridH);
+    }
+    if (renderTrails) {
+      _renderTrails(canvas, paint);
+    }
 
     // Render each colony.
     for (final colony in registry.colonies) {
@@ -147,12 +163,20 @@ class CreatureRenderer extends PositionComponent {
       final accentColor = _colonyAccentColors[colorIdx];
 
       // Nest.
-      _renderNest(canvas, paint, colony, bodyColor);
+      if (_isVisibleWrappedX(colony.originX.toDouble(), view, gridW) &&
+          _isVisibleY(colony.originY.toDouble(), view)) {
+        _renderNest(canvas, paint, colony, bodyColor);
+      }
 
       // Each ant.
       for (var i = 0; i < colony.ants.length; i++) {
         final ant = colony.ants[i];
         if (!ant.alive) continue;
+        if (!_isVisibleWrappedX(ant.x.toDouble(), view, gridW) ||
+            !_isVisibleY(ant.y.toDouble(), view)) {
+          continue;
+        }
+        renderedByColony[colony.id] = (renderedByColony[colony.id] ?? 0) + 1;
 
         // Compute environment context once per creature.
         _computeEnvironment(ant);
@@ -161,7 +185,15 @@ class CreatureRenderer extends PositionComponent {
         switch (ant.species) {
           case CreatureSpecies.ant:
             if (ant.role == AntRole.queen) {
-              _renderQueen(canvas, paint, ant, colony, bodyColor, accentColor, i);
+              _renderQueen(
+                canvas,
+                paint,
+                ant,
+                colony,
+                bodyColor,
+                accentColor,
+                i,
+              );
             } else {
               _renderAnt(canvas, paint, ant, colony, bodyColor, accentColor, i);
             }
@@ -179,10 +211,56 @@ class CreatureRenderer extends PositionComponent {
             _renderFirefly(canvas, paint, ant, bodyColor, accentColor, i);
         }
 
-        // Update trails.
-        _updateTrail(colony.id, i, ant);
+        if (mobileDetail) {
+          _updateTrail(colony.id, i, ant);
+        }
       }
     }
+    registry.reportRenderedCounts(renderedByColony);
+    canvas.restore();
+  }
+
+  ({double centerX, double centerY, double halfWidth, double halfHeight})
+  _visibleViewportBounds(int gridW, int gridH) {
+    final cam = game.camera.viewfinder;
+    final viewport = game.camera.viewport.size;
+    final halfWidth = viewport.x / cam.zoom / cellSize / 2.0 + 6.0;
+    final halfHeight = viewport.y / cam.zoom / cellSize / 2.0 + 6.0;
+    var centerX = (cam.position.x / cellSize) % gridW;
+    if (centerX < 0) {
+      centerX += gridW;
+    }
+    final centerY = (cam.position.y / cellSize).clamp(
+      0.0,
+      (gridH - 1).toDouble(),
+    );
+    return (
+      centerX: centerX,
+      centerY: centerY,
+      halfWidth: halfWidth,
+      halfHeight: halfHeight,
+    );
+  }
+
+  @pragma('vm:prefer-inline')
+  bool _isVisibleWrappedX(
+    double x,
+    ({double centerX, double centerY, double halfWidth, double halfHeight})
+    view,
+    int gridW,
+  ) {
+    final dx = (x - view.centerX).abs();
+    final wrappedDx = dx < (gridW - dx) ? dx : (gridW - dx);
+    return wrappedDx <= view.halfWidth;
+  }
+
+  @pragma('vm:prefer-inline')
+  bool _isVisibleY(
+    double y,
+    ({double centerX, double centerY, double halfWidth, double halfHeight})
+    view,
+  ) {
+    return (y - view.centerY).abs() <= view.halfHeight;
   }
 
   // -------------------------------------------------------------------------
@@ -230,7 +308,9 @@ class CreatureRenderer extends PositionComponent {
   /// Modifies r, g, b in place via return tuple. All integer math.
   @pragma('vm:prefer-inline')
   static (int, int, int) _applyEnvironmentAndState(
-    int r, int g, int b,
+    int r,
+    int g,
+    int b,
     Ant ant,
     int accentColor,
     int frameCount,
@@ -317,7 +397,13 @@ class CreatureRenderer extends PositionComponent {
 
     // Apply environment + state.
     final (mr, mg, mb) = _applyEnvironmentAndState(
-        r, g, b, ant, accentColor, _frameCount);
+      r,
+      g,
+      b,
+      ant,
+      accentColor,
+      _frameCount,
+    );
 
     // Direction: derive from ant index + position hash (no private field access).
     final dirHash = (ant.x * 17 + antIndex * 7 + _frameCount ~/ 4) & 0xFF;
@@ -374,7 +460,8 @@ class CreatureRenderer extends PositionComponent {
 
     // --- Shadow: dark pixel below body (only above ground) ---
     final idx = ant.y * simulation.gridW + ant.x;
-    final isUnderground = idx >= 0 &&
+    final isUnderground =
+        idx >= 0 &&
         idx < simulation.luminance.length &&
         simulation.luminance[idx] < 40;
     if (y < simulation.gridH - 1 && !isUnderground) {
@@ -406,8 +493,14 @@ class CreatureRenderer extends PositionComponent {
     r = r.clamp(0, 255);
     g = g.clamp(0, 255);
 
-    final (mr, mg, mb) =
-        _applyEnvironmentAndState(r, g, b, ant, accentColor, _frameCount);
+    final (mr, mg, mb) = _applyEnvironmentAndState(
+      r,
+      g,
+      b,
+      ant,
+      accentColor,
+      _frameCount,
+    );
 
     final dir = ((ant.x * 17 + antIndex) & 1) == 0 ? 1 : -1;
 
@@ -464,8 +557,7 @@ class CreatureRenderer extends PositionComponent {
     for (var dy = -1; dy <= 1; dy++) {
       for (var dx = -1; dx <= 1; dx++) {
         if (dx == 0 && dy == 0) continue;
-        canvas.drawRect(
-            ui.Rect.fromLTWH(x + dx, y + dy, 1, 1), paint);
+        canvas.drawRect(ui.Rect.fromLTWH(x + dx, y + dy, 1, 1), paint);
       }
     }
   }
@@ -493,7 +585,13 @@ class CreatureRenderer extends PositionComponent {
     b = (b + 15).clamp(0, 255);
 
     final (mr, mg, mb) = _applyEnvironmentAndState(
-        r, g, b, ant, accentColor, _frameCount);
+      r,
+      g,
+      b,
+      ant,
+      accentColor,
+      _frameCount,
+    );
 
     // Body length: 4 segments default.
     const bodyLength = 4;
@@ -501,7 +599,8 @@ class CreatureRenderer extends PositionComponent {
 
     for (var seg = 0; seg < bodyLength; seg++) {
       // Undulation offset per segment.
-      final undY = _fastSinI((_frameCount * 3 + seg * 40) & 0xFF) >> 7; // 0 or 1
+      final undY =
+          _fastSinI((_frameCount * 3 + seg * 40) & 0xFF) >> 7; // 0 or 1
       final segX = x - dir * seg.toDouble();
       final segY = y + undY.toDouble();
 
@@ -514,8 +613,12 @@ class CreatureRenderer extends PositionComponent {
       final sg = (mg * fade) >> 8;
       final sb = (mb * fade) >> 8;
 
-      paint.color = ui.Color.fromARGB(255, sr.clamp(0, 255),
-          sg.clamp(0, 255), sb.clamp(0, 255));
+      paint.color = ui.Color.fromARGB(
+        255,
+        sr.clamp(0, 255),
+        sg.clamp(0, 255),
+        sb.clamp(0, 255),
+      );
       canvas.drawRect(ui.Rect.fromLTWH(segX, segY, 1, 1), paint);
     }
   }
@@ -540,7 +643,13 @@ class CreatureRenderer extends PositionComponent {
     int b = bodyColor & 0xFF;
 
     final (mr, mg, mb) = _applyEnvironmentAndState(
-        r, g, b, ant, accentColor, _frameCount);
+      r,
+      g,
+      b,
+      ant,
+      accentColor,
+      _frameCount,
+    );
 
     // 2px wide body (head + body).
     final dir = ((ant.x * 17 + antIndex) & 1) == 0 ? 1 : -1;
@@ -550,15 +659,20 @@ class CreatureRenderer extends PositionComponent {
     final bodyX = x - dir.toDouble();
     if (bodyX >= 0 && bodyX < simulation.gridW) {
       // Specular shine: brightness boost via _fastSinI on body pixel.
-      final shine = _fastSinI((_frameCount * 2 + ant.x * 7) & 0xFF) >> 4; // 0-16
+      final shine =
+          _fastSinI((_frameCount * 2 + ant.x * 7) & 0xFF) >> 4; // 0-16
       final sr = (mr + shine).clamp(0, 255);
       paint.color = ui.Color.fromARGB(255, sr, mg, mb);
       canvas.drawRect(ui.Rect.fromLTWH(bodyX, y, 1, 1), paint);
 
       // Fleeing: rear pixel alternates brightness every 2 frames.
       if (ant.dangerExposureTicks > 0 && (_frameCount & 3) < 2) {
-        paint.color = ui.Color.fromARGB(255, (mr + 40).clamp(0, 255),
-            (mg + 20).clamp(0, 255), mb);
+        paint.color = ui.Color.fromARGB(
+          255,
+          (mr + 40).clamp(0, 255),
+          (mg + 20).clamp(0, 255),
+          mb,
+        );
         canvas.drawRect(ui.Rect.fromLTWH(bodyX, y, 1, 1), paint);
       }
     }
@@ -584,11 +698,18 @@ class CreatureRenderer extends PositionComponent {
     int b = bodyColor & 0xFF;
 
     final (mr, mg, mb) = _applyEnvironmentAndState(
-        r, g, b, ant, accentColor, _frameCount);
+      r,
+      g,
+      b,
+      ant,
+      accentColor,
+      _frameCount,
+    );
 
     // In caves: INCREASE brightness by 20.
     final idx = ant.y * simulation.gridW + ant.x;
-    final inCave = idx >= 0 &&
+    final inCave =
+        idx >= 0 &&
         idx < simulation.luminance.length &&
         simulation.luminance[idx] < 40;
     final caveBoost = inCave ? 20 : 0;
@@ -635,7 +756,13 @@ class CreatureRenderer extends PositionComponent {
     int b = bodyColor & 0xFF;
 
     final (mr, mg, mb) = _applyEnvironmentAndState(
-        r, g, b, ant, accentColor, _frameCount);
+      r,
+      g,
+      b,
+      ant,
+      accentColor,
+      _frameCount,
+    );
 
     final dir = ((ant.x * 17 + antIndex) & 1) == 0 ? 1 : -1;
 
@@ -655,9 +782,14 @@ class CreatureRenderer extends PositionComponent {
     canvas.drawRect(ui.Rect.fromLTWH(x, y, 1, 1), paint);
 
     // Body pixel with shimmer.
-    final shimmer = _fastSinI((_frameCount * 4 + ant.x * 13) & 0xFF) >> 5; // 0-8
-    paint.color = ui.Color.fromARGB(255, (fr + shimmer).clamp(0, 255),
-        fg.clamp(0, 255), fb.clamp(0, 255));
+    final shimmer =
+        _fastSinI((_frameCount * 4 + ant.x * 13) & 0xFF) >> 5; // 0-8
+    paint.color = ui.Color.fromARGB(
+      255,
+      (fr + shimmer).clamp(0, 255),
+      fg.clamp(0, 255),
+      fb.clamp(0, 255),
+    );
     final bodyX = x - dir.toDouble();
     if (bodyX >= 0 && bodyX < simulation.gridW) {
       canvas.drawRect(ui.Rect.fromLTWH(bodyX, y, 1, 1), paint);
@@ -667,10 +799,16 @@ class CreatureRenderer extends PositionComponent {
     final tailOsc = ((_frameCount ~/ 6) & 1); // 0 or 1
     final tailX = x - dir * 2.0;
     final tailY = y + tailOsc.toDouble();
-    if (tailX >= 0 && tailX < simulation.gridW &&
-        tailY >= 0 && tailY < simulation.gridH) {
-      paint.color = ui.Color.fromARGB(180, fr.clamp(0, 255),
-          fg.clamp(0, 255), fb.clamp(0, 255));
+    if (tailX >= 0 &&
+        tailX < simulation.gridW &&
+        tailY >= 0 &&
+        tailY < simulation.gridH) {
+      paint.color = ui.Color.fromARGB(
+        180,
+        fr.clamp(0, 255),
+        fg.clamp(0, 255),
+        fb.clamp(0, 255),
+      );
       canvas.drawRect(ui.Rect.fromLTWH(tailX, tailY, 1, 1), paint);
     }
   }
@@ -704,7 +842,13 @@ class CreatureRenderer extends PositionComponent {
     }
 
     final (mr, mg, mb) = _applyEnvironmentAndState(
-        r, g, b, ant, accentColor, _frameCount);
+      r,
+      g,
+      b,
+      ant,
+      accentColor,
+      _frameCount,
+    );
 
     paint.color = ui.Color.fromARGB(255, mr, mg, mb);
     canvas.drawRect(ui.Rect.fromLTWH(x, y, 1, 1), paint);
@@ -738,7 +882,13 @@ class CreatureRenderer extends PositionComponent {
     int b = bodyColor & 0xFF;
 
     final (mr, mg, mb) = _applyEnvironmentAndState(
-        r, g, b, ant, accentColor, _frameCount);
+      r,
+      g,
+      b,
+      ant,
+      accentColor,
+      _frameCount,
+    );
 
     // Glow phase: unique per individual.
     final glowPhaseOffset = _smoothHash(antIndex, ant.colonyId) & 0xFF;
@@ -754,18 +904,22 @@ class CreatureRenderer extends PositionComponent {
 
     // Glowing: bright body.
     final intensity = ((glowVal - 192) * 4).clamp(0, 255); // 0-255
-    paint.color = ui.Color.fromARGB(255,
-        (200 * intensity) >> 8,
-        (220 * intensity) >> 8,
-        (80 * intensity) >> 8);
+    paint.color = ui.Color.fromARGB(
+      255,
+      (200 * intensity) >> 8,
+      (220 * intensity) >> 8,
+      (80 * intensity) >> 8,
+    );
     canvas.drawRect(ui.Rect.fromLTWH(x, y, 1, 1), paint);
 
     // 8 surrounding glow pixels with radial falloff.
     final glowAlpha = (intensity * 120) >> 8;
-    paint.color = ui.Color.fromARGB(glowAlpha,
-        (200 * intensity) >> 8,
-        (220 * intensity) >> 8,
-        (80 * intensity) >> 8);
+    paint.color = ui.Color.fromARGB(
+      glowAlpha,
+      (200 * intensity) >> 8,
+      (220 * intensity) >> 8,
+      (80 * intensity) >> 8,
+    );
     for (var dy = -1; dy <= 1; dy++) {
       for (var dx = -1; dx <= 1; dx++) {
         if (dx == 0 && dy == 0) continue;
@@ -810,11 +964,8 @@ class CreatureRenderer extends PositionComponent {
         // Integer distance approximation: d2 / (radius^2) as falloff.
         final maxD2 = (glowRadius + 1) * (glowRadius + 1);
         final falloff = alpha * (maxD2 - d2) ~/ maxD2;
-        paint.color = ui.Color.fromARGB(
-          falloff.clamp(0, 255), br, bg, bb,
-        );
-        canvas.drawRect(
-          ui.Rect.fromLTWH(nx + dx, ny + dy, 1, 1), paint);
+        paint.color = ui.Color.fromARGB(falloff.clamp(0, 255), br, bg, bb);
+        canvas.drawRect(ui.Rect.fromLTWH(nx + dx, ny + dy, 1, 1), paint);
       }
     }
 
@@ -850,7 +1001,9 @@ class CreatureRenderer extends PositionComponent {
           // Excavated dirt: darken it.
           paint.color = const ui.Color.fromARGB(30, 0, 0, 0);
           canvas.drawRect(
-              ui.Rect.fromLTWH(tx.toDouble(), ty.toDouble(), 1, 1), paint);
+            ui.Rect.fromLTWH(tx.toDouble(), ty.toDouble(), 1, 1),
+            paint,
+          );
         }
       }
     }
@@ -899,9 +1052,7 @@ class CreatureRenderer extends PositionComponent {
   }
 
   /// Render colony highways from the trail accumulator.
-  void _renderHighways(
-    ui.Canvas canvas, ui.Paint paint, int gridW, int gridH,
-  ) {
+  void _renderHighways(ui.Canvas canvas, ui.Paint paint, int gridW, int gridH) {
     final acc = _trailAccumulator;
     if (acc == null) return;
 
@@ -913,7 +1064,9 @@ class CreatureRenderer extends PositionComponent {
           final alpha = ((v - 10) * 3).clamp(0, 40);
           paint.color = ui.Color.fromARGB(alpha, 30, 20, 10);
           canvas.drawRect(
-              ui.Rect.fromLTWH(x.toDouble(), y.toDouble(), 1, 1), paint);
+            ui.Rect.fromLTWH(x.toDouble(), y.toDouble(), 1, 1),
+            paint,
+          );
         }
       }
     }
@@ -928,13 +1081,21 @@ class CreatureRenderer extends PositionComponent {
       // Determine trail color by ant state.
       int tr, tg, tb;
       if (ant.carryingFood) {
-        tr = 200; tg = 180; tb = 80; // gold
+        tr = 200;
+        tg = 180;
+        tb = 80; // gold
       } else if (ant.isNearNest) {
-        tr = 80; tg = 100; tb = 200; // blue
+        tr = 80;
+        tg = 100;
+        tb = 200; // blue
       } else if (ant.dangerExposureTicks > 0) {
-        tr = 200; tg = 60; tb = 60; // red
+        tr = 200;
+        tg = 60;
+        tb = 60; // red
       } else {
-        tr = 100; tg = 90; tb = 70; // brown
+        tr = 100;
+        tg = 90;
+        tb = 70; // brown
       }
 
       trail.add(_TrailPoint(ant.x, ant.y, tr, tg, tb));
@@ -958,9 +1119,7 @@ class CreatureRenderer extends PositionComponent {
   // -------------------------------------------------------------------------
 
   @pragma('vm:prefer-inline')
-  void _drawPixelIfValid(
-    ui.Canvas canvas, ui.Paint paint, double x, double y,
-  ) {
+  void _drawPixelIfValid(ui.Canvas canvas, ui.Paint paint, double x, double y) {
     if (x >= 0 && x < simulation.gridW && y >= 0 && y < simulation.gridH) {
       canvas.drawRect(ui.Rect.fromLTWH(x, y, 1, 1), paint);
     }

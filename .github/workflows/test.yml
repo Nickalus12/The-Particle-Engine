@@ -46,7 +46,44 @@ jobs:
         run: flutter analyze
 
       - name: Run Flutter tests with coverage
-        run: flutter test --coverage --no-pub
+        run: |
+          mkdir -p build/quality
+          flutter test --coverage --machine --no-pub > build/quality/unit.machine.jsonl
+          flutter test --machine --no-pub test/smoke > build/quality/smoke.machine.jsonl
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          def summarize(path: Path, lane: str) -> None:
+              total = 0
+              failed = 0
+              if path.exists():
+                  for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+                      line = line.strip()
+                      if not line:
+                          continue
+                      try:
+                          evt = json.loads(line)
+                      except Exception:
+                          continue
+                      if evt.get("type") != "testDone" or evt.get("hidden", False):
+                          continue
+                      total += 1
+                      if evt.get("result") != "success":
+                          failed += 1
+              out = {
+                  "lane": lane,
+                  "total": total,
+                  "failed": failed,
+                  "return_code": 0 if total > 0 and failed == 0 else 1,
+              }
+              Path(f"build/quality/{lane}_lane_summary.json").write_text(
+                  json.dumps(out),
+                  encoding="utf-8",
+              )
+
+          summarize(Path("build/quality/unit.machine.jsonl"), "unit")
+          summarize(Path("build/quality/smoke.machine.jsonl"), "smoke")
+          PY
 
       - name: Enforce coverage floor
         run: python3 tool/check_coverage.py coverage/lcov.info --min 45
@@ -64,6 +101,13 @@ jobs:
         with:
           name: flutter-lcov
           path: coverage/lcov.info
+
+      - name: Upload quality lane artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: analyze-quality-artifacts
+          path: build/quality/**
 
   # -----------------------------------------------------------------------
   # Job 2: Python physics test suite (every push)
@@ -103,11 +147,44 @@ jobs:
 
       - name: Run pytest suite
         run: |
+          mkdir -p build/quality
           cd research
           python -m pytest tests/ -v --tb=short -x \
             --ignore=tests/test_snapshots.py \
-            -k "not test_visual_quality"
+            -k "not test_visual_quality" \
+            --junitxml ../build/quality/python_pytest.xml
         timeout-minutes: 15
+
+      - name: Write python lane summary
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          p = Path("build/quality/python_pytest.xml")
+          total = failed = 0
+          if p.exists():
+              root = ET.parse(p).getroot()
+              suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
+              for s in suites:
+                  total += int(s.attrib.get("tests", 0))
+                  failed += int(s.attrib.get("failures", 0)) + int(s.attrib.get("errors", 0))
+          out = {
+              "lane": "python",
+              "total": total,
+              "failed": failed,
+              "return_code": 0 if total > 0 and failed == 0 else 1,
+          }
+          Path("build/quality/python_lane_summary.json").write_text(json.dumps(out), encoding="utf-8")
+          PY
+
+      - name: Upload python quality artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-quality-artifacts
+          path: build/quality/**
 
   # -----------------------------------------------------------------------
   # Job 3: Integration tests for trained genomes (on PR)
@@ -129,8 +206,16 @@ jobs:
 
       - name: Run genome integration tests
         run: |
+          mkdir -p build/quality
           cd research
-          python -m pytest tests/test_integration.py -v --tb=short
+          python -m pytest tests/test_integration.py -v --tb=short --junitxml ../build/quality/integration_pytest.xml
+
+      - name: Upload integration quality artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-quality-artifacts
+          path: build/quality/**
 
   # -----------------------------------------------------------------------
   # Job 4: Full benchmark in CI mode (on PR, optional)
@@ -217,6 +302,84 @@ jobs:
           name: performance-telemetry-artifacts
           path: reports/performance/runs/**
 
+  quality-score-push:
+    name: Quality Score Aggregation (Push)
+    runs-on: ubuntu-latest
+    needs: [analyze, pytest, performance-telemetry]
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download lane artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: build/quality-inputs
+          merge-multiple: true
+
+      - name: Build quality score run
+        run: |
+          python tool/performance/run_quality_pipeline.py \
+            --profile pr \
+            --mode ingest \
+            --artifact-root build/quality-inputs \
+            --gate-start-date 2026-03-27
+
+      - name: Upload quality score artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-score-artifacts
+          path: reports/performance/runs/**
+
+  quality-score-pr:
+    name: Quality Score Aggregation (PR)
+    runs-on: ubuntu-latest
+    needs: [analyze, pytest, integration, performance-telemetry]
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download lane artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: build/quality-inputs
+          merge-multiple: true
+
+      - name: Build quality score run
+        run: |
+          python tool/performance/run_quality_pipeline.py \
+            --profile pr \
+            --mode ingest \
+            --artifact-root build/quality-inputs \
+            --gate-start-date 2026-03-27
+
+      - name: Upload quality score artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-score-artifacts
+          path: reports/performance/runs/**
+
   # -----------------------------------------------------------------------
   # Job 6: Weekly ThunderCompute training (Saturday, budget-gated)
   # -----------------------------------------------------------------------
@@ -241,6 +404,81 @@ jobs:
           python tool/performance/run_performance_pipeline.py \
             --profile nightly \
             --require-telemetry-complete
+
+      - name: Upload nightly perf artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-performance-artifacts
+          path: reports/performance/runs/**
+
+  nightly-android-lane:
+    name: Nightly Android Investigative Lane
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run android investigative lane
+        run: |
+          python tool/performance/run_android_investigative_lane.py --target-timeout-seconds 180
+
+      - name: Upload nightly android artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-android-artifacts
+          path: reports/performance/runs/**
+
+  nightly-quality-score:
+    name: Nightly Quality Score Aggregation
+    runs-on: ubuntu-latest
+    needs: [nightly-soak, nightly-android-lane]
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download nightly artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: build/quality-inputs
+          merge-multiple: true
+
+      - name: Build nightly quality score run
+        run: |
+          python tool/performance/run_quality_pipeline.py \
+            --profile nightly \
+            --mode ingest \
+            --artifact-root build/quality-inputs \
+            --gate-start-date 2026-03-27
+
+      - name: Upload nightly quality artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-quality-score-artifacts
+          path: reports/performance/runs/**
 
   # -----------------------------------------------------------------------
   # Job 7: Weekly ThunderCompute training (Saturday, budget-gated)

@@ -11,14 +11,16 @@ void main() {
   const channel = MethodChannel('plugins.flutter.io/path_provider');
 
   setUpAll(() async {
-    final tempDir = await Directory.systemTemp.createTemp('particle_engine_home_test');
+    final tempDir = await Directory.systemTemp.createTemp(
+      'particle_engine_home_test',
+    );
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall methodCall) async {
-      if (methodCall.method == 'getApplicationDocumentsDirectory') {
-        return tempDir.path;
-      }
-      return null;
-    });
+          if (methodCall.method == 'getApplicationDocumentsDirectory') {
+            return tempDir.path;
+          }
+          return null;
+        });
   });
 
   tearDownAll(() {
@@ -34,11 +36,7 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
 
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: HomeScreen(),
-      ),
-    );
+    await tester.pumpWidget(const MaterialApp(home: HomeScreen()));
 
     for (int i = 0; i < 40; i++) {
       await tester.pump(const Duration(milliseconds: 16));
@@ -48,5 +46,21 @@ void main() {
     expect(find.byKey(const ValueKey('home_create_button')), findsOneWidget);
     expect(find.byKey(const ValueKey('home_load_button')), findsOneWidget);
     expect(find.byKey(const ValueKey('home_settings_button')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('home_quick_start_button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('home_quick_blank_button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('home_quick_continue_button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('home_session_status_strip')),
+      findsOneWidget,
+    );
   });
 }

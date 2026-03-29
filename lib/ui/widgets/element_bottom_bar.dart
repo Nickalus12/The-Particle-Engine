@@ -16,10 +16,16 @@ import 'vector_element_icons.dart';
 /// Replaces the cramped 80px left sidebar with a full-width bottom strip.
 /// Category tabs sit at the top; large, beautiful element tiles scroll horizontally below.
 class ElementBottomBar extends StatefulWidget {
-  const ElementBottomBar({super.key, required this.game, this.onInteraction});
+  const ElementBottomBar({
+    super.key,
+    required this.game,
+    this.onInteraction,
+    this.interactionKey,
+  });
 
   final ParticleEngineGame game;
   final VoidCallback? onInteraction;
+  final Key? interactionKey;
 
   static double estimatedHeightFor(MediaQueryData media) {
     final compact = media.size.height < 760;
@@ -30,7 +36,11 @@ class ElementBottomBar extends StatefulWidget {
     final stripHeight = (compact || ultraCompact) ? 66.0 : 76.0;
     final innerVertical = compact ? 8.0 : 12.0;
     final outerBottom = 8 + (bottomInset > 0 ? bottomInset * 0.35 : 0);
-    return tabsHeight + accentLineHeight + stripHeight + innerVertical + outerBottom;
+    return tabsHeight +
+        accentLineHeight +
+        stripHeight +
+        innerVertical +
+        outerBottom;
   }
 
   @override
@@ -156,6 +166,7 @@ class _ElementBottomBarState extends State<ElementBottomBar>
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
               child: Container(
+                key: widget.interactionKey,
                 decoration: ParticleTheme.panelDecoration(
                   borderRadius: ParticleTheme.radiusLarge,
                   accent: _activeCategory.color,

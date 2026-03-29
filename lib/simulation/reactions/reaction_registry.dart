@@ -25,6 +25,15 @@ class ReactionRule {
   /// Human-readable description for tooling / UI.
   final String description;
 
+  /// Stable reaction family key for observability and tuning.
+  final String reactionFamily;
+
+  /// Summary of expected field/environment preconditions.
+  final String expectedPreconditions;
+
+  /// Whether the rule is expected to approximately conserve material.
+  final bool conservesMaterial;
+
   /// Reaction flash color (R, G, B) and particle count. 0 = no flash.
   final int flashR;
   final int flashG;
@@ -43,6 +52,9 @@ class ReactionRule {
     this.targetBecomesElement,
     this.probability = 1.0,
     this.description = '',
+    this.reactionFamily = 'pairwise_neighbor',
+    this.expectedPreconditions = '',
+    this.conservesMaterial = false,
     this.flashR = 0,
     this.flashG = 0,
     this.flashB = 0,
@@ -105,15 +117,29 @@ class ReactionRegistry {
   /// All registered reaction rules.
   static List<ReactionRule> get rules => List.unmodifiable(_rules);
 
+  static Map<String, int> familyCounts() {
+    final counts = <String, int>{};
+    for (final rule in _rules) {
+      counts.update(
+        rule.reactionFamily,
+        (value) => value + 1,
+        ifAbsent: () => 1,
+      );
+    }
+    return counts;
+  }
+
   /// Find all reactions involving a given source element.
   static List<ReactionRule> reactionsFor(int sourceElement) =>
       _rulesBySource[sourceElement] ?? const [];
 
   /// Find all reactions between two specific elements.
   static List<ReactionRule> reactionsBetween(int a, int b) => _rules
-      .where((r) =>
-          (r.source == a && r.target == b) ||
-          (r.source == b && r.target == a))
+      .where(
+        (r) =>
+            (r.source == a && r.target == b) ||
+            (r.source == b && r.target == a),
+      )
       .toList();
 
   /// O(1) lookup: get reaction rules for a specific (source, neighbor) pair.
@@ -126,7 +152,12 @@ class ReactionRegistry {
   /// flat 2D lookup table for O(1) pair matching. Returns true if any
   /// reaction fired.
   static bool processReactions(
-      SimulationEngine sim, int x, int y, int idx, int el) {
+    SimulationEngine sim,
+    int x,
+    int y,
+    int idx,
+    int el,
+  ) {
     bool anyFired = false;
     final sourceBase = el * maxElements;
 
@@ -170,7 +201,13 @@ class ReactionRegistry {
           // Queue reaction flash if specified.
           if (rule.flashCount > 0) {
             sim.queueReactionFlash(
-                nx, ny, rule.flashR, rule.flashG, rule.flashB, rule.flashCount);
+              nx,
+              ny,
+              rule.flashR,
+              rule.flashG,
+              rule.flashB,
+              rule.flashCount,
+            );
           }
           anyFired = true;
           break; // Only one reaction per neighbor per tick.
@@ -185,7 +222,12 @@ class ReactionRegistry {
 
   /// Legacy compatibility: execute reactions for custom elements.
   static bool executeReactions(
-      SimulationEngine sim, int el, int x, int y, int idx) {
+    SimulationEngine sim,
+    int el,
+    int x,
+    int y,
+    int idx,
+  ) {
     return processReactions(sim, x, y, idx, el);
   }
 }
@@ -202,7 +244,10 @@ const List<ReactionRule> _builtInRules = [
     targetBecomesElement: El.fire,
     probability: 0.5,
     description: 'Fire ignites adjacent oil (chain ignition)',
-    flashR: 255, flashG: 180, flashB: 50, flashCount: 3,
+    flashR: 255,
+    flashG: 180,
+    flashB: 50,
+    flashCount: 3,
   ),
   ReactionRule(
     source: El.fire,
@@ -237,7 +282,10 @@ const List<ReactionRule> _builtInRules = [
     targetBecomesElement: El.water,
     probability: 0.15,
     description: 'Fire melts snow into water',
-    flashR: 180, flashG: 220, flashB: 255, flashCount: 2,
+    flashR: 180,
+    flashG: 220,
+    flashB: 255,
+    flashCount: 2,
   ),
   ReactionRule(
     source: El.fire,
@@ -253,7 +301,10 @@ const List<ReactionRule> _builtInRules = [
     sourceBecomesElement: El.steam,
     targetBecomesElement: El.empty,
     description: 'Water extinguishes fire, becoming steam',
-    flashR: 200, flashG: 200, flashB: 240, flashCount: 3,
+    flashR: 200,
+    flashG: 200,
+    flashB: 240,
+    flashCount: 3,
   ),
   ReactionRule(
     source: El.water,
@@ -269,7 +320,10 @@ const List<ReactionRule> _builtInRules = [
     target: El.lightning,
     sourceBecomesElement: El.glass,
     description: 'Lightning fuses sand into glass',
-    flashR: 200, flashG: 230, flashB: 255, flashCount: 4,
+    flashR: 200,
+    flashG: 230,
+    flashB: 255,
+    flashCount: 4,
   ),
   ReactionRule(
     source: El.sand,
@@ -320,7 +374,10 @@ const List<ReactionRule> _builtInRules = [
     sourceBecomesElement: El.empty,
     probability: 0.08,
     description: 'Acid dissolves stone',
-    flashR: 50, flashG: 255, flashB: 50, flashCount: 5,
+    flashR: 50,
+    flashG: 255,
+    flashB: 50,
+    flashCount: 5,
   ),
   ReactionRule(
     source: El.acid,
@@ -329,14 +386,20 @@ const List<ReactionRule> _builtInRules = [
     sourceBecomesElement: El.empty,
     probability: 0.12,
     description: 'Acid dissolves wood',
-    flashR: 60, flashG: 220, flashB: 40, flashCount: 4,
+    flashR: 60,
+    flashG: 220,
+    flashB: 40,
+    flashCount: 4,
   ),
   ReactionRule(
     source: El.acid,
     target: El.metal,
     probability: 0.05,
     description: 'Acid corrodes metal (gradual damage via life)',
-    flashR: 60, flashG: 230, flashB: 60, flashCount: 2,
+    flashR: 60,
+    flashG: 230,
+    flashB: 60,
+    flashCount: 2,
   ),
   ReactionRule(
     source: El.acid,
@@ -351,7 +414,10 @@ const List<ReactionRule> _builtInRules = [
     targetBecomesElement: El.water,
     probability: 0.1,
     description: 'Acid melts ice',
-    flashR: 80, flashG: 255, flashB: 120, flashCount: 3,
+    flashR: 80,
+    flashG: 255,
+    flashB: 120,
+    flashCount: 3,
   ),
   ReactionRule(
     source: El.acid,
@@ -360,7 +426,10 @@ const List<ReactionRule> _builtInRules = [
     sourceBecomesElement: El.empty,
     probability: 0.1,
     description: 'Acid dissolves glass',
-    flashR: 100, flashG: 255, flashB: 100, flashCount: 4,
+    flashR: 100,
+    flashG: 255,
+    flashB: 100,
+    flashCount: 4,
   ),
   ReactionRule(
     source: El.acid,
@@ -368,7 +437,10 @@ const List<ReactionRule> _builtInRules = [
     targetBecomesElement: El.empty,
     probability: 0.33,
     description: 'Acid dissolves plants',
-    flashR: 40, flashG: 200, flashB: 40, flashCount: 2,
+    flashR: 40,
+    flashG: 200,
+    flashB: 40,
+    flashCount: 2,
   ),
   ReactionRule(
     source: El.acid,
@@ -376,7 +448,10 @@ const List<ReactionRule> _builtInRules = [
     targetBecomesElement: El.empty,
     probability: 0.33,
     description: 'Acid dissolves seeds',
-    flashR: 40, flashG: 200, flashB: 40, flashCount: 2,
+    flashR: 40,
+    flashG: 200,
+    flashB: 40,
+    flashCount: 2,
   ),
   ReactionRule(
     source: El.acid,
@@ -398,7 +473,10 @@ const List<ReactionRule> _builtInRules = [
     targetBecomesElement: El.steam,
     probability: 0.2,
     description: 'Acid + lava = violent reaction',
-    flashR: 200, flashG: 255, flashB: 100, flashCount: 6,
+    flashR: 200,
+    flashG: 255,
+    flashB: 100,
+    flashCount: 6,
   ),
 
   // Seed reactions
@@ -425,7 +503,10 @@ const List<ReactionRule> _builtInRules = [
     target: El.sand,
     targetBecomesElement: El.glass,
     description: 'Lightning fuses sand into glass',
-    flashR: 200, flashG: 230, flashB: 255, flashCount: 4,
+    flashR: 200,
+    flashG: 230,
+    flashB: 255,
+    flashCount: 4,
   ),
   ReactionRule(
     source: El.lightning,
@@ -454,7 +535,10 @@ const List<ReactionRule> _builtInRules = [
     sourceBecomesElement: El.dirt,
     probability: 0.05,
     description: 'Mud dries near fire',
-    flashR: 180, flashG: 180, flashB: 200, flashCount: 2,
+    flashR: 180,
+    flashG: 180,
+    flashB: 200,
+    flashCount: 2,
   ),
   ReactionRule(
     source: El.mud,
@@ -462,7 +546,10 @@ const List<ReactionRule> _builtInRules = [
     sourceBecomesElement: El.dirt,
     probability: 0.05,
     description: 'Mud dries near lava',
-    flashR: 180, flashG: 180, flashB: 200, flashCount: 2,
+    flashR: 180,
+    flashG: 180,
+    flashB: 200,
+    flashCount: 2,
   ),
 
   // Lightning + Oil: arc ignition
@@ -471,7 +558,10 @@ const List<ReactionRule> _builtInRules = [
     target: El.oil,
     targetBecomesElement: El.fire,
     description: 'Lightning ignites oil',
-    flashR: 255, flashG: 200, flashB: 50, flashCount: 5,
+    flashR: 255,
+    flashG: 200,
+    flashB: 50,
+    flashCount: 5,
   ),
 
   // Acid + Snow: exothermic dissolution melts snow
@@ -481,7 +571,10 @@ const List<ReactionRule> _builtInRules = [
     targetBecomesElement: El.water,
     probability: 0.2,
     description: 'Acid melts snow into water',
-    flashR: 80, flashG: 240, flashB: 100, flashCount: 3,
+    flashR: 80,
+    flashG: 240,
+    flashB: 100,
+    flashCount: 3,
   ),
 
   // ==========================================================================
@@ -491,164 +584,269 @@ const List<ReactionRule> _builtInRules = [
   // -- Alkali metals + water (explosive, handled in behavior for main effect,
   //    but these provide extra spread) --
   ReactionRule(
-    source: El.sodium, target: El.water,
-    sourceBecomesElement: El.fire, targetBecomesElement: El.hydrogen,
-    probability: 0.8, description: 'Sodium reacts violently with water',
-    flashR: 255, flashG: 200, flashB: 50, flashCount: 6,
+    source: El.sodium,
+    target: El.water,
+    sourceBecomesElement: El.fire,
+    targetBecomesElement: El.hydrogen,
+    probability: 0.8,
+    description: 'Sodium reacts violently with water',
+    flashR: 255,
+    flashG: 200,
+    flashB: 50,
+    flashCount: 6,
   ),
   ReactionRule(
-    source: El.potassium, target: El.water,
-    sourceBecomesElement: El.fire, targetBecomesElement: El.hydrogen,
-    probability: 0.9, description: 'Potassium explodes in water',
-    flashR: 255, flashG: 180, flashB: 220, flashCount: 8,
+    source: El.potassium,
+    target: El.water,
+    sourceBecomesElement: El.fire,
+    targetBecomesElement: El.hydrogen,
+    probability: 0.9,
+    description: 'Potassium explodes in water',
+    flashR: 255,
+    flashG: 180,
+    flashB: 220,
+    flashCount: 8,
   ),
   ReactionRule(
-    source: El.lithium, target: El.water,
-    sourceBecomesElement: El.fire, targetBecomesElement: El.hydrogen,
-    probability: 0.6, description: 'Lithium reacts with water',
-    flashR: 255, flashG: 50, flashB: 50, flashCount: 4,
+    source: El.lithium,
+    target: El.water,
+    sourceBecomesElement: El.fire,
+    targetBecomesElement: El.hydrogen,
+    probability: 0.6,
+    description: 'Lithium reacts with water',
+    flashR: 255,
+    flashG: 50,
+    flashB: 50,
+    flashCount: 4,
   ),
   ReactionRule(
-    source: El.cesium, target: El.water,
-    sourceBecomesElement: El.fire, targetBecomesElement: El.hydrogen,
-    probability: 1.0, description: 'Cesium detonates in water',
-    flashR: 255, flashG: 255, flashB: 100, flashCount: 10,
+    source: El.cesium,
+    target: El.water,
+    sourceBecomesElement: El.fire,
+    targetBecomesElement: El.hydrogen,
+    probability: 1.0,
+    description: 'Cesium detonates in water',
+    flashR: 255,
+    flashG: 255,
+    flashB: 100,
+    flashCount: 10,
   ),
 
   // -- Halogen + metal → salt --
   ReactionRule(
-    source: El.chlorine, target: El.sodium,
-    sourceBecomesElement: El.empty, targetBecomesElement: El.salt,
-    probability: 0.3, description: 'Chlorine + sodium = table salt (NaCl)',
-    flashR: 255, flashG: 255, flashB: 200, flashCount: 3,
+    source: El.chlorine,
+    target: El.sodium,
+    sourceBecomesElement: El.empty,
+    targetBecomesElement: El.salt,
+    probability: 0.3,
+    description: 'Chlorine + sodium = table salt (NaCl)',
+    flashR: 255,
+    flashG: 255,
+    flashB: 200,
+    flashCount: 3,
   ),
   ReactionRule(
-    source: El.chlorine, target: El.metal,
-    sourceBecomesElement: El.empty, targetBecomesElement: El.rust,
-    probability: 0.1, description: 'Chlorine corrodes iron',
+    source: El.chlorine,
+    target: El.metal,
+    sourceBecomesElement: El.empty,
+    targetBecomesElement: El.rust,
+    probability: 0.1,
+    description: 'Chlorine corrodes iron',
   ),
   ReactionRule(
-    source: El.fluorine, target: El.glass,
-    sourceBecomesElement: El.empty, targetBecomesElement: El.empty,
-    probability: 0.15, description: 'Fluorine etches glass',
-    flashR: 200, flashG: 255, flashB: 200, flashCount: 2,
+    source: El.fluorine,
+    target: El.glass,
+    sourceBecomesElement: El.empty,
+    targetBecomesElement: El.empty,
+    probability: 0.15,
+    description: 'Fluorine etches glass',
+    flashR: 200,
+    flashG: 255,
+    flashB: 200,
+    flashCount: 2,
   ),
   ReactionRule(
-    source: El.fluorine, target: El.water,
-    sourceBecomesElement: El.empty, targetBecomesElement: El.acid,
-    probability: 0.2, description: 'Fluorine creates hydrofluoric acid',
+    source: El.fluorine,
+    target: El.water,
+    sourceBecomesElement: El.empty,
+    targetBecomesElement: El.acid,
+    probability: 0.2,
+    description: 'Fluorine creates hydrofluoric acid',
   ),
 
   // -- Metal + acid → dissolution + hydrogen gas --
   ReactionRule(
-    source: El.acid, target: El.aluminum,
+    source: El.acid,
+    target: El.aluminum,
     targetBecomesElement: El.empty,
-    probability: 0.1, description: 'Acid dissolves aluminum',
-    flashR: 100, flashG: 255, flashB: 100, flashCount: 2,
+    probability: 0.1,
+    description: 'Acid dissolves aluminum',
+    flashR: 100,
+    flashG: 255,
+    flashB: 100,
+    flashCount: 2,
   ),
   ReactionRule(
-    source: El.acid, target: El.zinc,
+    source: El.acid,
+    target: El.zinc,
     targetBecomesElement: El.empty,
-    probability: 0.08, description: 'Acid dissolves zinc, produces H₂',
-    flashR: 100, flashG: 255, flashB: 100, flashCount: 2,
+    probability: 0.08,
+    description: 'Acid dissolves zinc, produces H₂',
+    flashR: 100,
+    flashG: 255,
+    flashB: 100,
+    flashCount: 2,
   ),
   ReactionRule(
-    source: El.acid, target: El.tin,
+    source: El.acid,
+    target: El.tin,
     targetBecomesElement: El.empty,
-    probability: 0.08, description: 'Acid dissolves tin',
+    probability: 0.08,
+    description: 'Acid dissolves tin',
   ),
   // Gold resists acid (no reaction = corrosionResistance: 255)
 
   // -- Silver tarnish --
   ReactionRule(
-    source: El.silver, target: El.sulfur,
-    probability: 0.05, description: 'Silver tarnishes with sulfur',
+    source: El.silver,
+    target: El.sulfur,
+    probability: 0.05,
+    description: 'Silver tarnishes with sulfur',
     // Visual: darken the silver (handled via life counter in renderer)
   ),
 
   // -- Zinc galvanization (protects iron from rust) --
   ReactionRule(
-    source: El.zinc, target: El.rust,
+    source: El.zinc,
+    target: El.rust,
     targetBecomesElement: El.metal,
-    probability: 0.03, description: 'Zinc reduces rust back to iron',
-    flashR: 180, flashG: 200, flashB: 220, flashCount: 2,
+    probability: 0.03,
+    description: 'Zinc reduces rust back to iron',
+    flashR: 180,
+    flashG: 200,
+    flashB: 220,
+    flashCount: 2,
   ),
 
   // -- Mercury + gold/silver amalgamation --
   ReactionRule(
-    source: El.mercury, target: El.gold,
+    source: El.mercury,
+    target: El.gold,
     targetBecomesElement: El.mercury,
-    probability: 0.02, description: 'Mercury amalgamates gold',
+    probability: 0.02,
+    description: 'Mercury amalgamates gold',
   ),
   ReactionRule(
-    source: El.mercury, target: El.silver,
+    source: El.mercury,
+    target: El.silver,
     targetBecomesElement: El.mercury,
-    probability: 0.03, description: 'Mercury amalgamates silver',
+    probability: 0.03,
+    description: 'Mercury amalgamates silver',
   ),
 
   // -- Magnesium + fire = brilliant white flash --
   ReactionRule(
-    source: El.magnesium, target: El.fire,
+    source: El.magnesium,
+    target: El.fire,
     sourceBecomesElement: El.ash,
-    probability: 0.3, description: 'Magnesium burns with brilliant white light',
-    flashR: 255, flashG: 255, flashB: 255, flashCount: 12,
+    probability: 0.3,
+    description: 'Magnesium burns with brilliant white light',
+    flashR: 255,
+    flashG: 255,
+    flashB: 255,
+    flashCount: 12,
   ),
 
   // -- Carbon (charcoal) + extreme pressure/heat → diamond --
   ReactionRule(
-    source: El.charcoal, target: El.lava,
+    source: El.charcoal,
+    target: El.lava,
     sourceBecomesElement: El.carbon,
-    probability: 0.005, description: 'Extreme heat+pressure: charcoal → diamond',
-    flashR: 200, flashG: 230, flashB: 255, flashCount: 5,
+    probability: 0.005,
+    description: 'Extreme heat+pressure: charcoal → diamond',
+    flashR: 200,
+    flashG: 230,
+    flashB: 255,
+    flashCount: 5,
     requiresMinTemp: 200,
   ),
 
   // -- Phosphorus auto-ignition with oxygen --
   ReactionRule(
-    source: El.phosphorus, target: El.oxygen,
+    source: El.phosphorus,
+    target: El.oxygen,
     sourceBecomesElement: El.fire,
-    probability: 0.05, description: 'White phosphorus ignites in air',
-    flashR: 255, flashG: 255, flashB: 200, flashCount: 4,
+    probability: 0.05,
+    description: 'White phosphorus ignites in air',
+    flashR: 255,
+    flashG: 255,
+    flashB: 200,
+    flashCount: 4,
   ),
 
   // -- Bromine reactions --
   ReactionRule(
-    source: El.bromine, target: El.aluminum,
-    sourceBecomesElement: El.empty, targetBecomesElement: El.salt,
-    probability: 0.1, description: 'Bromine reacts with aluminum',
-    flashR: 200, flashG: 100, flashB: 50, flashCount: 3,
+    source: El.bromine,
+    target: El.aluminum,
+    sourceBecomesElement: El.empty,
+    targetBecomesElement: El.salt,
+    probability: 0.1,
+    description: 'Bromine reacts with aluminum',
+    flashR: 200,
+    flashG: 100,
+    flashB: 50,
+    flashCount: 3,
   ),
 
   // -- Tin + copper → bronze (simplified) --
   ReactionRule(
-    source: El.tin, target: El.copper,
-    probability: 0.01, description: 'Tin alloys with copper (bronze)',
+    source: El.tin,
+    target: El.copper,
+    probability: 0.01,
+    description: 'Tin alloys with copper (bronze)',
     requiresMinTemp: 160,
   ),
 
   // -- Nuclear: uranium chain reaction effects --
   ReactionRule(
-    source: El.plutonium, target: El.plutonium,
-    probability: 0.02, description: 'Plutonium critical mass heating',
-    flashR: 60, flashG: 255, flashB: 80, flashCount: 3,
+    source: El.plutonium,
+    target: El.plutonium,
+    probability: 0.02,
+    description: 'Plutonium critical mass heating',
+    flashR: 60,
+    flashG: 255,
+    flashB: 80,
+    flashCount: 3,
   ),
   ReactionRule(
-    source: El.thorium, target: El.thorium,
-    probability: 0.01, description: 'Thorium sustained heat',
-    flashR: 50, flashG: 200, flashB: 80, flashCount: 2,
+    source: El.thorium,
+    target: El.thorium,
+    probability: 0.01,
+    description: 'Thorium sustained heat',
+    flashR: 50,
+    flashG: 200,
+    flashB: 80,
+    flashCount: 2,
   ),
 
   // -- Boron as neutron absorber (blocks uranium chain reactions) --
   ReactionRule(
-    source: El.uranium, target: El.boron,
-    probability: 0.05, description: 'Boron absorbs neutrons, slowing uranium',
+    source: El.uranium,
+    target: El.boron,
+    probability: 0.05,
+    description: 'Boron absorbs neutrons, slowing uranium',
     // No transformation — just presence slows chain reaction
   ),
 
   // -- Arsenic toxicity --
   ReactionRule(
-    source: El.arsenic, target: El.water,
-    probability: 0.02, description: 'Arsenic poisons water',
-    flashR: 100, flashG: 80, flashB: 100, flashCount: 1,
+    source: El.arsenic,
+    target: El.water,
+    probability: 0.02,
+    description: 'Arsenic poisons water',
+    flashR: 100,
+    flashG: 80,
+    flashB: 100,
+    flashCount: 1,
   ),
 ];

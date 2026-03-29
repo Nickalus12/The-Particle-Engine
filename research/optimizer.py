@@ -23,6 +23,7 @@ import subprocess
 import sys
 import textwrap
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -32,7 +33,11 @@ _RESEARCH_DIR = Path(__file__).resolve().parent
 if str(_RESEARCH_DIR) not in sys.path:
     sys.path.insert(0, str(_RESEARCH_DIR))
 
-from parameter_contract import write_trial_config as write_manifest_trial_config
+from parameter_contract import (
+    build_optuna_suggestion_spec,
+    select_optuna_manifest_parameters,
+    write_trial_config as write_manifest_trial_config,
+)
 
 # ---------------------------------------------------------------------------
 # Windows UTF-8 fix
@@ -55,389 +60,124 @@ TRIAL_CONFIG = RESEARCH_DIR / "trial_config.json"
 PLOTS_DIR = RESEARCH_DIR / "plots"
 
 # ---------------------------------------------------------------------------
-# Current defaults (extracted from element_registry.dart)
+# Manifest-backed defaults and curated legacy extras
 # ---------------------------------------------------------------------------
-DEFAULTS: dict[str, int | float] = {
-    # Densities
-    "sand_density": 150,
-    "water_density": 100,
-    "oil_density": 80,
-    "stone_density": 255,
-    "metal_density": 240,
-    "ice_density": 90,
-    "wood_density": 85,
-    "dirt_density": 145,
-    "lava_density": 200,
-    # Gravity
-    "sand_gravity": 2,
-    "water_gravity": 1,
-    # Temperature thresholds
-    "water_boil_point": 180,
-    "water_freeze_point": 30,
-    "sand_melt_point": 220,
-    "ice_melt_point": 40,
-    # Viscosity
-    "oil_viscosity": 2,
-    "mud_viscosity": 3,
-    "lava_viscosity": 4,
-    # Behavioral
+LEGACY_EXTRA_DEFAULTS: dict[str, int | float] = {
     "evaporation_rate": 1000,
     "fire_spread_prob": 0.15,
     "erosion_rate": 200,
-    # --- SimTuning: Sand ---
-    "sandToMudRate": 10,
-    "sandToMudSubmergedRate": 80,
-    # --- SimTuning: Water ---
-    "waterPressurePush": 8,
-    "waterDirtErosion": 20,
-    "waterSandErosion": 30,
-    "waterSedimentDeposit": 40,
-    "waterSeepageRate": 12,
-    "waterHydraulicRate": 3,
-    "waterBubbleRate": 500,
-    "waterMomentumReset": 4,
-    # --- SimTuning: Fire ---
-    "fireOxygenConsume": 3,
-    "fireLifetimeBase": 40,
-    "fireLifetimeVar": 40,
-    "firePlantIgnite": 2,
-    "fireOilChainIgnite": 3,
-    "fireWoodPyrolysis": 3,
-    "fireLateralShimmy": 5,
-    # --- SimTuning: Ice ---
-    "iceRegelation": 4,
-    "iceAmbientMeltDay": 20,
-    "iceAmbientMeltNight": 60,
-    # --- SimTuning: Dirt ---
-    "dirtWaterErosionBase": 10,
-    "dirtFlowingErosion": 8,
-    "dirtAshAbsorb": 10,
-    # --- SimTuning: Plant ---
-    "plantAcidDamage": 3,
-    "plantDecomposeRate": 10,
-    "plantO2Produce": 8,
-    "plantSeedRateYoung": 500,
-    "plantSeedRateOld": 200,
-    "plantGrassSpread": 40,
-    "plantTreeRootGrow": 50,
-    # --- SimTuning: Lava ---
-    "lavaCoolingBase": 200,
-    "lavaCoolingVar": 50,
-    "lavaSmokeEmit": 80,
-    "lavaSteamEmit": 120,
-    "lavaEruptionOpen": 60,
-    "lavaEruptionPressured": 30,
-    "lavaIgniteFlammable": 2,
-    "lavaSandToGlass": 40,
-    "lavaMeltMetal": 80,
-    # --- SimTuning: Snow ---
-    "snowMeltRateDay": 20,
-    "snowMeltRateNight": 40,
-    "snowFreezeWater": 30,
-    "snowAvalanche": 3,
-    # --- SimTuning: Wood ---
-    "woodFireSpread": 12,
-    "woodBurnoutBase": 40,
-    "woodCharcoalChance": 5,
-    "woodAnoxicPyrolysis": 60,
-    "woodWaterAbsorb": 30,
-    # --- SimTuning: Metal ---
-    "metalRustRate": 500,
-    "metalSaltRustRate": 100,
-    "metalHotIgniteRate": 6,
-    # --- SimTuning: Steam ---
-    "steamAltitudeRain": 5,
-    "steamDeposition": 3,
-    "steamTrappedSeep": 40,
-    # --- SimTuning: Acid ---
-    "acidLifetimeBase": 200,
-    "acidLifetimeVar": 60,
-    "acidWaterDilute": 8,
-    "acidIceMelt": 8,
-    # --- SimTuning: Stone ---
-    "stoneThinSupport": 60,
-    "stoneWeatherWater": 60,
-    "stoneWeatherCrumble": 20,
-    "stoneFrostWeather": 20,
-    # --- SimTuning: Glass ---
-    "glassLavaMeltBase": 80,
-    "glassThermalShatter": 3,
-    # --- SimTuning: Fungus ---
-    "fungusWoodRot": 80,
-    "fungusDirtSpread": 40,
-    "fungusSporulate": 200,
-    "fungusMethane": 300,
-    # --- SimTuning: Compost ---
-    "compostDryToDirt": 100,
-    "compostMethane": 400,
-    # --- SimTuning: Salt ---
-    "saltDissolveRate": 5,
-    "saltDeiceRate": 15,
-    "saltPlantKill": 30,
-    # --- SimTuning: Algae ---
-    "algaeGrowRate": 10,
-    "algaeO2Rate": 40,
-    "algaeBloomDieoff": 50,
-    "algaeBloomThreshold": 12,
-    # --- SimTuning: Throttles ---
-    "throttleWaterPressure": 3,
-    "throttleFireSpread": 6,
-    "throttlePlantGrow": 6,
-    "throttlePlantPhotosynthesis": 15,
-    "throttlePlantSeed": 30,
-    "throttleLavaCool": 10,
-    "throttleFungusGrow": 20,
-    "throttleAlgaeGrow": 30,
-    # --- SimTuning: Thresholds ---
-    "thresholdPressureHigh": 6,
-    "thresholdPressureErupt": 16,
-    "thresholdPlantWilt": 30,
-    "thresholdPlantMature": 8,
-    "thresholdTempHot": 200,
-    "thresholdTempWarm": 150,
-    "thresholdMoistureWet": 50,
-    "thresholdStressFailure": 2,
-    "thresholdVibrationBreak": 200,
-    # --- SimTuning: Distances ---
-    "distVibrationSpread": 1,
-    # --- SimTuning: Creature rates ---
-    "spiderWebRate": 8,
-    "beePollinateRate": 12,
-    "wormAerateRate": 15,
-    "fishEatRate": 8,
-    # --- SimTuning: Colony ---
-    "queenEggRate": 100,
-    "queenFoodPerEgg": 3,
-    "eggHatchTicks": 200,
-    "larvaGrowTicks": 400,
 }
+
+OPTUNA_PROFILE = "balanced"
+MANIFEST_OPTUNA_PARAMS = select_optuna_manifest_parameters(profile=OPTUNA_PROFILE)
+DEFAULTS: dict[str, int | float] = {
+    **{
+        str(meta.get("legacy_flat")): meta.get("default")
+        for _, meta in MANIFEST_OPTUNA_PARAMS
+        if meta.get("legacy_flat") is not None
+    },
+    **LEGACY_EXTRA_DEFAULTS,
+}
+
+
+def _set_optuna_profile(profile: str) -> None:
+    global OPTUNA_PROFILE, MANIFEST_OPTUNA_PARAMS, DEFAULTS
+    OPTUNA_PROFILE = profile
+    MANIFEST_OPTUNA_PARAMS = select_optuna_manifest_parameters(profile=profile)
+    DEFAULTS = {
+        **{
+            str(meta.get("legacy_flat")): meta.get("default")
+            for _, meta in MANIFEST_OPTUNA_PARAMS
+            if meta.get("legacy_flat") is not None
+        },
+        **LEGACY_EXTRA_DEFAULTS,
+    }
+
+
+def _build_optuna_run_metadata(
+    *,
+    profile: str,
+    manifest_params: list[tuple[str, dict[str, Any]]],
+    source_label: str,
+) -> dict[str, Any]:
+    group_counts = Counter(str(meta.get("group", "unknown")) for _, meta in manifest_params)
+    return {
+        "profile": profile,
+        "source_label": source_label,
+        "param_count": len(manifest_params) + len(LEGACY_EXTRA_DEFAULTS),
+        "runtime_mutable_count": sum(
+            1 for _, meta in manifest_params if bool(meta.get("runtime_mutable"))
+        ),
+        "search_groups": dict(sorted(group_counts.items())),
+        "search_space": [
+            {
+                "canonical_path": canonical_path,
+                "name": str(meta.get("legacy_flat")),
+                "group": str(meta.get("group", "unknown")),
+                "runtime_mutable": bool(meta.get("runtime_mutable")),
+                "mobile_priority": meta.get("mobile_priority"),
+            }
+            for canonical_path, meta in manifest_params
+            if meta.get("legacy_flat")
+        ],
+    }
+
+
+def _annotate_study(study) -> None:
+    metadata = _build_optuna_run_metadata(
+        profile=OPTUNA_PROFILE,
+        manifest_params=MANIFEST_OPTUNA_PARAMS,
+        source_label="local_optuna",
+    )
+    study.set_user_attr("optuna_profile", OPTUNA_PROFILE)
+    study.set_user_attr("optuna_param_count", metadata["param_count"])
+    study.set_user_attr("optuna_runtime_mutable_count", metadata["runtime_mutable_count"])
+    study.set_user_attr("optuna_search_groups", metadata["search_groups"])
 
 
 # ---------------------------------------------------------------------------
 # Search space definition
 # ---------------------------------------------------------------------------
 def suggest_params(trial) -> dict[str, Any]:
-    """Define the Optuna parameter search space.
-
-    Covers element properties, SimTuning rates/throttles/thresholds,
-    periodic table elements, creature rates, and colony dynamics.
-    """
+    """Define the Optuna parameter search space from the manifest."""
     params: dict[str, Any] = {}
 
-    # ===== Element densities (buoyancy, sinking, displacement) =====
-    params["sand_density"] = trial.suggest_int("sand_density", 120, 180)
-    params["water_density"] = trial.suggest_int("water_density", 80, 120)
-    params["oil_density"] = trial.suggest_int("oil_density", 60, 95)
-    params["stone_density"] = trial.suggest_int("stone_density", 230, 255)
-    params["metal_density"] = trial.suggest_int("metal_density", 235, 255)
-    params["ice_density"] = trial.suggest_int("ice_density", 80, 100)
-    params["wood_density"] = trial.suggest_int("wood_density", 60, 100)
-    params["dirt_density"] = trial.suggest_int("dirt_density", 130, 160)
-    params["lava_density"] = trial.suggest_int("lava_density", 180, 220)
+    for _, meta in MANIFEST_OPTUNA_PARAMS:
+        spec = build_optuna_suggestion_spec(meta)
+        if spec is None:
+            continue
 
-    # ===== Gravity =====
-    params["sand_gravity"] = trial.suggest_int("sand_gravity", 1, 3)
-    params["water_gravity"] = trial.suggest_int("water_gravity", 1, 2)
+        name = str(spec["name"])
+        if spec["type"] == "float":
+            kwargs: dict[str, Any] = {}
+            if "step" in spec:
+                kwargs["step"] = float(spec["step"])
+            elif spec.get("log"):
+                kwargs["log"] = True
+            params[name] = trial.suggest_float(
+                name,
+                float(spec["low"]),
+                float(spec["high"]),
+                **kwargs,
+            )
+        else:
+            kwargs = {}
+            if "step" in spec:
+                kwargs["step"] = int(spec["step"])
+            elif spec.get("log"):
+                kwargs["log"] = True
+            params[name] = trial.suggest_int(
+                name,
+                int(spec["low"]),
+                int(spec["high"]),
+                **kwargs,
+            )
 
-    # ===== Temperature thresholds =====
-    params["water_boil_point"] = trial.suggest_int("water_boil_point", 160, 200)
-    params["water_freeze_point"] = trial.suggest_int("water_freeze_point", 20, 50)
-    params["sand_melt_point"] = trial.suggest_int("sand_melt_point", 200, 250)
-    params["ice_melt_point"] = trial.suggest_int("ice_melt_point", 30, 60)
-
-    # ===== Viscosity =====
-    params["oil_viscosity"] = trial.suggest_int("oil_viscosity", 1, 4)
-    params["mud_viscosity"] = trial.suggest_int("mud_viscosity", 2, 5)
-    params["lava_viscosity"] = trial.suggest_int("lava_viscosity", 3, 6)
-
-    # ===== Legacy behavioral =====
     params["evaporation_rate"] = trial.suggest_int("evaporation_rate", 500, 3000)
     params["fire_spread_prob"] = trial.suggest_float(
         "fire_spread_prob", 0.05, 0.40, step=0.05
     )
     params["erosion_rate"] = trial.suggest_int("erosion_rate", 50, 500)
-
-    # ===== SimTuning: Sand =====
-    params["sandToMudRate"] = trial.suggest_int("sandToMudRate", 5, 20)
-    params["sandToMudSubmergedRate"] = trial.suggest_int("sandToMudSubmergedRate", 40, 160)
-
-    # ===== SimTuning: Water =====
-    params["waterPressurePush"] = trial.suggest_int("waterPressurePush", 4, 16)
-    params["waterDirtErosion"] = trial.suggest_int("waterDirtErosion", 10, 40)
-    params["waterSandErosion"] = trial.suggest_int("waterSandErosion", 15, 60)
-    params["waterSedimentDeposit"] = trial.suggest_int("waterSedimentDeposit", 20, 80)
-    params["waterSeepageRate"] = trial.suggest_int("waterSeepageRate", 6, 24)
-    params["waterHydraulicRate"] = trial.suggest_int("waterHydraulicRate", 1, 8)
-    params["waterBubbleRate"] = trial.suggest_int("waterBubbleRate", 200, 1000)
-    params["waterMomentumReset"] = trial.suggest_int("waterMomentumReset", 2, 8)
-
-    # ===== SimTuning: Fire =====
-    params["fireOxygenConsume"] = trial.suggest_int("fireOxygenConsume", 1, 8)
-    params["fireLifetimeBase"] = trial.suggest_int("fireLifetimeBase", 20, 80)
-    params["fireLifetimeVar"] = trial.suggest_int("fireLifetimeVar", 20, 80)
-    params["firePlantIgnite"] = trial.suggest_int("firePlantIgnite", 1, 5)
-    params["fireOilChainIgnite"] = trial.suggest_int("fireOilChainIgnite", 1, 6)
-    params["fireWoodPyrolysis"] = trial.suggest_int("fireWoodPyrolysis", 1, 6)
-    params["fireLateralShimmy"] = trial.suggest_int("fireLateralShimmy", 2, 10)
-
-    # ===== SimTuning: Ice =====
-    params["iceRegelation"] = trial.suggest_int("iceRegelation", 2, 8)
-    params["iceAmbientMeltDay"] = trial.suggest_int("iceAmbientMeltDay", 10, 40)
-    params["iceAmbientMeltNight"] = trial.suggest_int("iceAmbientMeltNight", 30, 120)
-
-    # ===== SimTuning: Dirt =====
-    params["dirtWaterErosionBase"] = trial.suggest_int("dirtWaterErosionBase", 5, 20)
-    params["dirtFlowingErosion"] = trial.suggest_int("dirtFlowingErosion", 4, 16)
-    params["dirtAshAbsorb"] = trial.suggest_int("dirtAshAbsorb", 5, 20)
-
-    # ===== SimTuning: Plant =====
-    params["plantAcidDamage"] = trial.suggest_int("plantAcidDamage", 1, 8)
-    params["plantDecomposeRate"] = trial.suggest_int("plantDecomposeRate", 5, 20)
-    params["plantO2Produce"] = trial.suggest_int("plantO2Produce", 4, 16)
-    params["plantSeedRateYoung"] = trial.suggest_int("plantSeedRateYoung", 250, 1000)
-    params["plantSeedRateOld"] = trial.suggest_int("plantSeedRateOld", 100, 400)
-    params["plantGrassSpread"] = trial.suggest_int("plantGrassSpread", 20, 80)
-    params["plantTreeRootGrow"] = trial.suggest_int("plantTreeRootGrow", 25, 100)
-
-    # ===== SimTuning: Lava =====
-    params["lavaCoolingBase"] = trial.suggest_int("lavaCoolingBase", 100, 400)
-    params["lavaCoolingVar"] = trial.suggest_int("lavaCoolingVar", 25, 100)
-    params["lavaSmokeEmit"] = trial.suggest_int("lavaSmokeEmit", 40, 160)
-    params["lavaSteamEmit"] = trial.suggest_int("lavaSteamEmit", 60, 240)
-    params["lavaEruptionOpen"] = trial.suggest_int("lavaEruptionOpen", 30, 120)
-    params["lavaEruptionPressured"] = trial.suggest_int("lavaEruptionPressured", 15, 60)
-    params["lavaIgniteFlammable"] = trial.suggest_int("lavaIgniteFlammable", 1, 5)
-    params["lavaSandToGlass"] = trial.suggest_int("lavaSandToGlass", 20, 80)
-    params["lavaMeltMetal"] = trial.suggest_int("lavaMeltMetal", 40, 160)
-
-    # ===== SimTuning: Snow =====
-    params["snowMeltRateDay"] = trial.suggest_int("snowMeltRateDay", 10, 40)
-    params["snowMeltRateNight"] = trial.suggest_int("snowMeltRateNight", 20, 80)
-    params["snowFreezeWater"] = trial.suggest_int("snowFreezeWater", 15, 60)
-    params["snowAvalanche"] = trial.suggest_int("snowAvalanche", 2, 6)
-
-    # ===== SimTuning: Wood =====
-    params["woodFireSpread"] = trial.suggest_int("woodFireSpread", 6, 24)
-    params["woodBurnoutBase"] = trial.suggest_int("woodBurnoutBase", 20, 80)
-    params["woodCharcoalChance"] = trial.suggest_int("woodCharcoalChance", 2, 10)
-    params["woodAnoxicPyrolysis"] = trial.suggest_int("woodAnoxicPyrolysis", 30, 120)
-    params["woodWaterAbsorb"] = trial.suggest_int("woodWaterAbsorb", 15, 60)
-
-    # ===== SimTuning: Metal =====
-    params["metalRustRate"] = trial.suggest_int("metalRustRate", 250, 1000)
-    params["metalSaltRustRate"] = trial.suggest_int("metalSaltRustRate", 50, 200)
-    params["metalHotIgniteRate"] = trial.suggest_int("metalHotIgniteRate", 3, 12)
-
-    # ===== SimTuning: Steam =====
-    params["steamAltitudeRain"] = trial.suggest_int("steamAltitudeRain", 2, 10)
-    params["steamDeposition"] = trial.suggest_int("steamDeposition", 1, 6)
-    params["steamTrappedSeep"] = trial.suggest_int("steamTrappedSeep", 20, 80)
-
-    # ===== SimTuning: Acid =====
-    params["acidLifetimeBase"] = trial.suggest_int("acidLifetimeBase", 100, 400)
-    params["acidLifetimeVar"] = trial.suggest_int("acidLifetimeVar", 30, 120)
-    params["acidWaterDilute"] = trial.suggest_int("acidWaterDilute", 4, 16)
-    params["acidIceMelt"] = trial.suggest_int("acidIceMelt", 4, 16)
-
-    # ===== SimTuning: Stone =====
-    params["stoneThinSupport"] = trial.suggest_int("stoneThinSupport", 30, 120)
-    params["stoneWeatherWater"] = trial.suggest_int("stoneWeatherWater", 30, 120)
-    params["stoneWeatherCrumble"] = trial.suggest_int("stoneWeatherCrumble", 10, 40)
-    params["stoneFrostWeather"] = trial.suggest_int("stoneFrostWeather", 10, 40)
-
-    # ===== SimTuning: Glass =====
-    params["glassLavaMeltBase"] = trial.suggest_int("glassLavaMeltBase", 40, 160)
-    params["glassThermalShatter"] = trial.suggest_int("glassThermalShatter", 1, 6)
-
-    # ===== SimTuning: Fungus =====
-    params["fungusWoodRot"] = trial.suggest_int("fungusWoodRot", 40, 160)
-    params["fungusDirtSpread"] = trial.suggest_int("fungusDirtSpread", 20, 80)
-    params["fungusSporulate"] = trial.suggest_int("fungusSporulate", 100, 400)
-    params["fungusMethane"] = trial.suggest_int("fungusMethane", 150, 600)
-
-    # ===== SimTuning: Compost =====
-    params["compostDryToDirt"] = trial.suggest_int("compostDryToDirt", 50, 200)
-    params["compostMethane"] = trial.suggest_int("compostMethane", 200, 800)
-
-    # ===== SimTuning: Salt =====
-    params["saltDissolveRate"] = trial.suggest_int("saltDissolveRate", 2, 10)
-    params["saltDeiceRate"] = trial.suggest_int("saltDeiceRate", 8, 30)
-    params["saltPlantKill"] = trial.suggest_int("saltPlantKill", 15, 60)
-
-    # ===== SimTuning: Algae =====
-    params["algaeGrowRate"] = trial.suggest_int("algaeGrowRate", 5, 20)
-    params["algaeO2Rate"] = trial.suggest_int("algaeO2Rate", 20, 80)
-    params["algaeBloomDieoff"] = trial.suggest_int("algaeBloomDieoff", 25, 100)
-    params["algaeBloomThreshold"] = trial.suggest_int("algaeBloomThreshold", 6, 24)
-
-    # ===== SimTuning: Throttles (behavior update frequency) =====
-    params["throttleWaterPressure"] = trial.suggest_int("throttleWaterPressure", 1, 6)
-    params["throttleFireSpread"] = trial.suggest_int("throttleFireSpread", 3, 12)
-    params["throttlePlantGrow"] = trial.suggest_int("throttlePlantGrow", 3, 12)
-    params["throttlePlantPhotosynthesis"] = trial.suggest_int("throttlePlantPhotosynthesis", 8, 30)
-    params["throttlePlantSeed"] = trial.suggest_int("throttlePlantSeed", 15, 60)
-    params["throttleLavaCool"] = trial.suggest_int("throttleLavaCool", 5, 20)
-    params["throttleFungusGrow"] = trial.suggest_int("throttleFungusGrow", 10, 40)
-    params["throttleAlgaeGrow"] = trial.suggest_int("throttleAlgaeGrow", 15, 60)
-
-    # ===== SimTuning: Thresholds (trigger points) =====
-    params["thresholdPressureHigh"] = trial.suggest_int("thresholdPressureHigh", 3, 12)
-    params["thresholdPressureErupt"] = trial.suggest_int("thresholdPressureErupt", 8, 32)
-    params["thresholdPlantWilt"] = trial.suggest_int("thresholdPlantWilt", 15, 60)
-    params["thresholdPlantMature"] = trial.suggest_int("thresholdPlantMature", 4, 16)
-    params["thresholdTempHot"] = trial.suggest_int("thresholdTempHot", 160, 240)
-    params["thresholdTempWarm"] = trial.suggest_int("thresholdTempWarm", 120, 180)
-    params["thresholdMoistureWet"] = trial.suggest_int("thresholdMoistureWet", 25, 100)
-    params["thresholdStressFailure"] = trial.suggest_int("thresholdStressFailure", 1, 4)
-    params["thresholdVibrationBreak"] = trial.suggest_int("thresholdVibrationBreak", 100, 400)
-
-    # ===== SimTuning: Distances =====
-    params["distVibrationSpread"] = trial.suggest_int("distVibrationSpread", 1, 3)
-
-    # ===== SimTuning: Creature species rates =====
-    params["spiderWebRate"] = trial.suggest_int("spiderWebRate", 4, 16)
-    params["beePollinateRate"] = trial.suggest_int("beePollinateRate", 6, 24)
-    params["wormAerateRate"] = trial.suggest_int("wormAerateRate", 8, 30)
-    params["fishEatRate"] = trial.suggest_int("fishEatRate", 4, 16)
-
-    # ===== SimTuning: Colony dynamics =====
-    params["queenEggRate"] = trial.suggest_int("queenEggRate", 50, 200)
-    params["queenFoodPerEgg"] = trial.suggest_int("queenFoodPerEgg", 1, 6)
-    params["eggHatchTicks"] = trial.suggest_int("eggHatchTicks", 100, 400)
-    params["larvaGrowTicks"] = trial.suggest_int("larvaGrowTicks", 200, 800)
-
-    # ===== Periodic Table: Key element properties =====
-
-    # Alkali metal reactivity
-    params["sodium_reactivity"] = trial.suggest_int("sodium_reactivity", 160, 255)
-    params["potassium_reactivity"] = trial.suggest_int("potassium_reactivity", 180, 255)
-
-    # Mercury properties
-    params["mercury_density"] = trial.suggest_int("mercury_density", 190, 240)
-    params["mercury_viscosity"] = trial.suggest_int("mercury_viscosity", 1, 4)
-
-    # Gold properties
-    params["gold_density"] = trial.suggest_int("gold_density", 220, 255)
-    params["gold_melt_point"] = trial.suggest_int("gold_melt_point", 150, 200)
-
-    # Halogen reactivity
-    params["fluorine_reactivity"] = trial.suggest_int("fluorine_reactivity", 200, 255)
-    params["chlorine_reactivity"] = trial.suggest_int("chlorine_reactivity", 160, 230)
-
-    # Nuclear properties
-    params["uranium_heat_rate"] = trial.suggest_int("uranium_heat_rate", 1, 5)
-    params["plutonium_heat_rate"] = trial.suggest_int("plutonium_heat_rate", 2, 8)
-    params["thorium_heat_rate"] = trial.suggest_int("thorium_heat_rate", 1, 4)
-
-    # Phosphorus auto-ignition
-    params["phosphorus_ignition_chance"] = trial.suggest_int(
-        "phosphorus_ignition_chance", 20, 80
-    )
-
-    # World generation: ore richness
-    params["ore_richness_mult"] = trial.suggest_float(
-        "ore_richness_mult", 0.5, 2.0, step=0.1
-    )
 
     return params
 
@@ -447,7 +187,12 @@ def suggest_params(trial) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 def write_trial_config(params: dict[str, Any]) -> Path:
     """Write trial parameters to JSON for the benchmark to consume."""
-    return write_manifest_trial_config(TRIAL_CONFIG, params)
+    metadata = _build_optuna_run_metadata(
+        profile=OPTUNA_PROFILE,
+        manifest_params=MANIFEST_OPTUNA_PARAMS,
+        source_label="local_optuna",
+    )
+    return write_manifest_trial_config(TRIAL_CONFIG, params, metadata=metadata)
 
 
 # ---------------------------------------------------------------------------
@@ -539,13 +284,15 @@ def create_or_load_study(study_name: str = "particle_engine", load_if_exists: bo
     import optuna
 
     storage_url = f"sqlite:///{STUDY_DB}"
-    return optuna.create_study(
+    study = optuna.create_study(
         study_name=study_name,
         storage=storage_url,
         directions=["maximize", "maximize"],
         load_if_exists=load_if_exists,
         sampler=optuna.samplers.TPESampler(seed=42, multivariate=True),
     )
+    _annotate_study(study)
+    return study
 
 
 def load_study(study_name: str = "particle_engine"):
@@ -553,7 +300,9 @@ def load_study(study_name: str = "particle_engine"):
     import optuna
 
     storage_url = f"sqlite:///{STUDY_DB}"
-    return optuna.load_study(study_name=study_name, storage=storage_url)
+    study = optuna.load_study(study_name=study_name, storage=storage_url)
+    _annotate_study(study)
+    return study
 
 
 # ---------------------------------------------------------------------------
@@ -563,6 +312,7 @@ def run_optimization(args: argparse.Namespace) -> None:
     """Run optimization trials."""
     import optuna
 
+    _set_optuna_profile(args.profile)
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
     study = create_or_load_study(
@@ -584,7 +334,8 @@ def run_optimization(args: argparse.Namespace) -> None:
     print(f"  New trials:   {n_trials}")
     print(f"  Timeout:      {args.timeout}s")
     print(f"  Objectives:   Physics (maximize), Visuals (maximize)")
-    print(f"  Parameters:   {len(DEFAULTS)}")
+    print(f"  Profile:      {args.profile}")
+    print(f"  Parameters:   {len(MANIFEST_OPTUNA_PARAMS) + len(LEGACY_EXTRA_DEFAULTS)}")
     print()
     print("-" * 60)
     print()
@@ -643,6 +394,7 @@ def run_optimization(args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------------------
 def show_results(args: argparse.Namespace) -> None:
     """Display optimization results."""
+    _set_optuna_profile(args.profile)
     study = load_study(args.study_name)
     trials = [t for t in study.trials if t.values is not None]
 
@@ -796,6 +548,7 @@ def generate_all_visualizations(args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------------------
 def apply_best_params(args: argparse.Namespace) -> None:
     """Write the best trial's parameters to trial_config.json."""
+    _set_optuna_profile(args.profile)
     study = load_study(args.study_name)
     completed = [t for t in study.trials if t.values is not None]
 
@@ -834,6 +587,7 @@ def apply_best_params(args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------------------
 def test_params(args: argparse.Namespace) -> None:
     """Run benchmark with specific parameter overrides."""
+    _set_optuna_profile(args.profile)
     params = dict(DEFAULTS)
 
     if args.param:
@@ -947,6 +701,12 @@ def main() -> int:
     run_parser.add_argument(
         "--resume", action="store_true", help="Resume existing study"
     )
+    run_parser.add_argument(
+        "--profile",
+        choices=["balanced", "mobile", "exploratory"],
+        default="balanced",
+        help="Search-surface profile (default: balanced)",
+    )
 
     # -- show --
     show_parser = subparsers.add_parser("show", help="Show optimization results")
@@ -956,11 +716,23 @@ def main() -> int:
     show_parser.add_argument(
         "--top", type=int, default=10, help="Number of top results (default: 10)"
     )
+    show_parser.add_argument(
+        "--profile",
+        choices=["balanced", "mobile", "exploratory"],
+        default="balanced",
+        help="Interpret results against this profile's manifest surface",
+    )
 
     # -- viz --
     viz_parser = subparsers.add_parser("viz", help="Generate visualization plots")
     viz_parser.add_argument(
         "--study-name", default="particle_engine", help="Study name"
+    )
+    viz_parser.add_argument(
+        "--profile",
+        choices=["balanced", "mobile", "exploratory"],
+        default="balanced",
+        help="Profile label for visualization context",
     )
 
     # -- apply --
@@ -971,6 +743,12 @@ def main() -> int:
     apply_parser.add_argument(
         "--trial", type=int, default=None, help="Specific trial number to apply"
     )
+    apply_parser.add_argument(
+        "--profile",
+        choices=["balanced", "mobile", "exploratory"],
+        default="balanced",
+        help="Profile metadata to write with the applied config",
+    )
 
     # -- test --
     test_parser = subparsers.add_parser("test", help="Test specific parameter values")
@@ -980,6 +758,12 @@ def main() -> int:
         action="append",
         metavar=("KEY", "VALUE"),
         help="Parameter key-value pair (repeatable)",
+    )
+    test_parser.add_argument(
+        "--profile",
+        choices=["balanced", "mobile", "exploratory"],
+        default="balanced",
+        help="Profile metadata for the generated trial config",
     )
 
     args = parser.parse_args()

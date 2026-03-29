@@ -146,10 +146,7 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
       gridData.loadIntoEngine(simulation);
     } else if (!game.isBlankCanvas && game.worldConfig == null) {
       // Default: generate a meadow world.
-      final defaultConfig = WorldConfig.meadow(
-        width: gridW,
-        height: gridH,
-      );
+      final defaultConfig = WorldConfig.meadow(width: gridW, height: gridH);
       final gridData = WorldGenerator.generate(defaultConfig);
       gridData.loadIntoEngine(simulation);
     }
@@ -164,6 +161,7 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
     creatureRenderer = CreatureRenderer(
       registry: creatures,
       simulation: simulation,
+      cellSize: cellSize,
     );
     pheromoneRenderer = PheromoneRenderer(registry: creatures);
     backgroundComponent = BackgroundComponent(
@@ -172,7 +170,11 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
       cellSize: cellSize,
     );
 
-    giPostProcess = GIPostProcess(simulation: simulation);
+    giPostProcess =
+        GIPostProcess(simulation: simulation, enabled: game.isDesktop)
+          ..giStrength = game.isDesktop ? 0.4 : 0.25
+          ..bloomStrength = game.isDesktop ? 0.15 : 0.08
+          ..waterEnabled = game.isDesktop;
 
     await addAll([
       backgroundComponent..priority = 0,
@@ -204,38 +206,58 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
     super.update(dt);
     if (!paused) {
       _simAccumulator += dt;
+      final mobileCreationMode = !game.isDesktop && game.isCreationMode;
+      final mobileDevice = !game.isDesktop;
+      final chemistryInterval = mobileCreationMode ? 5 : (mobileDevice ? 4 : 3);
+      final electricityInterval = mobileCreationMode
+          ? 8
+          : (mobileDevice ? 6 : 4);
+      final lightInterval = mobileCreationMode ? 8 : (mobileDevice ? 6 : 4);
+      final luminanceInterval = mobileCreationMode
+          ? 12
+          : (mobileDevice ? 10 : 8);
+      final moistureInterval = mobileCreationMode
+          ? 12
+          : (mobileDevice ? 10 : 8);
+      final maxSimStepsPerFrame = mobileCreationMode
+          ? 1
+          : (mobileDevice ? 2 : 3);
       // Run at fixed ~30fps rate regardless of render framerate.
-      if (_simAccumulator >= _simInterval) {
+      // Process multiple simulation steps when needed so physics speed stays
+      // consistent even on slower devices.
+      var simSteps = 0;
+      while (_simAccumulator >= _simInterval &&
+          simSteps < maxSimStepsPerFrame) {
         final timing = showFrameTiming;
         if (timing) _perfWatch.start();
 
-        // Chemistry + age pass: every 3 frames (not every frame — too expensive)
-        if (simulation.frameCount % 3 == 0) {
+        // Chemistry + age pass cadence is adaptive on mobile creation mode.
+        if (simulation.frameCount % chemistryInterval == 0) {
           if (timing) _perfWatch.reset();
           simulation.runChemistryPass();
           simulation.updateCellAge();
           if (timing) _timingChemistry += _perfWatch.elapsedMicroseconds;
         }
-        // Electricity pass: every 4 frames (voltage propagation is slow)
-        if (simulation.frameCount % 4 == 0) {
+        // Electricity pass cadence is adaptive on mobile creation mode.
+        if (simulation.frameCount % electricityInterval == 0) {
           if (timing) _perfWatch.reset();
           simulation.runElectricityPass();
           if (timing) _timingElectricity += _perfWatch.elapsedMicroseconds;
         }
-        // Light emission: every 4 frames (writes lightR/G/B per cell)
-        if (simulation.frameCount % 4 == 0) {
+        // Light emission cadence is adaptive on mobile creation mode.
+        if (simulation.frameCount % lightInterval == 0) {
           if (timing) _perfWatch.reset();
           simulation.updateLightEmission();
           if (timing) _timingLight += _perfWatch.elapsedMicroseconds;
         }
-        // Luminance: every 8 frames (CPU-side light level for gameplay)
-        if (simulation.frameCount % 8 == 0) {
+        // Luminance cadence is adaptive on mobile creation mode.
+        if (simulation.frameCount % luminanceInterval == 0) {
           if (timing) _perfWatch.reset();
           simulation.updateLuminance();
           if (timing) _timingLuminance += _perfWatch.elapsedMicroseconds;
         }
         // Moisture wicking: capillary action through porous materials
-        if (simulation.frameCount % 8 == 0) {
+        if (simulation.frameCount % moistureInterval == 0) {
           simulation.updateMoisture();
         }
 
@@ -255,7 +277,8 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
         if (simulation.colonyX >= 0) {
           if (simulation.frameCount % 8 == 0) simulation.evaporatePheromones();
           if (simulation.frameCount % 4 == 0) simulation.diffusePheromones();
-          if (simulation.frameCount % 16 == 0) simulation.updateColonyCentroid();
+          if (simulation.frameCount % 16 == 0)
+            simulation.updateColonyCentroid();
         }
 
         if (timing) {
@@ -266,10 +289,11 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
         }
 
         _simAccumulator -= _simInterval;
-        // Prevent spiral of death if frames are very slow.
-        if (_simAccumulator > _simInterval * 3) {
-          _simAccumulator = 0;
-        }
+        simSteps++;
+      }
+      // Prevent spiral of death if frames are very slow.
+      if (_simAccumulator > _simInterval * maxSimStepsPerFrame) {
+        _simAccumulator = _simInterval * maxSimStepsPerFrame;
       }
     }
 
@@ -290,9 +314,14 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
   }
 
   /// Spawn a new colony at the given grid position.
-  void spawnColony(int x, int y, {CreatureSpecies species = CreatureSpecies.ant}) {
+  void spawnColony(
+    int x,
+    int y, {
+    CreatureSpecies species = CreatureSpecies.ant,
+  }) {
     creatures.spawn(
-      x, y,
+      x,
+      y,
       species: species,
       gridW: simulation.gridW,
       gridH: simulation.gridH,
@@ -324,4 +353,17 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
     await _saveService.save(captureGameState(), slot: slot, name: name);
     _saveService.resetAutoSaveTimer();
   }
+
+  bool get autoSaveEnabled => _saveService.autoSaveEnabled;
+
+  double get autoSaveProgress => _saveService.autoSaveProgress;
+
+  CreatureRuntimeSnapshot captureCreatureRuntimeSnapshot() =>
+      creatures.runtimeSnapshot();
+
+  PlacementMetricsSnapshot capturePlacementMetricsSnapshot() =>
+      sandboxComponent.capturePlacementMetrics();
+
+  RenderMetricsSnapshot captureRenderMetricsSnapshot() =>
+      sandboxComponent.captureRenderMetrics();
 }

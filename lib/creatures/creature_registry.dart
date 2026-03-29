@@ -24,7 +24,14 @@ import 'colony.dart';
 class CreatureRegistry {
   final List<Colony> _colonies = [];
   final Map<int, AntColonyAI> _colonyAIs = {};
+  final Map<int, _ColonyRuntimeTracker> _runtimeTrackers = {};
+  final Map<int, int> _lastRenderedCounts = {};
+  final List<Map<String, Object?>> _visibilityDiagnostics =
+      <Map<String, Object?>>[];
   int _nextColonyId = 0;
+  int _tickCount = 0;
+  int _visibilityFailureCount = 0;
+  static const int _visibilityFailureThresholdTicks = 45;
 
   /// All currently active colonies.
   List<Colony> get colonies => List.unmodifiable(_colonies);
@@ -42,7 +49,9 @@ class CreatureRegistry {
   ///
   /// Grid dimensions are passed through so that pheromone systems are
   /// allocated at the correct size.
-  Colony spawn(int x, int y, {
+  Colony spawn(
+    int x,
+    int y, {
     CreatureSpecies species = CreatureSpecies.ant,
     int? seed,
     int gridW = 320,
@@ -60,24 +69,55 @@ class CreatureRegistry {
     );
     _colonies.add(colony);
     _colonyAIs[colony.id] = AntColonyAI(colony: colony, rng: rng ?? Random());
+    _runtimeTrackers[colony.id] = _ColonyRuntimeTracker();
     return colony;
   }
 
   /// Advance all colonies by one tick.
   void tick(SimulationEngine sim) {
+    _tickCount++;
     // Pass the full colony list so each colony can detect enemies.
     for (final colony in _colonies) {
       colony.tick(sim, _colonies);
+      final tracker = _runtimeTrackers.putIfAbsent(
+        colony.id,
+        _ColonyRuntimeTracker.new,
+      );
+      final rendered = _lastRenderedCounts[colony.id] ?? 0;
+      tracker.observe(colony: colony, renderedCount: rendered);
+      if (tracker.zeroVisibleTicks == _visibilityFailureThresholdTicks) {
+        _visibilityFailureCount++;
+        _visibilityDiagnostics.add(<String, Object?>{
+          'tick': _tickCount,
+          'severity': 'high',
+          'reason': 'visible_ants_zero_with_colony_present',
+          'colony_id': colony.id,
+          'species': colony.species.name,
+          'population': colony.population,
+          'rendered_count': rendered,
+          'spawn_attempted': colony.spawnAttempts,
+          'spawn_succeeded': colony.spawnSucceeded,
+          'health_state': colony.healthState.name,
+        });
+      }
     }
 
     // Prune dead colonies.
     _colonies.removeWhere((c) {
       if (!c.isAlive) {
         _colonyAIs.remove(c.id);
+        _runtimeTrackers.remove(c.id);
+        _lastRenderedCounts.remove(c.id);
         return true;
       }
       return false;
     });
+  }
+
+  void reportRenderedCounts(Map<int, int> renderedByColony) {
+    _lastRenderedCounts
+      ..clear()
+      ..addAll(renderedByColony);
   }
 
   /// Restore colonies from serialized save snapshots.
@@ -120,8 +160,8 @@ class CreatureRegistry {
         final int genomeIdx = snapshot.genomes.isEmpty
             ? 0
             : antSnapshot.genomeIndex
-                .clamp(0, snapshot.genomes.length - 1)
-                .toInt();
+                  .clamp(0, snapshot.genomes.length - 1)
+                  .toInt();
         final genome = colony.evolution.population.genomes[genomeIdx];
         final ant = Ant(
           x: antSnapshot.x,
@@ -147,7 +187,10 @@ class CreatureRegistry {
       }
 
       _colonies.add(colony);
-      _colonyAIs[colony.id] = AntColonyAI(colony: colony, rng: Random(colony.id));
+      _colonyAIs[colony.id] = AntColonyAI(
+        colony: colony,
+        rng: Random(colony.id),
+      );
       if (colony.id > maxId) maxId = colony.id;
     }
 
@@ -163,8 +206,7 @@ class CreatureRegistry {
     Colony? best;
     int bestDist = 999999;
     for (final colony in _colonies) {
-      final dist =
-          (x - colony.originX).abs() + (y - colony.originY).abs();
+      final dist = (x - colony.originX).abs() + (y - colony.originY).abs();
       if (dist < bestDist) {
         bestDist = dist;
         best = colony;
@@ -216,6 +258,8 @@ class CreatureRegistry {
       colony.exterminate();
       _colonies.remove(colony);
       _colonyAIs.remove(colonyId);
+      _runtimeTrackers.remove(colonyId);
+      _lastRenderedCounts.remove(colonyId);
     }
   }
 
@@ -226,6 +270,11 @@ class CreatureRegistry {
     }
     _colonies.clear();
     _colonyAIs.clear();
+    _runtimeTrackers.clear();
+    _lastRenderedCounts.clear();
+    _visibilityDiagnostics.clear();
+    _tickCount = 0;
+    _visibilityFailureCount = 0;
   }
 
   /// Get all living ants across all colonies (for rendering).
@@ -236,4 +285,143 @@ class CreatureRegistry {
       }
     }
   }
+
+  CreatureRuntimeSnapshot runtimeSnapshot() {
+    final colonies = <Map<String, Object?>>[];
+    int totalAlive = 0;
+    int totalRendered = 0;
+    int totalSpawnAttempts = 0;
+    int totalSpawnSuccess = 0;
+    int totalThinkTicks = 0;
+    int totalMinimalTicks = 0;
+    int totalQueenAliveTicks = 0;
+    int totalQueenDeadTicks = 0;
+    final deathCauseTotals = <String, int>{};
+
+    for (final colony in _colonies) {
+      totalAlive += colony.population;
+      totalRendered += _lastRenderedCounts[colony.id] ?? 0;
+      totalSpawnAttempts += colony.spawnAttempts;
+      totalSpawnSuccess += colony.spawnSucceeded;
+      totalThinkTicks += colony.thinkTicks;
+      totalMinimalTicks += colony.minimalTicks;
+      totalQueenAliveTicks += colony.queenAliveTicks;
+      totalQueenDeadTicks += colony.queenDeadTicks;
+      for (final entry in colony.deathCauseCounts.entries) {
+        deathCauseTotals[entry.key.name] =
+            (deathCauseTotals[entry.key.name] ?? 0) + entry.value;
+      }
+      final tracker = _runtimeTrackers[colony.id];
+      final counters = colony.runtimeCounters();
+      counters['colony_id'] = colony.id;
+      counters['species'] = colony.species.name;
+      counters['population_alive'] = colony.population;
+      counters['rendered_count'] = _lastRenderedCounts[colony.id] ?? 0;
+      counters['zero_visible_ticks'] = tracker?.zeroVisibleTicks ?? 0;
+      counters['visibility_failures'] = tracker?.visibilityFailures ?? 0;
+      colonies.add(counters);
+    }
+
+    final spawnSuccessRate = totalSpawnAttempts == 0
+        ? 1.0
+        : totalSpawnSuccess / totalSpawnAttempts;
+    final queenAliveRatio = (totalQueenAliveTicks + totalQueenDeadTicks) == 0
+        ? 1.0
+        : totalQueenAliveTicks / (totalQueenAliveTicks + totalQueenDeadTicks);
+
+    final healthTimeline = <String, int>{};
+    for (final colony in _colonies) {
+      final key = colony.healthState.name;
+      healthTimeline[key] = (healthTimeline[key] ?? 0) + 1;
+    }
+
+    return CreatureRuntimeSnapshot(
+      tick: _tickCount,
+      colonyCount: _colonies.length,
+      populationAlive: totalAlive,
+      populationRendered: totalRendered,
+      spawnAttempted: totalSpawnAttempts,
+      spawnSucceeded: totalSpawnSuccess,
+      spawnSuccessRate: spawnSuccessRate,
+      thinkTicks: totalThinkTicks,
+      minimalTicks: totalMinimalTicks,
+      queenAliveRatio: queenAliveRatio,
+      visibilityFailures: _visibilityFailureCount,
+      deathCauses: deathCauseTotals,
+      healthStateCounts: healthTimeline,
+      diagnostics: List<Map<String, Object?>>.from(_visibilityDiagnostics),
+      colonies: colonies,
+    );
+  }
+}
+
+class _ColonyRuntimeTracker {
+  int zeroVisibleTicks = 0;
+  int visibilityFailures = 0;
+
+  void observe({required Colony colony, required int renderedCount}) {
+    if (colony.population > 0 && renderedCount <= 0) {
+      zeroVisibleTicks++;
+      if (zeroVisibleTicks >
+          CreatureRegistry._visibilityFailureThresholdTicks) {
+        visibilityFailures++;
+      }
+    } else {
+      zeroVisibleTicks = 0;
+    }
+  }
+}
+
+class CreatureRuntimeSnapshot {
+  const CreatureRuntimeSnapshot({
+    required this.tick,
+    required this.colonyCount,
+    required this.populationAlive,
+    required this.populationRendered,
+    required this.spawnAttempted,
+    required this.spawnSucceeded,
+    required this.spawnSuccessRate,
+    required this.thinkTicks,
+    required this.minimalTicks,
+    required this.queenAliveRatio,
+    required this.visibilityFailures,
+    required this.deathCauses,
+    required this.healthStateCounts,
+    required this.diagnostics,
+    required this.colonies,
+  });
+
+  final int tick;
+  final int colonyCount;
+  final int populationAlive;
+  final int populationRendered;
+  final int spawnAttempted;
+  final int spawnSucceeded;
+  final double spawnSuccessRate;
+  final int thinkTicks;
+  final int minimalTicks;
+  final double queenAliveRatio;
+  final int visibilityFailures;
+  final Map<String, int> deathCauses;
+  final Map<String, int> healthStateCounts;
+  final List<Map<String, Object?>> diagnostics;
+  final List<Map<String, Object?>> colonies;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'tick': tick,
+    'colony_count': colonyCount,
+    'creature_population_alive': populationAlive,
+    'creature_population_rendered': populationRendered,
+    'creature_spawn_attempted': spawnAttempted,
+    'creature_spawn_succeeded': spawnSucceeded,
+    'creature_spawn_success_rate': spawnSuccessRate,
+    'creature_tick_think_count': thinkTicks,
+    'creature_tick_minimal_count': minimalTicks,
+    'creature_queen_alive_ratio': queenAliveRatio,
+    'creature_visibility_failures': visibilityFailures,
+    'death_causes': deathCauses,
+    'health_state_counts': healthStateCounts,
+    'diagnostics': diagnostics,
+    'colonies': colonies,
+  };
 }

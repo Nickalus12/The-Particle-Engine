@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import '../element_registry.dart';
 import '../simulation_engine.dart';
+import 'worldgen_summary.dart';
 
 /// Container for all grid arrays the simulation engine needs.
 ///
@@ -57,12 +58,14 @@ class GridData {
   /// Per-cell temperature (0-255, 128=neutral).
   final Uint8List temperature;
 
+  /// Stage-by-stage metadata captured during world generation.
+  WorldGenSummary? worldGenSummary;
+
   /// Convert (x, y) to flat index.
   int toIndex(int x, int y) => y * width + x;
 
   /// Whether (x, y) is within bounds.
-  bool inBounds(int x, int y) =>
-      x >= 0 && x < width && y >= 0 && y < height;
+  bool inBounds(int x, int y) => x >= 0 && x < width && y >= 0 && y < height;
 
   /// Get element at (x, y). Returns [El.empty] for out-of-bounds.
   int get(int x, int y) {

@@ -5,7 +5,8 @@ import 'package:flame/components.dart';
 import 'package:flame/effects.dart';
 import 'package:flame/events.dart' hide PointerMoveEvent;
 import 'package:flame/game.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, TargetPlatform, defaultTargetPlatform;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -46,11 +47,14 @@ class ParticleEngineGame extends FlameGame
     this.gridWidth = 320,
     this.gridHeight = 180,
     this.cellSize = 4.0,
+    this.mobileRenderInterval = 1,
+    this.mobilePostProcessInterval = 1,
+    this.mobileCreatureDetail = true,
   }) : super(
-          // MaxViewport fills the entire window. Wrapping copies fill extra width.
-          camera: CameraComponent(),
-          world: SandboxWorld(),
-        );
+         // MaxViewport fills the entire window. Wrapping copies fill extra width.
+         camera: CameraComponent(),
+         world: SandboxWorld(),
+       );
 
   /// Grid dimensions (passed through to the simulation engine).
   final int gridWidth;
@@ -58,6 +62,9 @@ class ParticleEngineGame extends FlameGame
 
   /// Logical pixels per grid cell.
   final double cellSize;
+  final int mobileRenderInterval;
+  final int mobilePostProcessInterval;
+  final bool mobileCreatureDetail;
 
   /// Computed world width in game coordinates.
   double get cameraWidth => gridWidth * cellSize;
@@ -118,8 +125,7 @@ class ParticleEngineGame extends FlameGame
       if (wasBase) {
         camera.viewfinder.zoom = _baseZoom;
       } else {
-        camera.viewfinder.zoom =
-            camera.viewfinder.zoom.clamp(minZoom, maxZoom);
+        camera.viewfinder.zoom = camera.viewfinder.zoom.clamp(minZoom, maxZoom);
       }
     }
   }
@@ -234,6 +240,7 @@ class ParticleEngineGame extends FlameGame
 
   @override
   void onScaleUpdate(ScaleUpdateInfo info) {
+    _pointerCount = info.pointerCount;
     if (!isDesktop) {
       if (_pointerCount < 2) return;
     }
@@ -246,8 +253,10 @@ class ParticleEngineGame extends FlameGame
     final currentScale = info.scale.global;
     if (!currentScale.isIdentity()) {
       // Pinch zoom.
-      camera.viewfinder.zoom =
-          (_startZoom * currentScale.y).clamp(minZoom, maxZoom);
+      camera.viewfinder.zoom = (_startZoom * currentScale.y).clamp(
+        minZoom,
+        maxZoom,
+      );
     } else {
       // Two-finger pan.
       final delta = (info.delta.global..negate()) / camera.viewfinder.zoom;
@@ -317,8 +326,7 @@ class ParticleEngineGame extends FlameGame
     if (scrollDelta != 0) {
       final oldZoom = camera.viewfinder.zoom;
       final zoomChange = scrollDelta > 0 ? -zoomSensitivity : zoomSensitivity;
-      final newZoom =
-          (oldZoom + zoomChange * oldZoom).clamp(minZoom, maxZoom);
+      final newZoom = (oldZoom + zoomChange * oldZoom).clamp(minZoom, maxZoom);
 
       // Zoom toward the mouse cursor position for a natural feel.
       // Convert the screen-space cursor position to world coordinates before
@@ -391,19 +399,31 @@ class ParticleEngineGame extends FlameGame
     const panSpeed = 10.0;
 
     if (keysPressed.contains(LogicalKeyboardKey.arrowLeft)) {
-      camera.viewfinder.position += Vector2(-panSpeed / camera.viewfinder.zoom, 0);
+      camera.viewfinder.position += Vector2(
+        -panSpeed / camera.viewfinder.zoom,
+        0,
+      );
       clampCameraPosition();
     }
     if (keysPressed.contains(LogicalKeyboardKey.arrowRight)) {
-      camera.viewfinder.position += Vector2(panSpeed / camera.viewfinder.zoom, 0);
+      camera.viewfinder.position += Vector2(
+        panSpeed / camera.viewfinder.zoom,
+        0,
+      );
       clampCameraPosition();
     }
     if (keysPressed.contains(LogicalKeyboardKey.arrowUp)) {
-      camera.viewfinder.position += Vector2(0, -panSpeed / camera.viewfinder.zoom);
+      camera.viewfinder.position += Vector2(
+        0,
+        -panSpeed / camera.viewfinder.zoom,
+      );
       clampCameraPosition();
     }
     if (keysPressed.contains(LogicalKeyboardKey.arrowDown)) {
-      camera.viewfinder.position += Vector2(0, panSpeed / camera.viewfinder.zoom);
+      camera.viewfinder.position += Vector2(
+        0,
+        panSpeed / camera.viewfinder.zoom,
+      );
       clampCameraPosition();
     }
 
@@ -525,39 +545,30 @@ class ParticleEngineGame extends FlameGame
   ///
   /// Each builder receives the game instance, giving overlays direct access
   /// to game state without needing HasGameRef or external state management.
-  static Map<String, OverlayWidgetBuilder<ParticleEngineGame>> get
-      overlayBuilders => {
-            overlayPalette: (context, game) => ElementPalette(
-                  game: game,
-                  onInteraction: game.notifyHudInteraction,
-                ),
-            overlayToolbar: (context, game) => ToolBar(
-                  game: game,
-                  onInteraction: game.notifyHudInteraction,
-                ),
-            overlayMiniMap: (context, game) => MiniMap(
-                  simulation: game.sandboxWorld.simulation,
-                  isVisible: true,
-                ),
-            overlayColonyInspector: (context, game) {
-              final colonies =
-                  game.sandboxWorld.creatures.colonies;
-              if (colonies.isEmpty) return const SizedBox.shrink();
-              return ColonyInspector(
-                colony: colonies.first,
-                onClose: game.hideColonyInspector,
-              );
-            },
-            overlayObservationHint: (context, game) =>
-                _ObservationHintOverlay(game: game),
-            overlayBackButton: (context, game) =>
-                _BackButtonOverlay(game: game),
-            overlayPeriodicTable: (context, game) =>
-                PeriodicTableOverlay(
-                  game: game,
-                  onClose: () => game.overlays.remove(overlayPeriodicTable),
-                ),
-          };
+  static Map<String, OverlayWidgetBuilder<ParticleEngineGame>>
+  get overlayBuilders => {
+    overlayPalette: (context, game) =>
+        ElementPalette(game: game, onInteraction: game.notifyHudInteraction),
+    overlayToolbar: (context, game) =>
+        ToolBar(game: game, onInteraction: game.notifyHudInteraction),
+    overlayMiniMap: (context, game) =>
+        MiniMap(simulation: game.sandboxWorld.simulation, isVisible: true),
+    overlayColonyInspector: (context, game) {
+      final colonies = game.sandboxWorld.creatures.colonies;
+      if (colonies.isEmpty) return const SizedBox.shrink();
+      return ColonyInspector(
+        colony: colonies.first,
+        onClose: game.hideColonyInspector,
+      );
+    },
+    overlayObservationHint: (context, game) =>
+        _ObservationHintOverlay(game: game),
+    overlayBackButton: (context, game) => _BackButtonOverlay(game: game),
+    overlayPeriodicTable: (context, game) => PeriodicTableOverlay(
+      game: game,
+      onClose: () => game.overlays.remove(overlayPeriodicTable),
+    ),
+  };
 }
 
 // =============================================================================
@@ -575,9 +586,9 @@ class _ZoomEffect extends Component {
     required double duration,
     required this.viewfinder,
   }) : _controller = EffectController(
-          duration: duration,
-          curve: Curves.easeOut,
-        );
+         duration: duration,
+         curve: Curves.easeOut,
+       );
 
   final double from;
   final double to;
@@ -605,10 +616,7 @@ class _DayNightEffect extends Component {
     required this.from,
     required this.to,
     required this.onUpdate,
-  }) : _controller = EffectController(
-          duration: 1.0,
-          curve: Curves.easeInOut,
-        );
+  }) : _controller = EffectController(duration: 1.0, curve: Curves.easeInOut);
 
   final double from;
   final double to;
