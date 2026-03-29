@@ -1,0 +1,450 @@
+From f44731fdc4f070c9d7a4b6b0187115ac1dea7bab Mon Sep 17 00:00:00 2001
+From: Nickalus12 <nickalusbrewer@gmail.com>
+Date: Fri, 27 Mar 2026 01:48:43 -0500
+Subject: [PATCH 1/2] Overhaul mobile simulation and expand performance test
+ coverage
+
+---
+ .github/workflows/test.yml                    |  100 +-
+ .gitignore                                    |    7 +
+ assets/shaders/water_composite.frag           |  103 +
+ bash_marker.txt                               |    1 +
+ dart_test.yaml                                |    7 +
+ docs/mobile_automation.md                     |   52 +
+ docs/performance_observability.md             |  174 +
+ findings.md                                   |   10 +
+ integration_test/driver_main.dart             |    8 +
+ integration_test/mobile_navigation_test.dart  |   32 +
+ lib/bootstrap/app_bootstrap.dart              |   18 +
+ lib/creatures/ant.dart                        |   17 +-
+ lib/flutter_driver_main.dart                  |    8 +
+ lib/game/components/sandbox_component.dart    |  177 +-
+ lib/game/particle_engine_game.dart            |   26 +-
+ lib/game/runtime/sandbox_runtime_profile.dart |   72 +
+ lib/game/sandbox_world.dart                   |   31 +-
+ lib/main.dart                                 |   20 +-
+ lib/mobile_diagnostics_main.dart              |   26 +
+ lib/rendering/gi_post_process.dart            |  104 +-
+ lib/services/save_service.dart                |  111 +-
+ lib/services/save_storage_io.dart             |   10 +
+ lib/services/save_storage_stub.dart           |    4 +
+ lib/simulation/element_behaviors.dart         | 2904 ++++++++++++-----
+ lib/simulation/pixel_renderer.dart            | 1064 ++++--
+ .../reactions/reaction_registry.dart          |    7 +
+ lib/simulation/simulation_engine.dart         | 1090 ++++---
+ lib/simulation/world_gen/feature_placer.dart  |  119 +-
+ .../world_gen/terrain_generator.dart          |  203 +-
+ lib/simulation/world_gen/world_config.dart    |   91 +
+ lib/simulation/world_gen/world_generator.dart |   59 +-
+ lib/ui/screens/home_screen.dart               |  987 +++---
+ lib/ui/screens/load_screen.dart               |  276 +-
+ lib/ui/screens/sandbox_screen.dart            |  265 +-
+ lib/ui/screens/world_create_screen.dart       |  766 ++++-
+ lib/ui/widgets/element_bottom_bar.dart        |  160 +-
+ lib/ui/widgets/periodic_table_overlay.dart    |    2 -
+ lib/ui/widgets/tool_bar.dart                  |  528 +--
+ observability/docker-compose.yml              |   22 +
+ .../particle_performance_overview.json        |  337 ++
+ .../alerting/performance_rules.yaml           |   63 +
+ .../provisioning/dashboards/dashboards.yaml   |   11 +
+ .../provisioning/datasources/datasources.yaml |   24 +
+ observability/start_local_stack.ps1           |   50 +
+ progress.md                                   |   14 +
+ pubspec.lock                                  |   39 +
+ pubspec.yaml                                  |    4 +
+ research/export_frame.dart                    |   22 +-
+ task_plan.md                                  |   18 +
+ test/README.md                                |   30 +
+ .../ui/world_create_screen_golden_test.dart   |   86 +
+ test/helpers/behavior_signature.dart          |  119 +
+ .../bootstrapping_golden_comparator.dart      |   34 +
+ test/helpers/deterministic_replay.dart        |  114 +
+ test/helpers/perf_reporter.dart               |   49 +
+ test/helpers/scenario_dsl.dart                |  350 ++
+ test/helpers/simulation_harness.dart          |   29 +
+ test/helpers/visual_regression.dart           |  173 +
+ .../game_loop/game_loop_performance_test.dart |  341 ++
+ .../game_loop_smoke_performance_test.dart     |   60 +
+ .../simulation/atmospherics_quality_test.dart |  141 +
+ ...deterministic_replay_performance_test.dart |   87 +
+ .../dirty_chunk_integrity_test.dart           |   71 +
+ .../simulation/engine_soak_test.dart          |  374 +++
+ .../metamorphic_interaction_test.dart         |   93 +
+ .../simulation/physics_integrity_test.dart    |  201 ++
+ .../scenario_property_fuzz_test.dart          |  150 +
+ .../visual_regression_suite_test.dart         |  107 +
+ test/smoke/ant_placement_regression_test.dart |   89 +
+ .../app_bootstrap_test.dart}                  |    0
+ test/smoke/home_screen_showcase_test.dart     |   52 +
+ ...bile_world_generation_regression_test.dart |   46 +
+ .../sandbox_mobile_drag_regression_test.dart  |  181 +
+ .../smoke/sandbox_mobile_hud_layout_test.dart |   56 +
+ ...sandbox_mobile_paint_interaction_test.dart |   70 +
+ .../world_create_screen_showcase_test.dart    |   58 +
+ .../ant_entity_gravity_regression_test.dart   |   49 +
+ .../game/sandbox_runtime_profile_test.dart    |   37 +
+ test/unit/performance/perf_reporter_test.dart |   46 +
+ test/unit/rendering/pixel_renderer_test.dart  |  332 ++
+ test/unit/services/save_metadata_test.dart    |   99 +
+ test/unit/services/save_service_test.dart     |  126 +
+ test/unit/services/settings_service_test.dart |   47 +
+ .../ant_gravity_regression_test.dart          |   36 +
+ .../simulation/behavior_signature_test.dart   |   22 +
+ .../deterministic_replay_contract_test.dart   |   34 +
+ .../simulation/engine_behavior_test.dart}     |  510 ++-
+ test/unit/simulation/engine_helpers_test.dart |  315 ++
+ .../simulation/engine_invariants_test.dart    |  277 ++
+ .../engine_structural_systems_test.dart       |  119 +
+ .../simulation/engine_update_passes_test.dart |  288 ++
+ test/unit/simulation/scenario_dsl_test.dart   |   45 +
+ .../simulation/scenario_library_test.dart     |   36 +
+ .../world_gen/world_generator_test.dart       |  112 +
+ tmp_golden_err.txt                            |    0
+ tmp_golden_out.txt                            |    0
+ tool/check_coverage.py                        |   66 +
+ tool/performance/export_otlp.py               |  216 ++
+ tool/performance/pipeline.py                  |  918 ++++++
+ tool/performance/requirements.txt             |    4 +
+ .../run_android_investigative_lane.ps1        |   28 +
+ .../run_android_investigative_lane.py         |  321 ++
+ .../run_observability_pipeline.ps1            |   40 +
+ tool/performance/run_performance_pipeline.ps1 |   38 +
+ tool/performance/run_performance_pipeline.py  |    8 +
+ tool/performance/storage.py                   |  535 +++
+ .../tests/test_android_lane_contract.py       |   58 +
+ .../tests/test_export_otlp_contract.py        |   68 +
+ .../tests/test_pipeline_contract.py           |  196 ++
+ .../tests/test_storage_contract.py            |  124 +
+ tool/performance/verify_observability.py      |   66 +
+ where.bat                                     |    6 +
+ 112 files changed, 15655 insertions(+), 2971 deletions(-)
+ create mode 100644 assets/shaders/water_composite.frag
+ create mode 100644 bash_marker.txt
+ create mode 100644 dart_test.yaml
+ create mode 100644 docs/mobile_automation.md
+ create mode 100644 docs/performance_observability.md
+ create mode 100644 findings.md
+ create mode 100644 integration_test/driver_main.dart
+ create mode 100644 integration_test/mobile_navigation_test.dart
+ create mode 100644 lib/bootstrap/app_bootstrap.dart
+ create mode 100644 lib/flutter_driver_main.dart
+ create mode 100644 lib/game/runtime/sandbox_runtime_profile.dart
+ create mode 100644 lib/mobile_diagnostics_main.dart
+ create mode 100644 observability/docker-compose.yml
+ create mode 100644 observability/grafana/dashboards/particle_performance_overview.json
+ create mode 100644 observability/grafana/provisioning/alerting/performance_rules.yaml
+ create mode 100644 observability/grafana/provisioning/dashboards/dashboards.yaml
+ create mode 100644 observability/grafana/provisioning/datasources/datasources.yaml
+ create mode 100644 observability/start_local_stack.ps1
+ create mode 100644 progress.md
+ create mode 100644 task_plan.md
+ create mode 100644 test/README.md
+ create mode 100644 test/golden/ui/world_create_screen_golden_test.dart
+ create mode 100644 test/helpers/behavior_signature.dart
+ create mode 100644 test/helpers/bootstrapping_golden_comparator.dart
+ create mode 100644 test/helpers/deterministic_replay.dart
+ create mode 100644 test/helpers/perf_reporter.dart
+ create mode 100644 test/helpers/scenario_dsl.dart
+ create mode 100644 test/helpers/simulation_harness.dart
+ create mode 100644 test/helpers/visual_regression.dart
+ create mode 100644 test/performance/game_loop/game_loop_performance_test.dart
+ create mode 100644 test/performance/game_loop/game_loop_smoke_performance_test.dart
+ create mode 100644 test/performance/simulation/atmospherics_quality_test.dart
+ create mode 100644 test/performance/simulation/deterministic_replay_performance_test.dart
+ create mode 100644 test/performance/simulation/dirty_chunk_integrity_test.dart
+ create mode 100644 test/performance/simulation/engine_soak_test.dart
+ create mode 100644 test/performance/simulation/metamorphic_interaction_test.dart
+ create mode 100644 test/performance/simulation/physics_integrity_test.dart
+ create mode 100644 test/performance/simulation/scenario_property_fuzz_test.dart
+ create mode 100644 test/performance/simulation/visual_regression_suite_test.dart
+ create mode 100644 test/smoke/ant_placement_regression_test.dart
+ rename test/{widget_test.dart => smoke/app_bootstrap_test.dart} (100%)
+ create mode 100644 test/smoke/home_screen_showcase_test.dart
+ create mode 100644 test/smoke/mobile_world_generation_regression_test.dart
+ create mode 100644 test/smoke/sandbox_mobile_drag_regression_test.dart
+ create mode 100644 test/smoke/sandbox_mobile_hud_layout_test.dart
+ create mode 100644 test/smoke/sandbox_mobile_paint_interaction_test.dart
+ create mode 100644 test/smoke/world_create_screen_showcase_test.dart
+ create mode 100644 test/unit/creatures/ant_entity_gravity_regression_test.dart
+ create mode 100644 test/unit/game/sandbox_runtime_profile_test.dart
+ create mode 100644 test/unit/performance/perf_reporter_test.dart
+ create mode 100644 test/unit/rendering/pixel_renderer_test.dart
+ create mode 100644 test/unit/services/save_metadata_test.dart
+ create mode 100644 test/unit/services/save_service_test.dart
+ create mode 100644 test/unit/services/settings_service_test.dart
+ create mode 100644 test/unit/simulation/ant_gravity_regression_test.dart
+ create mode 100644 test/unit/simulation/behavior_signature_test.dart
+ create mode 100644 test/unit/simulation/deterministic_replay_contract_test.dart
+ rename test/{simulation_test.dart => unit/simulation/engine_behavior_test.dart} (58%)
+ create mode 100644 test/unit/simulation/engine_helpers_test.dart
+ create mode 100644 test/unit/simulation/engine_invariants_test.dart
+ create mode 100644 test/unit/simulation/engine_structural_systems_test.dart
+ create mode 100644 test/unit/simulation/engine_update_passes_test.dart
+ create mode 100644 test/unit/simulation/scenario_dsl_test.dart
+ create mode 100644 test/unit/simulation/scenario_library_test.dart
+ create mode 100644 test/unit/simulation/world_gen/world_generator_test.dart
+ create mode 100644 tmp_golden_err.txt
+ create mode 100644 tmp_golden_out.txt
+ create mode 100644 tool/check_coverage.py
+ create mode 100644 tool/performance/export_otlp.py
+ create mode 100644 tool/performance/pipeline.py
+ create mode 100644 tool/performance/requirements.txt
+ create mode 100644 tool/performance/run_android_investigative_lane.ps1
+ create mode 100644 tool/performance/run_android_investigative_lane.py
+ create mode 100644 tool/performance/run_observability_pipeline.ps1
+ create mode 100644 tool/performance/run_performance_pipeline.ps1
+ create mode 100644 tool/performance/run_performance_pipeline.py
+ create mode 100644 tool/performance/storage.py
+ create mode 100644 tool/performance/tests/test_android_lane_contract.py
+ create mode 100644 tool/performance/tests/test_export_otlp_contract.py
+ create mode 100644 tool/performance/tests/test_pipeline_contract.py
+ create mode 100644 tool/performance/tests/test_storage_contract.py
+ create mode 100644 tool/performance/verify_observability.py
+ create mode 100644 where.bat
+
+diff --git a/.github/workflows/test.yml b/.github/workflows/test.yml
+index e5b65fd..4af4531 100644
+--- a/.github/workflows/test.yml
++++ b/.github/workflows/test.yml
+@@ -5,6 +5,7 @@ on:
+     branches: [main]
+   pull_request:
+     branches: [main]
++  workflow_dispatch:
+   schedule:
+     # Weekly Saturday at 06:00 UTC — ThunderCompute training (if budget)
+     - cron: "0 6 * * 6"
+@@ -34,14 +35,35 @@ jobs:
+           channel: stable
+           cache: true
+ 
++      - uses: actions/setup-python@v5
++        with:
++          python-version: "3.12"
++
+       - name: Install dependencies
+         run: flutter pub get
+ 
+       - name: Analyze
+-        run: flutter analyze --no-fatal-infos
++        run: flutter analyze
+ 
+-      - name: Run Flutter tests
+-        run: flutter test --no-pub
++      - name: Run Flutter tests with coverage
++        run: flutter test --coverage --no-pub
++
++      - name: Enforce coverage floor
++        run: python3 tool/check_coverage.py coverage/lcov.info --min 45
++
++      - name: Publish coverage summary
++        if: always()
++        run: |
++          if [ -f .coverage-summary.txt ]; then
++            cat .coverage-summary.txt >> "$GITHUB_STEP_SUMMARY"
++          fi
++
++      - name: Upload coverage artifact
++        if: always()
++        uses: actions/upload-artifact@v4
++        with:
++          name: flutter-lcov
++          path: coverage/lcov.info
+ 
+   # -----------------------------------------------------------------------
+   # Job 2: Python physics test suite (every push)
+@@ -72,15 +94,12 @@ jobs:
+         run: |
+           flutter pub get
+           dart run research/export_frame.dart 100
+-        continue-on-error: true
+ 
+       - name: Generate ground truth
+         run: python research/physics_oracle.py
+-        continue-on-error: true
+ 
+       - name: Generate visual ground truth
+         run: python research/visual_oracle.py
+-        continue-on-error: true
+ 
+       - name: Run pytest suite
+         run: |
+@@ -112,7 +131,6 @@ jobs:
+         run: |
+           cd research
+           python -m pytest tests/test_integration.py -v --tb=short
+-        continue-on-error: true
+ 
+   # -----------------------------------------------------------------------
+   # Job 4: Full benchmark in CI mode (on PR, optional)
+@@ -158,10 +176,74 @@ jobs:
+ 
+       - name: Run Dart engine benchmark
+         run: dart run research/cloud/fast_benchmark.dart
+-        continue-on-error: true
+ 
+   # -----------------------------------------------------------------------
+-  # Job 5: Weekly ThunderCompute training (Saturday, budget-gated)
++  # Job 5: Performance telemetry pipeline (push/PR)
++  # -----------------------------------------------------------------------
++  performance-telemetry:
++    name: Performance Telemetry
++    runs-on: ubuntu-latest
++    if: github.event_name == 'push' || github.event_name == 'pull_request'
++    steps:
++      - uses: actions/checkout@v4
++
++      - uses: subosito/flutter-action@v2
++        with:
++          flutter-version: ${{ env.FLUTTER_VERSION }}
++          channel: stable
++          cache: true
++
++      - uses: actions/setup-python@v5
++        with:
++          python-version: "3.12"
++
++      - name: Install Flutter dependencies
++        run: flutter pub get
++
++      - name: Pipeline contract tests
++        run: python -m unittest discover -s tool/performance/tests -p "test_*.py" -v
++
++      - name: Run performance pipeline
++        run: |
++          python tool/performance/run_performance_pipeline.py \
++            --profile pr \
++            --target-timeout-seconds 180 \
++            --require-telemetry-complete
++
++      - name: Upload perf artifacts
++        if: always()
++        uses: actions/upload-artifact@v4
++        with:
++          name: performance-telemetry-artifacts
++          path: reports/performance/runs/**
++
++  # -----------------------------------------------------------------------
++  # Job 6: Weekly ThunderCompute training (Saturday, budget-gated)
++  # -----------------------------------------------------------------------
++  nightly-soak:
++    name: Nightly Soak Tests
++    runs-on: ubuntu-latest
++    if: github.event_name == 'schedule'
++    steps:
++      - uses: actions/checkout@v4
++
++      - uses: subosito/flutter-action@v2
++        with:
++          flutter-version: ${{ env.FLUTTER_VERSION }}
++          channel: stable
++          cache: true
++
++      - name: Install dependencies
++        run: flutter pub get
++
++      - name: Run nightly performance profile
++        run: |
++          python tool/performance/run_performance_pipeline.py \
++            --profile nightly \
++            --require-telemetry-complete
++
++  # -----------------------------------------------------------------------
++  # Job 7: Weekly ThunderCompute training (Saturday, budget-gated)
+   # -----------------------------------------------------------------------
+   weekly-train:
+     name: Weekly Cloud Training
+diff --git a/.gitignore b/.gitignore
+index 6b85b7a..efff44c 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -63,3 +63,10 @@ research/cloud/.github.env
+ research/cloud/last_training_plan.json
+ research/cloud/training_system_summary.json
+ research/cloud/pipeline_summary.json
++
++# Performance observability artifacts
++reports/performance/runs/
++observability/data/
++research/telemetry/perf_history.sqlite
++research/telemetry/perf_history.duckdb
++research/telemetry/perf_history.jsonl
+diff --git a/assets/shaders/water_composite.frag b/assets/shaders/water_composite.frag
+new file mode 100644
+index 0000000..c179ec7
+--- /dev/null
++++ b/assets/shaders/water_composite.frag
+@@ -0,0 +1,103 @@
++#version 460 core
++
++#include <flutter/runtime_effect.glsl>
++
++// Water Composite pass.
++// Inputs:
++// - uScene: base scene color (already element-shaded)
++// - uWaterData: RG=flow vector, B=depth proxy, A=water mask
++// Applies:
++// - flow-based refraction
++// - depth tint absorption
++// - edge fresnel highlight + foam accent
++
++uniform vec2 uResolution;
++uniform float uTime;
++uniform float uRefractionStrength;
++uniform float uFresnelStrength;
++uniform float uFoamStrength;
++uniform sampler2D uScene;
++uniform sampler2D uWaterData;
++
++out vec4 fragColor;
++
++float luma(vec3 c) {
++    return dot(c, vec3(0.2126, 0.7152, 0.0722));
++}
++
++void main() {
++    vec2 fragCoord = FlutterFragCoord().xy;
++    vec2 uv = fragCoord / uResolution;
++
++    vec4 w = texture(uWaterData, uv);
++    float mask = w.a;
++
++    vec3 base = texture(uScene, uv).rgb;
++    if (mask < 0.01) {
++        fragColor = vec4(base, 1.0);
++        return;
++    }
++
++    // Decode flow [-1, 1]
++    vec2 flow = (w.rg * 2.0) - 1.0;
++    float depth = w.b; // 0..1 pressure/depth proxy
++
++    // Animated micro-ripple from time + cell position
++    float ripple = sin((uv.x * 120.0 + uv.y * 90.0) + uTime * 2.2) * 0.5 +
++                   sin((uv.x * 210.0 - uv.y * 160.0) - uTime * 1.7) * 0.5;
++    vec2 rippleVec = vec2(ripple, ripple * 0.5);
++
++    float refractAmp = mix(0.15, 1.0, depth) * uRefractionStrength;
++    vec2 refractUv = uv + (flow * 0.004 + rippleVec * 0.0018) * refractAmp;
++    refractUv = clamp(refractUv, vec2(0.0), vec2(1.0));
++
++    vec3 refracted = texture(uScene, refractUv).rgb;
++
++    // Neighbor mask sampling to estimate edge thickness (cheap fresnel proxy)
++    vec2 texel = 1.0 / uResolution;
++    float mL = texture(uWaterData, uv + vec2(-texel.x, 0.0)).a;
++    float mR = texture(uWaterData, uv + vec2( texel.x, 0.0)).a;
++    float mU = texture(uWaterData, uv + vec2(0.0, -texel.y)).a;
++    float mD = texture(uWaterData, uv + vec2(0.0,  texel.y)).a;
++    float interior = (mL + mR + mU + mD) * 0.25;
++    float edge = clamp(mask - interior, 0.0, 1.0);
++
++    // Absorption tint by depth (shallow cyan -> deep blue)
++    vec3 shallowTint = vec3(0.78, 0.92, 1.0);
++    vec3 deepTint = vec3(0.10, 0.36, 0.62);
++    vec3 waterTint = mix(shallowTint, deepTint, depth);
++
++    // Base mix: mostly refracted scene with subtle tinting
++    vec3 waterColor = mix(refracted, refracted * waterTint, 0.24 + depth * 0.22);
++
++    // Soft caustic modulat
