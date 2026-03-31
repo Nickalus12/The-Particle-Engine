@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/game_state.dart';
+import '../rendering/render_quality_profile.dart';
 import '../simulation/world_gen/world_config.dart';
 import '../ui/widgets/colony_inspector.dart';
 import '../ui/widgets/element_palette.dart';
@@ -50,6 +51,7 @@ class ParticleEngineGame extends FlameGame
     this.mobileRenderInterval = 1,
     this.mobilePostProcessInterval = 1,
     this.mobileCreatureDetail = true,
+    this.renderQualityProfile = RenderQualityProfile.desktopUltra,
   }) : super(
          // MaxViewport fills the entire window. Wrapping copies fill extra width.
          camera: CameraComponent(),
@@ -65,6 +67,7 @@ class ParticleEngineGame extends FlameGame
   final int mobileRenderInterval;
   final int mobilePostProcessInterval;
   final bool mobileCreatureDetail;
+  final RenderQualityProfile renderQualityProfile;
 
   /// Computed world width in game coordinates.
   double get cameraWidth => gridWidth * cellSize;

@@ -266,18 +266,28 @@ class PipelineContractTests(unittest.TestCase):
                     "render_skipped_frames": 14,
                     "wrap_copies_last_frame": 1,
                     "frame_budget_skips": 2,
+                    "creature_batch_passes": 18,
+                    "render_stage_duration_ms_terrain_material": 1.8,
+                    "dirty_coverage_ratio": 0.12,
                 },
                 "tags": {
                     "device_class": "mobile",
                     "interaction": "screen_space_drag",
+                    "quality_profile": "phone_balanced",
+                    "quality_tier": "phoneBalanced",
+                    "post_process_tier": "lightweight",
                 },
             }
         ]
         snapshot = pipeline._collect_render_runtime_snapshot(scenarios)  # noqa: SLF001
         self.assertEqual(snapshot["device_class"], "mobile")
         self.assertEqual(snapshot["interaction"], "screen_space_drag")
+        self.assertEqual(snapshot["quality_profile"], "phone_balanced")
         self.assertEqual(snapshot["render_pixel_passes"], 30.0)
         self.assertEqual(snapshot["render_skipped_frames"], 14.0)
+        self.assertEqual(snapshot["creature_batch_passes"], 18.0)
+        self.assertEqual(snapshot["dirty_region_summary"]["dirty_coverage_ratio"], 0.12)
+        self.assertEqual(snapshot["stage_samples"][0]["stage"], "terrain_material")
 
     def test_load_optuna_metadata_from_trial_config_json(self) -> None:
         with tempfile.TemporaryDirectory() as td:

@@ -246,7 +246,7 @@ class WorldGenerator {
         if ((el == El.empty || el == El.oxygen) && y > heightmap[x]) {
           caveAirCells++;
         }
-        if (el == El.oxygen || el == El.carbonDioxide) {
+        if (el == El.oxygen || el == El.co2) {
           atmosphereCells++;
         }
         if (el == El.lava || el == El.fire || el == El.sulfur) {
@@ -290,7 +290,7 @@ class WorldGenerator {
             data.temperature[data.toIndex(x, y)] < 170) {
           thermalAnomalies++;
         }
-        if ((el == El.oxygen || el == El.carbonDioxide) &&
+        if ((el == El.oxygen || el == El.co2) &&
             y > heightmap[x] &&
             data.get(x, y) != El.empty) {
           atmosphereConflicts++;

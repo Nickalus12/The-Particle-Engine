@@ -204,9 +204,15 @@ class _LoadScreenState extends State<LoadScreen>
     return '${dt.month}/${dt.day}/${dt.year}';
   }
 
+  SaveSlotMeta? _latestSlot(List<SaveSlotMeta>? slots) {
+    if (slots == null || slots.isEmpty) return null;
+    return slots.reduce((a, b) => a.savedAt.isAfter(b.savedAt) ? a : b);
+  }
+
   @override
   Widget build(BuildContext context) {
     final visibleSlots = _visibleSlots();
+    final latestSlot = _latestSlot(_slots);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -264,6 +270,22 @@ class _LoadScreenState extends State<LoadScreen>
                     ? _EmptyState()
                     : Column(
                         children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 2, 16, 10),
+                            child: _FeaturedWorldPanel(
+                              latestSlot: latestSlot!,
+                              latestLabel: _formatRelative(latestSlot.savedAt),
+                              totalSlots: _slots!.length,
+                              onResumeLatest: () => _loadWorld(latestSlot.slot),
+                              onCreateWorld: _openCreateWorld,
+                              onBrowseAll: () => setState(() {
+                                _query = '';
+                                _showAutoOnly = false;
+                                _showColoniesOnly = false;
+                                _sortMode = _SlotSortMode.recent;
+                              }),
+                            ),
+                          ),
                           Padding(
                             padding: const EdgeInsets.fromLTRB(16, 2, 16, 10),
                             child: _SelectionControls(
@@ -515,6 +537,155 @@ class _SelectionQuickActions extends StatelessWidget {
           onTap: onClearSearch,
         ),
       ],
+    );
+  }
+}
+
+class _FeaturedWorldPanel extends StatelessWidget {
+  const _FeaturedWorldPanel({
+    required this.latestSlot,
+    required this.latestLabel,
+    required this.totalSlots,
+    required this.onResumeLatest,
+    required this.onCreateWorld,
+    required this.onBrowseAll,
+  });
+
+  final SaveSlotMeta latestSlot;
+  final String latestLabel;
+  final int totalSlots;
+  final VoidCallback onResumeLatest;
+  final VoidCallback onCreateWorld;
+  final VoidCallback onBrowseAll;
+
+  @override
+  Widget build(BuildContext context) {
+    final tags = _buildSlotTags(latestSlot);
+    final accent = _slotAccent(latestSlot);
+
+    return Container(
+      key: const ValueKey('load_featured_world_panel'),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        gradient: LinearGradient(
+          colors: [
+            accent.withValues(alpha: 0.18),
+            AppColors.panelDark.withValues(alpha: 0.84),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: accent.withValues(alpha: 0.32), width: 0.9),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  color: accent.withValues(alpha: 0.16),
+                  border: Border.all(
+                    color: accent.withValues(alpha: 0.22),
+                    width: 0.8,
+                  ),
+                ),
+                child: Icon(
+                  latestSlot.slot == SaveService.autoSaveSlot
+                      ? Icons.auto_mode_rounded
+                      : Icons.public_rounded,
+                  color: accent,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Latest World',
+                      style: AppTypography.caption.copyWith(
+                        color: AppColors.textDim,
+                        letterSpacing: 1.1,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      latestSlot.name,
+                      style: AppTypography.heading.copyWith(fontSize: 22),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${_slotStatusHeadline(latestSlot)} Saved $latestLabel and ready to resume.',
+                      style: AppTypography.body.copyWith(
+                        fontSize: 13,
+                        height: 1.45,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(999),
+                  color: Colors.black.withValues(alpha: 0.16),
+                ),
+                child: Text(
+                  '$totalSlots / ${SaveService.maxSlots} slots',
+                  style: AppTypography.caption.copyWith(
+                    color: AppColors.textPrimary.withValues(alpha: 0.88),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: tags
+                .map((tag) => _SlotTagChip(label: tag.label, accent: tag.color))
+                .toList(),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _QuickActionButton(
+                key: const ValueKey('load_featured_resume_button'),
+                label: 'Resume Latest',
+                icon: Icons.play_arrow_rounded,
+                onTap: onResumeLatest,
+              ),
+              _QuickActionButton(
+                key: const ValueKey('load_featured_browse_button'),
+                label: 'Browse All',
+                icon: Icons.view_agenda_rounded,
+                onTap: onBrowseAll,
+              ),
+              _QuickActionButton(
+                key: const ValueKey('load_featured_create_button'),
+                label: 'Create Fresh',
+                icon: Icons.add_circle_outline_rounded,
+                onTap: onCreateWorld,
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -782,6 +953,8 @@ class _SlotCardState extends State<_SlotCard> {
   Widget build(BuildContext context) {
     final meta = widget.meta;
     final isAutoSave = meta.slot == SaveService.autoSaveSlot;
+    final accent = _slotAccent(meta);
+    final tags = _buildSlotTags(meta);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -806,9 +979,17 @@ class _SlotCardState extends State<_SlotCard> {
                 duration: ParticleTheme.fastDuration,
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: _hovered
-                      ? AppColors.glass.withValues(alpha: 0.15)
-                      : AppColors.glass,
+                  gradient: LinearGradient(
+                    colors: [
+                      accent.withValues(alpha: _hovered ? 0.15 : 0.1),
+                      (_hovered
+                              ? AppColors.glass.withValues(alpha: 0.18)
+                              : AppColors.glass)
+                          .withValues(alpha: 1),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
                   borderRadius: BorderRadius.circular(
                     ParticleTheme.radiusMedium,
                   ),
@@ -854,9 +1035,7 @@ class _SlotCardState extends State<_SlotCard> {
                                 ? Icons.auto_mode_rounded
                                 : Icons.public_rounded,
                             size: 16,
-                            color: isAutoSave
-                                ? AppColors.accent
-                                : AppColors.textDim,
+                            color: accent,
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -875,7 +1054,7 @@ class _SlotCardState extends State<_SlotCard> {
                                 Text(
                                   'AUTO SAVE',
                                   style: AppTypography.caption.copyWith(
-                                    color: AppColors.accent,
+                                    color: accent,
                                     fontSize: 8,
                                     fontWeight: FontWeight.w700,
                                     letterSpacing: 1.5,
@@ -920,6 +1099,24 @@ class _SlotCardState extends State<_SlotCard> {
                           ),
                         ],
                       ],
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: tags
+                          .map(
+                            (tag) => _SlotTagChip(
+                              key: ValueKey(
+                                'load_slot_${meta.slot}_tag_${tag.label.toLowerCase().replaceAll(' ', '_')}',
+                              ),
+                              label: tag.label,
+                              accent: tag.color,
+                            ),
+                          )
+                          .toList(),
                     ),
 
                     const SizedBox(height: 12),
@@ -976,10 +1173,10 @@ class _SlotCardState extends State<_SlotCard> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Tap to load',
+                          'Tap to resume',
                           style: AppTypography.caption.copyWith(
                             color: _hovered
-                                ? AppColors.primary.withValues(alpha: 0.6)
+                                ? accent.withValues(alpha: 0.88)
                                 : AppColors.textDim.withValues(alpha: 0.4),
                             fontSize: 9,
                           ),
@@ -1035,6 +1232,85 @@ class _MetaRow extends StatelessWidget {
       ],
     );
   }
+}
+
+class _SlotTagChip extends StatelessWidget {
+  const _SlotTagChip({super.key, required this.label, required this.accent});
+
+  final String label;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: accent.withValues(alpha: 0.14),
+        border: Border.all(color: accent.withValues(alpha: 0.25), width: 0.5),
+      ),
+      child: Text(
+        label,
+        style: AppTypography.caption.copyWith(
+          color: accent,
+          fontSize: 9.5,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.55,
+        ),
+      ),
+    );
+  }
+}
+
+class _SlotTagData {
+  const _SlotTagData(this.label, this.color);
+
+  final String label;
+  final Color color;
+}
+
+Color _slotAccent(SaveSlotMeta meta) {
+  if (meta.slot == SaveService.autoSaveSlot) {
+    return AppColors.accent;
+  }
+  if (meta.colonyCount > 0) {
+    return const Color(0xFFE2C072);
+  }
+  return AppColors.primary;
+}
+
+String _slotStatusHeadline(SaveSlotMeta meta) {
+  if (meta.slot == SaveService.autoSaveSlot) {
+    return 'Autosave snapshot.';
+  }
+  if (meta.colonyCount > 0) {
+    return '${meta.colonyCount} colony${meta.colonyCount == 1 ? '' : 'ies'} active.';
+  }
+  return 'Clean terrain snapshot.';
+}
+
+List<_SlotTagData> _buildSlotTags(SaveSlotMeta meta) {
+  final tags = <_SlotTagData>[];
+  if (meta.slot == SaveService.autoSaveSlot) {
+    tags.add(const _SlotTagData('AUTO SAVE', AppColors.accent));
+  }
+  if (meta.colonyCount > 0) {
+    tags.add(const _SlotTagData('COLONIES', Color(0xFFE2C072)));
+  }
+  if (meta.gridW * meta.gridH >= 20000) {
+    tags.add(const _SlotTagData('LARGE WORLD', Color(0xFF69C4FF)));
+  }
+  final age = DateTime.now().difference(meta.savedAt);
+  if (age.inHours < 6) {
+    tags.add(const _SlotTagData('RECENT', Color(0xFF8AE384)));
+  }
+  if (age.inDays >= 7) {
+    tags.add(const _SlotTagData('ARCHIVE', Color(0xFFC7A3FF)));
+  }
+  if (tags.isEmpty) {
+    tags.add(const _SlotTagData('SANDBOX', AppColors.primary));
+  }
+  return tags;
 }
 
 // =============================================================================

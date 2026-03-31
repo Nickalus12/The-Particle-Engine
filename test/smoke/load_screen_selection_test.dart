@@ -102,6 +102,14 @@ void main() {
       findsOneWidget,
     );
     expect(
+      find.byKey(const ValueKey('load_featured_world_panel')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('load_featured_resume_button')),
+      findsOneWidget,
+    );
+    expect(
       find.byKey(const ValueKey('load_quick_latest_button')),
       findsOneWidget,
     );
@@ -163,6 +171,14 @@ void main() {
 
     expect(
       find.byKey(const ValueKey('load_delete_icon_slot_0')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('load_slot_0_tag_auto_save')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('load_slot_2_tag_colonies')),
       findsOneWidget,
     );
     expect(

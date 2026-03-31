@@ -83,6 +83,17 @@ class QualityPipelineContractTests(unittest.TestCase):
             },
             "scenarios": [],
             "visual_artifacts": [],
+            "render_runtime_snapshot": {
+                "quality_tier": "phoneBalanced",
+                "frame_budget_skips": 1,
+                "dirty_region_summary": {
+                    "dirty_coverage_ratio": 0.2,
+                    "full_rebuilds": 0,
+                },
+                "stage_samples": [
+                    {"stage": "terrain_material", "duration_ms": 1.5},
+                ],
+            },
             "creature_runtime_snapshot": {
                 "creature_population_alive": 8,
                 "creature_spawn_success_rate": 0.8,
@@ -101,6 +112,8 @@ class QualityPipelineContractTests(unittest.TestCase):
         self.assertIn("creature_correctness_score", creature_scores)
         self.assertFalse(creature_contract_failed)
         self.assertIn("physics_correctness_score", advisory_scores)
+        self.assertIn("render_correctness_score", advisory_scores)
+        self.assertIn("render_performance_score", advisory_scores)
 
     def test_extract_optuna_metadata_prefers_perf_run_then_trial_config(self) -> None:
         metadata = quality._extract_optuna_metadata(  # noqa: SLF001

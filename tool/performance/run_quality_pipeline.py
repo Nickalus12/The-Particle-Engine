@@ -37,6 +37,8 @@ ADVISORY_COMPONENT_WEIGHTS = {
     "worldgen_correctness_score": 0.0,
     "worldgen_performance_score": 0.0,
     "chemistry_coherence_score": 0.0,
+    "render_correctness_score": 0.0,
+    "render_performance_score": 0.0,
 }
 
 
@@ -441,12 +443,34 @@ def _compute_scores(
     chemistry_coherence_score = _clip(
         70.0 + min(30.0, phase_count * 3.0) - min(20.0, worldgen_failures * 2.0)
     )
+    render_snapshot = perf_run.get("render_runtime_snapshot", {}) if isinstance(perf_run, dict) else {}
+    render_stages = render_snapshot.get("stage_samples", []) if isinstance(render_snapshot, dict) else []
+    render_dirty = render_snapshot.get("dirty_region_summary", {}) if isinstance(render_snapshot, dict) else {}
+    render_stage_count = len(render_stages) if isinstance(render_stages, list) else 0
+    dirty_coverage = _safe_float(render_dirty.get("dirty_coverage_ratio", 0.0), 0.0)
+    full_rebuilds = _safe_float(render_dirty.get("full_rebuilds", 0.0), 0.0)
+    frame_budget_skips = _safe_float(render_snapshot.get("frame_budget_skips", 0.0), 0.0)
+    quality_tier = str(render_snapshot.get("quality_tier", "unknown"))
+    render_correctness_score = _clip(
+        70.0
+        + min(20.0, render_stage_count * 4.0)
+        + (10.0 if quality_tier != "unknown" else 0.0)
+        - min(20.0, full_rebuilds * 1.5)
+    )
+    render_performance_score = _clip(
+        100.0
+        - min(35.0, max(0.0, dirty_coverage - 0.35) * 70.0)
+        - min(30.0, full_rebuilds * 1.5)
+        - min(20.0, frame_budget_skips * 2.0)
+    )
     advisory_scores = {
         "physics_correctness_score": round(physics_correctness_score, 3),
         "physics_performance_score": round(physics_performance_score, 3),
         "worldgen_correctness_score": round(worldgen_correctness_score, 3),
         "worldgen_performance_score": round(worldgen_performance_score, 3),
         "chemistry_coherence_score": round(chemistry_coherence_score, 3),
+        "render_correctness_score": round(render_correctness_score, 3),
+        "render_performance_score": round(render_performance_score, 3),
     }
 
     components = [
@@ -589,6 +613,29 @@ def _compute_scores(
             {
                 "phase_sample_count": phase_count,
                 "worldgen_failures": worldgen_failures,
+            },
+        ),
+        _component(
+            "render_correctness_score",
+            render_correctness_score,
+            ADVISORY_COMPONENT_WEIGHTS["render_correctness_score"],
+            1.0 if render_stage_count > 0 else 0.0,
+            "pass" if render_correctness_score >= 75.0 else "warn",
+            {
+                "render_stage_count": render_stage_count,
+                "quality_tier": quality_tier,
+                "full_rebuilds": round(full_rebuilds, 3),
+            },
+        ),
+        _component(
+            "render_performance_score",
+            render_performance_score,
+            ADVISORY_COMPONENT_WEIGHTS["render_performance_score"],
+            max(0.0, 1.0 - dirty_coverage),
+            "pass" if render_performance_score >= 75.0 else "warn",
+            {
+                "dirty_coverage_ratio": round(dirty_coverage, 6),
+                "frame_budget_skips": round(frame_budget_skips, 3),
             },
         ),
     ]
@@ -910,6 +957,10 @@ def main() -> int:
     }
     perf_run["summary"]["chemistry_scores"] = {
         "chemistry_coherence_score": advisory_scores["chemistry_coherence_score"]
+    }
+    perf_run["summary"]["render_scores"] = {
+        key: advisory_scores[key]
+        for key in ("render_correctness_score", "render_performance_score")
     }
     perf_run["quality_components"] = components
     if optuna_metadata:

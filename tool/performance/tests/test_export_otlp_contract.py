@@ -133,20 +133,50 @@ class ExportOtlpContractTests(unittest.TestCase):
                 "render_pixel_passes": 24,
                 "image_build_passes": 10,
                 "render_skipped_frames": 8,
+                "creature_batch_passes": 12,
                 "device_class": "mobile",
                 "interaction": "screen_space_drag",
+                "quality_tier": "phoneBalanced",
+                "post_process_tier": "lightweight",
+                "dirty_region_summary": {
+                    "dirty_coverage_ratio": 0.18,
+                },
             }
         }
         points = list(export_otlp._iter_render_points(run, {"run_id": "run_1"}))  # noqa: SLF001
-        self.assertEqual(len(points), 3)
+        self.assertEqual(len(points), 5)
         keys = {key for key, _, _ in points}
         self.assertEqual(
             keys,
-            {"render_pixel_passes", "image_build_passes", "render_skipped_frames"},
+            {
+                "render_pixel_passes",
+                "image_build_passes",
+                "render_skipped_frames",
+                "creature_batch_passes",
+                "dirty_coverage_ratio",
+            },
         )
         for _, _, attrs in points:
             self.assertEqual(attrs["device_class"], "mobile")
             self.assertEqual(attrs["interaction"], "screen_space_drag")
+            self.assertEqual(attrs["quality_tier"], "phoneBalanced")
+
+    def test_iter_render_stage_points_extracts_stage_labels(self) -> None:
+        run = {
+            "render_runtime_snapshot": {
+                "device_class": "mobile",
+                "quality_tier": "phoneBalanced",
+                "stage_samples": [
+                    {"stage": "terrain_material", "duration_ms": 1.7},
+                ],
+            }
+        }
+        points = list(
+            export_otlp._iter_render_stage_points(run, {"run_id": "run_1"})  # noqa: SLF001
+        )
+        self.assertEqual(len(points), 1)
+        self.assertEqual(points[0][1]["stage"], "terrain_material")
+        self.assertEqual(points[0][1]["quality_tier"], "phoneBalanced")
 
     def test_extract_optuna_attrs_bounds_supported_labels(self) -> None:
         attrs = export_otlp._extract_optuna_attrs(  # noqa: SLF001

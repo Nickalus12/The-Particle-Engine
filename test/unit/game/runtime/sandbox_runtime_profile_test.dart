@@ -25,5 +25,19 @@ void main() {
       expect(profile.mobilePostProcessInterval, 1);
       expect(profile.mobileCreatureDetail, isTrue);
     });
+
+    test('phone survival profile is stricter than phone balanced', () {
+      const profile = SandboxRuntimeProfile.phoneSurvival;
+
+      expect(
+        profile.gridWidth,
+        lessThan(SandboxRuntimeProfile.phone.gridWidth),
+      );
+      expect(
+        profile.mobileRenderInterval,
+        greaterThanOrEqualTo(SandboxRuntimeProfile.phone.mobileRenderInterval),
+      );
+      expect(profile.renderQualityProfile.id, equals('phone_survival'));
+    });
   });
 }

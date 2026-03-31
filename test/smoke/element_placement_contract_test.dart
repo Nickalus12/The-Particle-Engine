@@ -34,7 +34,7 @@ Future<ParticleEngineGame> _boot(WidgetTester tester) async {
   return game;
 }
 
-Iterable<(int x, int y)> _brushCells(
+Iterable<(int, int)> _brushCells(
   SandboxWorld world,
   int cx,
   int cy,
@@ -47,7 +47,7 @@ Iterable<(int x, int y)> _brushCells(
       final nx = world.simulation.wrapX(cx + dx);
       final ny = cy + dy;
       if (!world.simulation.inBoundsY(ny)) continue;
-      yield (x: nx, y: ny);
+      yield (nx, ny);
     }
   }
 }
@@ -77,8 +77,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 16));
 
     int waterCount = 0;
-    for (final cell in cells) {
-      final idx = cell.y * sim.gridW + cell.x;
+    for (final (cx, cy) in cells) {
+      final idx = cy * sim.gridW + cx;
       if (sim.grid[idx] == El.water) {
         waterCount++;
         expect(
@@ -100,13 +100,13 @@ void main() {
     sandbox.paintAtScreen(tap);
     await tester.pump(const Duration(milliseconds: 16));
 
-    for (final cell in _brushCells(
+    for (final (ex, ey) in _brushCells(
       world,
       center.$1,
       center.$2,
       sandbox.brushSize,
     )) {
-      final idx = cell.y * sim.gridW + cell.x;
+      final idx = ey * sim.gridW + ex;
       expect(sim.grid[idx], El.empty);
     }
     final erasedMetrics = sandbox.capturePlacementMetrics();

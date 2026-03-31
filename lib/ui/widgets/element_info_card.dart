@@ -6,7 +6,19 @@ import '../../simulation/element_registry.dart';
 import '../theme/colors.dart';
 import '../theme/particle_theme.dart';
 import '../theme/typography.dart';
-import 'element_palette.dart';
+import 'vector_element_icons.dart';
+
+Color _colorForId(int elId) {
+  if (elId == El.eraser) return const Color(0xFF666680);
+  if (elId >= 0 && elId < maxElements) return Color(baseColors[elId]);
+  return const Color(0xFF808080);
+}
+
+String _nameForId(int elId) {
+  if (elId == El.eraser) return 'Eraser';
+  if (elId >= 0 && elId < maxElements) return elementNames[elId];
+  return '???';
+}
 
 /// Glassmorphism info card that appears on long-press of an element.
 ///
@@ -249,11 +261,10 @@ class _ElementInfoCardState extends State<ElementInfoCard>
                                         child: ClipRRect(
                                           borderRadius: BorderRadius.circular(10),
                                           child: CustomPaint(
-                                            painter: AnimatedElementPreviewPainter(
+                                            painter: VectorElementIcon(
                                               elId,
                                               elColor,
                                               _iconAnimController.value,
-                                              isSelected: true,
                                             ),
                                             size: const Size(48, 48),
                                           ),
@@ -323,9 +334,9 @@ class _ElementInfoCardState extends State<ElementInfoCard>
                                       runSpacing: 4,
                                       children: reactions.map((reactId) {
                                         final reactColor =
-                                            ElementPalette.colorForId(reactId);
+                                            _colorForId(reactId);
                                         final reactName =
-                                            ElementPalette.nameForId(reactId);
+                                            _nameForId(reactId);
                                         return Tooltip(
                                           message: reactName,
                                           child: Container(
@@ -341,7 +352,7 @@ class _ElementInfoCardState extends State<ElementInfoCard>
                                             child: ClipRRect(
                                               borderRadius: BorderRadius.circular(3.5),
                                               child: CustomPaint(
-                                                painter: AnimatedElementPreviewPainter(
+                                                painter: VectorElementIcon(
                                                   reactId,
                                                   reactColor,
                                                   _iconAnimController.value,

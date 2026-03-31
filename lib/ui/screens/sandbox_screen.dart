@@ -86,6 +86,7 @@ class _SandboxScreenState extends State<SandboxScreen> {
       mobileRenderInterval: profile.mobileRenderInterval,
       mobilePostProcessInterval: profile.mobilePostProcessInterval,
       mobileCreatureDetail: profile.mobileCreatureDetail,
+      renderQualityProfile: profile.renderQualityProfile,
     );
     assert(() {
       debugPrint(
@@ -309,9 +310,6 @@ class _SandboxScreenState extends State<SandboxScreen> {
                             ? ToolBar(
                                 game: game,
                                 onInteraction: game.notifyHudInteraction,
-                                reservedBottom: bottomBarReserve,
-                                panelInteractionKey: _toolBarPanelKey,
-                                toggleInteractionKey: _toolBarToggleKey,
                               )
                             : const SizedBox.shrink(),
                       ),

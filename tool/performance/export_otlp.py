@@ -171,6 +171,8 @@ def _iter_render_points(
         **base_attrs,
         "device_class": str(snapshot.get("device_class", "desktop"))[:20],
         "interaction": str(snapshot.get("interaction", "unknown"))[:24],
+        "quality_tier": str(snapshot.get("quality_tier", "unknown"))[:24],
+        "post_process_tier": str(snapshot.get("post_process_tier", "unknown"))[:24],
     }
     for key in (
         "render_pixel_passes",
@@ -179,11 +181,48 @@ def _iter_render_points(
         "render_skipped_frames",
         "wrap_copies_last_frame",
         "frame_budget_skips",
+        "creature_batch_passes",
+        "creature_direct_passes",
     ):
         numeric = _safe_float(snapshot.get(key))
         if numeric is None:
             continue
         yield key, numeric, attrs
+
+    dirty = snapshot.get("dirty_region_summary", {})
+    if isinstance(dirty, dict):
+        for key in (
+            "dirty_coverage_ratio",
+            "full_rebuilds",
+            "incremental_rebuilds",
+            "cache_invalidations",
+            "atmosphere_cache_refreshes",
+        ):
+            numeric = _safe_float(dirty.get(key))
+            if numeric is None:
+                continue
+            yield key, numeric, attrs
+
+
+def _iter_render_stage_points(
+    run: dict[str, Any], base_attrs: dict[str, Any]
+) -> Iterable[tuple[float, dict[str, Any]]]:
+    snapshot = run.get("render_runtime_snapshot", {})
+    if not isinstance(snapshot, dict):
+        return
+    for stage in snapshot.get("stage_samples", []):
+        if not isinstance(stage, dict):
+            continue
+        duration_ms = _safe_float(stage.get("duration_ms"))
+        if duration_ms is None:
+            continue
+        attrs = {
+            **base_attrs,
+            "device_class": str(snapshot.get("device_class", "desktop"))[:20],
+            "quality_tier": str(snapshot.get("quality_tier", "unknown"))[:24],
+            "stage": str(stage.get("stage", "unknown"))[:40],
+        }
+        yield duration_ms, attrs
 
 
 def _extract_optuna_attrs(run: dict[str, Any]) -> dict[str, str]:
@@ -405,6 +444,39 @@ def main() -> int:
         "particle_engine_render_frame_budget_skips",
         description="Deferred image-build skips due to frame budget pressure",
     )
+    render_stage_duration_ms = meter.create_histogram(
+        "particle_engine_render_stage_duration_ms",
+        unit="ms",
+        description="Render stage duration distribution by stage",
+    )
+    creature_batch_passes = meter.create_histogram(
+        "particle_engine_render_creature_batch_passes",
+        description="Creature batch-pass counts captured from runtime snapshots",
+    )
+    creature_direct_passes = meter.create_histogram(
+        "particle_engine_render_creature_direct_passes",
+        description="Creature direct-pass counts captured from runtime snapshots",
+    )
+    dirty_coverage_ratio = meter.create_histogram(
+        "particle_engine_render_dirty_coverage_ratio",
+        description="Dirty region coverage ratio captured from runtime snapshots",
+    )
+    full_rebuilds = meter.create_histogram(
+        "particle_engine_render_full_rebuilds",
+        description="Full render rebuild count captured from runtime snapshots",
+    )
+    incremental_rebuilds = meter.create_histogram(
+        "particle_engine_render_incremental_rebuilds",
+        description="Incremental render rebuild count captured from runtime snapshots",
+    )
+    render_cache_invalidations = meter.create_histogram(
+        "particle_engine_render_cache_invalidations",
+        description="Render cache invalidation count captured from runtime snapshots",
+    )
+    atmosphere_cache_refreshes = meter.create_histogram(
+        "particle_engine_render_atmosphere_cache_refreshes",
+        description="Atmosphere cache refresh count captured from runtime snapshots",
+    )
     determinism_mismatch_total = meter.create_counter(
         "particle_engine_determinism_mismatch_total",
         unit="{runs}",
@@ -572,6 +644,23 @@ def main() -> int:
             wrap_copies_last_frame.record(metric_value, attributes=attrs)
         elif metric_key == "frame_budget_skips":
             frame_budget_skips.record(metric_value, attributes=attrs)
+        elif metric_key == "creature_batch_passes":
+            creature_batch_passes.record(metric_value, attributes=attrs)
+        elif metric_key == "creature_direct_passes":
+            creature_direct_passes.record(metric_value, attributes=attrs)
+        elif metric_key == "dirty_coverage_ratio":
+            dirty_coverage_ratio.record(metric_value, attributes=attrs)
+        elif metric_key == "full_rebuilds":
+            full_rebuilds.record(metric_value, attributes=attrs)
+        elif metric_key == "incremental_rebuilds":
+            incremental_rebuilds.record(metric_value, attributes=attrs)
+        elif metric_key == "cache_invalidations":
+            render_cache_invalidations.record(metric_value, attributes=attrs)
+        elif metric_key == "atmosphere_cache_refreshes":
+            atmosphere_cache_refreshes.record(metric_value, attributes=attrs)
+
+    for duration_ms, attrs in _iter_render_stage_points(run, base_attrs):
+        render_stage_duration_ms.record(duration_ms, attributes=attrs)
 
     provider.force_flush()
     provider.shutdown()

@@ -172,7 +172,7 @@ class _ToolBarState extends State<ToolBar> with TickerProviderStateMixin {
   void _zoomIn() {
     final vf = widget.game.camera.viewfinder;
     final newZoom =
-        (vf.zoom + 0.5).clamp(ParticleEngineGame.minZoom, ParticleEngineGame.maxZoom);
+        (vf.zoom + 0.5).clamp(widget.game.minZoom, widget.game.maxZoom);
     vf.zoom = newZoom;
     widget.game.clampCameraPosition();
     _interact();
@@ -182,7 +182,7 @@ class _ToolBarState extends State<ToolBar> with TickerProviderStateMixin {
   void _zoomOut() {
     final vf = widget.game.camera.viewfinder;
     final newZoom =
-        (vf.zoom - 0.5).clamp(ParticleEngineGame.minZoom, ParticleEngineGame.maxZoom);
+        (vf.zoom - 0.5).clamp(widget.game.minZoom, widget.game.maxZoom);
     vf.zoom = newZoom;
     widget.game.clampCameraPosition();
     _interact();

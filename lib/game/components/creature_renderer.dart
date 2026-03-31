@@ -32,6 +32,9 @@ class CreatureRenderer extends PositionComponent
   // -------------------------------------------------------------------------
 
   int _frameCount = 0;
+  int _lastBatchPasses = 0;
+  int _lastDirectPasses = 0;
+  double _lastRenderDurationMs = 0.0;
 
   // -------------------------------------------------------------------------
   // Trail system
@@ -89,6 +92,11 @@ class CreatureRenderer extends PositionComponent
 
   /// Reusable paint object to avoid per-frame allocation.
   static final ui.Paint _paint = ui.Paint();
+  final Stopwatch _renderStopwatch = Stopwatch();
+
+  int get lastBatchPasses => _lastBatchPasses;
+  int get lastDirectPasses => _lastDirectPasses;
+  double get lastRenderDurationMs => _lastRenderDurationMs;
 
   // -------------------------------------------------------------------------
   // Integer sine (copied from pixel_renderer.dart)
@@ -117,11 +125,20 @@ class CreatureRenderer extends PositionComponent
   void render(ui.Canvas canvas) {
     super.render(canvas);
     _frameCount++;
+    _lastBatchPasses = 0;
+    _lastDirectPasses = 0;
+    _renderStopwatch
+      ..reset()
+      ..start();
     canvas.save();
     canvas.scale(cellSize, cellSize);
 
     final paint = _paint;
     final mobileDetail = game.mobileCreatureDetail;
+    final useBatchDots = game.renderQualityProfile.batchCreatureDots;
+    final trailInterval = game.renderQualityProfile.creatureTrailInterval < 1
+        ? 1
+        : game.renderQualityProfile.creatureTrailInterval;
     final gridW = simulation.gridW;
     final gridH = simulation.gridH;
     final renderedByColony = <int, int>{};
@@ -146,8 +163,9 @@ class CreatureRenderer extends PositionComponent
         }
       }
     }
-    final renderTrails = mobileDetail;
-    final renderHighways = mobileDetail && (_frameCount & 1) == 0;
+    final renderTrails = mobileDetail && (_frameCount % trailInterval == 0);
+    final renderHighways =
+        mobileDetail && (_frameCount % (trailInterval * 2) == 0);
 
     if (renderHighways) {
       _renderHighways(canvas, paint, gridW, gridH);
@@ -185,6 +203,7 @@ class CreatureRenderer extends PositionComponent
         switch (ant.species) {
           case CreatureSpecies.ant:
             if (ant.role == AntRole.queen) {
+              _lastDirectPasses++;
               _renderQueen(
                 canvas,
                 paint,
@@ -195,20 +214,76 @@ class CreatureRenderer extends PositionComponent
                 i,
               );
             } else {
-              _renderAnt(canvas, paint, ant, colony, bodyColor, accentColor, i);
+              if (useBatchDots) {
+                _lastBatchPasses++;
+                _renderBatchedCreatureDot(
+                  canvas,
+                  paint,
+                  ant,
+                  accentColor,
+                  ant.carryingFood,
+                );
+              } else {
+                _lastDirectPasses++;
+                _renderAnt(
+                  canvas,
+                  paint,
+                  ant,
+                  colony,
+                  bodyColor,
+                  accentColor,
+                  i,
+                );
+              }
             }
           case CreatureSpecies.worm:
-            _renderWorm(canvas, paint, ant, bodyColor, accentColor, i);
+            if (useBatchDots) {
+              _lastBatchPasses++;
+              _renderBatchedCreatureDot(canvas, paint, ant, accentColor, false);
+            } else {
+              _lastDirectPasses++;
+              _renderWorm(canvas, paint, ant, bodyColor, accentColor, i);
+            }
           case CreatureSpecies.beetle:
-            _renderBeetle(canvas, paint, ant, bodyColor, accentColor, i);
+            if (useBatchDots) {
+              _lastBatchPasses++;
+              _renderBatchedCreatureDot(canvas, paint, ant, accentColor, false);
+            } else {
+              _lastDirectPasses++;
+              _renderBeetle(canvas, paint, ant, bodyColor, accentColor, i);
+            }
           case CreatureSpecies.spider:
-            _renderSpider(canvas, paint, ant, bodyColor, accentColor, i);
+            if (useBatchDots) {
+              _lastBatchPasses++;
+              _renderBatchedCreatureDot(canvas, paint, ant, accentColor, false);
+            } else {
+              _lastDirectPasses++;
+              _renderSpider(canvas, paint, ant, bodyColor, accentColor, i);
+            }
           case CreatureSpecies.fish:
-            _renderFish(canvas, paint, ant, bodyColor, accentColor, i);
+            if (useBatchDots) {
+              _lastBatchPasses++;
+              _renderBatchedCreatureDot(canvas, paint, ant, accentColor, false);
+            } else {
+              _lastDirectPasses++;
+              _renderFish(canvas, paint, ant, bodyColor, accentColor, i);
+            }
           case CreatureSpecies.bee:
-            _renderBee(canvas, paint, ant, bodyColor, accentColor, i);
+            if (useBatchDots) {
+              _lastBatchPasses++;
+              _renderBatchedCreatureDot(canvas, paint, ant, accentColor, false);
+            } else {
+              _lastDirectPasses++;
+              _renderBee(canvas, paint, ant, bodyColor, accentColor, i);
+            }
           case CreatureSpecies.firefly:
-            _renderFirefly(canvas, paint, ant, bodyColor, accentColor, i);
+            if (useBatchDots) {
+              _lastBatchPasses++;
+              _renderBatchedCreatureDot(canvas, paint, ant, accentColor, true);
+            } else {
+              _lastDirectPasses++;
+              _renderFirefly(canvas, paint, ant, bodyColor, accentColor, i);
+            }
         }
 
         if (mobileDetail) {
@@ -218,6 +293,34 @@ class CreatureRenderer extends PositionComponent
     }
     registry.reportRenderedCounts(renderedByColony);
     canvas.restore();
+    _renderStopwatch.stop();
+    _lastRenderDurationMs = _renderStopwatch.elapsedMicroseconds / 1000.0;
+  }
+
+  void _renderBatchedCreatureDot(
+    ui.Canvas canvas,
+    ui.Paint paint,
+    Ant ant,
+    int accentColor,
+    bool luminous,
+  ) {
+    final accentR = (accentColor >> 16) & 0xFF;
+    final accentG = (accentColor >> 8) & 0xFF;
+    final accentB = accentColor & 0xFF;
+    final alpha = luminous ? 235 : 215;
+    final size = luminous || ant.role == AntRole.queen ? 1.4 : 1.0;
+    paint.color = ui.Color.fromARGB(alpha, accentR, accentG, accentB);
+    canvas.drawRect(
+      ui.Rect.fromLTWH(ant.x.toDouble(), ant.y.toDouble(), size, size),
+      paint,
+    );
+    if (ant.carryingFood) {
+      paint.color = const ui.Color.fromARGB(220, 214, 180, 84);
+      canvas.drawRect(
+        ui.Rect.fromLTWH(ant.x.toDouble(), ant.y.toDouble(), 1.0, 1.0),
+        paint,
+      );
+    }
   }
 
   ({double centerX, double centerY, double halfWidth, double halfHeight})

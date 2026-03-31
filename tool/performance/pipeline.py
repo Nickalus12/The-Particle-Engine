@@ -925,14 +925,29 @@ def _collect_worldgen_stage_summary(scenarios: list[dict[str, Any]]) -> dict[str
 
 def _collect_render_runtime_snapshot(scenarios: list[dict[str, Any]]) -> dict[str, Any]:
     snapshot: dict[str, Any] = {
+        "quality_profile": "unknown",
+        "quality_tier": "unknown",
+        "post_process_tier": "unknown",
         "render_pixel_passes": 0.0,
         "image_build_passes": 0.0,
         "post_process_passes": 0.0,
         "render_skipped_frames": 0.0,
         "wrap_copies_last_frame": 0.0,
         "frame_budget_skips": 0.0,
+        "creature_batch_passes": 0.0,
+        "creature_direct_passes": 0.0,
         "device_class": "desktop",
         "interaction": "unknown",
+        "stage_samples": [],
+        "dirty_region_summary": {
+            "active_dirty_chunks": 0.0,
+            "total_chunks": 0.0,
+            "dirty_coverage_ratio": 0.0,
+            "full_rebuilds": 0.0,
+            "incremental_rebuilds": 0.0,
+            "cache_invalidations": 0.0,
+            "atmosphere_cache_refreshes": 0.0,
+        },
     }
     render_metric_keys = (
         "render_pixel_passes",
@@ -941,6 +956,8 @@ def _collect_render_runtime_snapshot(scenarios: list[dict[str, Any]]) -> dict[st
         "render_skipped_frames",
         "wrap_copies_last_frame",
         "frame_budget_skips",
+        "creature_batch_passes",
+        "creature_direct_passes",
     )
     for scenario in scenarios:
         if not isinstance(scenario, dict):
@@ -959,6 +976,35 @@ def _collect_render_runtime_snapshot(scenarios: list[dict[str, Any]]) -> dict[st
                 snapshot["device_class"] = str(tags["device_class"])
             if "interaction" in tags:
                 snapshot["interaction"] = str(tags["interaction"])
+            if "quality_profile" in tags:
+                snapshot["quality_profile"] = str(tags["quality_profile"])
+            if "quality_tier" in tags:
+                snapshot["quality_tier"] = str(tags["quality_tier"])
+            if "post_process_tier" in tags:
+                snapshot["post_process_tier"] = str(tags["post_process_tier"])
+        for stage_key, value in metrics.items():
+            if not stage_key.startswith("render_stage_duration_ms_"):
+                continue
+            stage_name = stage_key.removeprefix("render_stage_duration_ms_")
+            snapshot["stage_samples"].append(
+                {
+                    "stage": stage_name,
+                    "duration_ms": float(value),
+                    "ran": float(value) > 0.0,
+                }
+            )
+        dirty_map = {
+            "dirty_active_chunks": "active_dirty_chunks",
+            "dirty_total_chunks": "total_chunks",
+            "dirty_coverage_ratio": "dirty_coverage_ratio",
+            "full_rebuilds": "full_rebuilds",
+            "incremental_rebuilds": "incremental_rebuilds",
+            "cache_invalidations": "cache_invalidations",
+            "atmosphere_cache_refreshes": "atmosphere_cache_refreshes",
+        }
+        for metric_key, snapshot_key in dirty_map.items():
+            if metric_key in metrics:
+                snapshot["dirty_region_summary"][snapshot_key] = float(metrics[metric_key])
     return snapshot
 
 
@@ -1109,6 +1155,10 @@ def main() -> int:
     )
     (run_dir / "render_runtime_snapshot.json").write_text(
         json.dumps(render_runtime_snapshot, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    (run_dir / "render_stage_summary.json").write_text(
+        json.dumps(render_runtime_snapshot.get("stage_samples", []), indent=2, sort_keys=True),
         encoding="utf-8",
     )
 

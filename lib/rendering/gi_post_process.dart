@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flame/components.dart';
 
+import 'render_quality_profile.dart';
 import '../simulation/element_registry.dart';
 import '../simulation/simulation_engine.dart';
 
@@ -23,10 +24,7 @@ import '../simulation/simulation_engine.dart';
 /// from the final GI result so the simulation layer can use light levels
 /// for photosynthesis, creature vision, etc.
 class GIPostProcess extends Component {
-  GIPostProcess({
-    required this.simulation,
-    this.enabled = true,
-  });
+  GIPostProcess({required this.simulation, this.enabled = true});
 
   final SimulationEngine simulation;
 
@@ -48,6 +46,12 @@ class GIPostProcess extends Component {
 
   /// Water composite toggle.
   bool waterEnabled = true;
+  int luminanceReadbackInterval = 8;
+  int bloomPasses = _bloomPasses;
+  String qualityProfile = 'desktop_ultra';
+  PostProcessTier postProcessTier = PostProcessTier.rich;
+  bool lightweightToneMapping = false;
+  int warmupFrames = 12;
 
   /// Water refraction distortion strength.
   double waterRefractionStrength = 0.9;
@@ -88,6 +92,7 @@ class GIPostProcess extends Component {
 
   /// Frame counter for throttled luminance readback.
   int _frameCount = 0;
+  final List<RenderStageSample> _lastStageSamples = <RenderStageSample>[];
 
   // -- Constants --------------------------------------------------------------
 
@@ -133,6 +138,40 @@ class GIPostProcess extends Component {
     _shadersLoaded = false;
     super.onRemove();
   }
+
+  void configureForProfile(RenderQualityProfile profile) {
+    qualityProfile = profile.id;
+    postProcessTier = profile.postProcessTier;
+    bloomPasses = profile.bloomPasses;
+    luminanceReadbackInterval = profile.giReadbackInterval;
+    lightweightToneMapping = profile.lightweightToneMapping;
+
+    switch (profile.postProcessTier) {
+      case PostProcessTier.none:
+        enabled = false;
+        waterEnabled = false;
+        giStrength = 0.0;
+        bloomStrength = 0.0;
+      case PostProcessTier.lightweight:
+        enabled = true;
+        giStrength = 0.18;
+        bloomStrength = 0.04;
+        waterEnabled = profile.waterEnabled;
+      case PostProcessTier.selective:
+        enabled = true;
+        giStrength = 0.28;
+        bloomStrength = 0.08;
+        waterEnabled = profile.waterEnabled;
+      case PostProcessTier.rich:
+        enabled = true;
+        giStrength = 0.4;
+        bloomStrength = 0.15;
+        waterEnabled = profile.waterEnabled;
+    }
+  }
+
+  List<RenderStageSample> captureStageSamples() =>
+      List<RenderStageSample>.unmodifiable(_lastStageSamples);
 
   Future<void> _loadShaders() async {
     try {
@@ -287,24 +326,78 @@ class GIPostProcess extends Component {
   /// Returns the final composited image, or [sceneImage] unchanged if
   /// shaders are unavailable.
   Future<ui.Image> process(ui.Image sceneImage) async {
+    _lastStageSamples.clear();
     if (!enabled || !_shadersLoaded || _shaderLoadFailed) {
+      _lastStageSamples.add(
+        const RenderStageSample(
+          stage: 'lighting_post_process',
+          durationMs: 0.0,
+          ran: false,
+          details: <String, Object>{'reason': 'disabled_or_unavailable'},
+        ),
+      );
       return sceneImage;
     }
 
     _frameCount++;
+    final totalWatch = Stopwatch()..start();
+    final stageWatch = Stopwatch();
+    final inWarmup = _frameCount <= warmupFrames;
+    final effectiveWaterEnabled = waterEnabled && !inWarmup;
+    final effectiveBloomPasses = inWarmup
+        ? (bloomPasses > 0 ? 1 : 0)
+        : bloomPasses;
 
     // Step 1: Build CPU maps from simulation grid.
+    stageWatch.start();
     _buildOccluderMap();
     _buildEmitterMap();
     _buildWaterDataMap();
+    stageWatch.stop();
+    _lastStageSamples.add(
+      RenderStageSample(
+        stage: 'lighting_maps',
+        durationMs: stageWatch.elapsedMicroseconds / 1000.0,
+        ran: true,
+        details: <String, Object>{
+          'quality_profile': qualityProfile,
+          'warmup_active': inWarmup,
+        },
+      ),
+    );
 
-    final occluderImage = await _imageFromPixels(_occluderPixels, _gridW, _gridH);
+    stageWatch
+      ..reset()
+      ..start();
+    final occluderImage = await _imageFromPixels(
+      _occluderPixels,
+      _gridW,
+      _gridH,
+    );
     final emitterImage = await _imageFromPixels(_emitterPixels, _gridW, _gridH);
-    final waterDataImage = await _imageFromPixels(_waterDataPixels, _gridW, _gridH);
+    final waterDataImage = await _imageFromPixels(
+      _waterDataPixels,
+      _gridW,
+      _gridH,
+    );
+    stageWatch.stop();
+    _lastStageSamples.add(
+      RenderStageSample(
+        stage: 'lighting_upload',
+        durationMs: stageWatch.elapsedMicroseconds / 1000.0,
+        ran: true,
+      ),
+    );
 
-    final resolution = Float64List.fromList([_gridW.toDouble(), _gridH.toDouble()]);
+    final resolution = Float64List.fromList([
+      _gridW.toDouble(),
+      _gridH.toDouble(),
+    ]);
 
     // Step 2: JFA seed pass.
+    stageWatch
+      ..reset()
+      ..start();
     ui.Image jfaResult = await _runJFASeed(occluderImage, resolution);
 
     // Step 3: JFA flood-fill — 9 ping-pong passes with decreasing step size.
@@ -314,28 +407,72 @@ class GIPostProcess extends Component {
       jfaResult.dispose();
       jfaResult = nextJFA;
     }
+    stageWatch.stop();
+    _lastStageSamples.add(
+      RenderStageSample(
+        stage: 'lighting_jump_flood',
+        durationMs: stageWatch.elapsedMicroseconds / 1000.0,
+        ran: true,
+        details: <String, Object>{'jfa_steps': _jfaSteps},
+      ),
+    );
 
     // Step 4: Distance field from JFA.
-    final distField = await _runDistanceField(jfaResult, occluderImage, resolution);
+    stageWatch
+      ..reset()
+      ..start();
+    final distField = await _runDistanceField(
+      jfaResult,
+      occluderImage,
+      resolution,
+    );
     jfaResult.dispose();
     occluderImage.dispose();
+    stageWatch.stop();
+    _lastStageSamples.add(
+      RenderStageSample(
+        stage: 'lighting_distance_field',
+        durationMs: stageWatch.elapsedMicroseconds / 1000.0,
+        ran: true,
+      ),
+    );
 
     // Step 5: Radiance Cascades — 4 levels, coarse to fine.
+    stageWatch
+      ..reset()
+      ..start();
     ui.Image giResult = await _createBlackImage(_gridW, _gridH);
     for (int level = _cascadeLevels - 1; level >= 0; level--) {
       final maxDist = _maxDistance * (1 << level).toDouble();
       final nextGI = await _runRadianceCascade(
-        distField, emitterImage, giResult, resolution,
-        level.toDouble(), _cascadeLevels.toDouble(), maxDist,
+        distField,
+        emitterImage,
+        giResult,
+        resolution,
+        level.toDouble(),
+        _cascadeLevels.toDouble(),
+        maxDist,
       );
       giResult.dispose();
       giResult = nextGI;
     }
     distField.dispose();
     emitterImage.dispose();
+    stageWatch.stop();
+    _lastStageSamples.add(
+      RenderStageSample(
+        stage: 'lighting_gi',
+        durationMs: stageWatch.elapsedMicroseconds / 1000.0,
+        ran: true,
+        details: <String, Object>{'cascade_levels': _cascadeLevels},
+      ),
+    );
 
     // Step 6: Water composite — refract/tint the base scene through water flow.
-    final waterComposited = waterEnabled
+    stageWatch
+      ..reset()
+      ..start();
+    final waterComposited = effectiveWaterEnabled
         ? await _runWaterComposite(
             sceneImage,
             waterDataImage,
@@ -344,6 +481,15 @@ class GIPostProcess extends Component {
           )
         : sceneImage;
     waterDataImage.dispose();
+    stageWatch.stop();
+    _lastStageSamples.add(
+      RenderStageSample(
+        stage: 'lighting_water',
+        durationMs: stageWatch.elapsedMicroseconds / 1000.0,
+        ran: effectiveWaterEnabled,
+        details: <String, Object>{'warmup_active': inWarmup},
+      ),
+    );
 
     // Step 7: Bloom — downsample chain.
     final bloomChain = <ui.Image>[];
@@ -351,12 +497,16 @@ class GIPostProcess extends Component {
     int bw = _gridW;
     int bh = _gridH;
 
-    for (int i = 0; i < _bloomPasses; i++) {
+    stageWatch
+      ..reset()
+      ..start();
+    for (int i = 0; i < effectiveBloomPasses; i++) {
       bw = (bw / 2).ceil().clamp(1, 9999);
       bh = (bh / 2).ceil().clamp(1, 9999);
       final down = await _runBloomDownsample(
         bloomSrc,
-        bw.toDouble(), bh.toDouble(),
+        bw.toDouble(),
+        bh.toDouble(),
         i == 0 ? 1.0 : 0.0, // isFirstPass
         bloomThreshold,
       );
@@ -365,7 +515,7 @@ class GIPostProcess extends Component {
     }
 
     // Bloom — upsample chain (reverse, blending into each level).
-    for (int i = _bloomPasses - 2; i >= 0; i--) {
+    for (int i = effectiveBloomPasses - 2; i >= 0; i--) {
       final dstW = i > 0 ? bloomChain[i - 1].width : _gridW;
       final dstH = i > 0 ? bloomChain[i - 1].height : _gridH;
       final dst = i > 0 ? bloomChain[i - 1] : waterComposited;
@@ -373,9 +523,12 @@ class GIPostProcess extends Component {
       final srcTexelH = 1.0 / bloomChain[i + 1].height;
 
       final up = await _runBloomUpsample(
-        bloomChain[i + 1], dst,
-        dstW.toDouble(), dstH.toDouble(),
-        srcTexelW, srcTexelH,
+        bloomChain[i + 1],
+        dst,
+        dstW.toDouble(),
+        dstH.toDouble(),
+        srcTexelW,
+        srcTexelH,
         bloomStrength,
       );
 
@@ -387,26 +540,84 @@ class GIPostProcess extends Component {
         bloomChain.insert(0, up);
       }
     }
-    final bloomResult = bloomChain.first;
+    stageWatch.stop();
+    final bloomResult = bloomChain.isEmpty ? waterComposited : bloomChain.first;
+    _lastStageSamples.add(
+      RenderStageSample(
+        stage: 'lighting_bloom',
+        durationMs: stageWatch.elapsedMicroseconds / 1000.0,
+        ran: effectiveBloomPasses > 0,
+        details: <String, Object>{
+          'bloom_passes': effectiveBloomPasses,
+          'warmup_active': inWarmup,
+        },
+      ),
+    );
     // Dispose intermediates (skip first which is the result).
     for (int i = 1; i < bloomChain.length; i++) {
       bloomChain[i].dispose();
     }
 
     // Step 8: Tone map — composite scene + GI + bloom.
+    stageWatch
+      ..reset()
+      ..start();
     final finalImage = await _runTonemap(
-      waterComposited, giResult, bloomResult, resolution,
+      waterComposited,
+      giResult,
+      bloomResult,
+      resolution,
     );
     giResult.dispose();
     bloomResult.dispose();
     if (!identical(waterComposited, sceneImage)) {
       waterComposited.dispose();
     }
+    stageWatch.stop();
+    _lastStageSamples.add(
+      RenderStageSample(
+        stage: 'lighting_tonemap',
+        durationMs: stageWatch.elapsedMicroseconds / 1000.0,
+        ran: true,
+        details: <String, Object>{
+          'lightweight_tonemapping': lightweightToneMapping,
+        },
+      ),
+    );
 
     // Step 9: Readback luminance to engine every 8 frames.
-    if (_frameCount % 8 == 0) {
+    stageWatch
+      ..reset()
+      ..start();
+    final shouldReadback =
+        luminanceReadbackInterval > 0 &&
+        _frameCount % luminanceReadbackInterval == 0;
+    if (shouldReadback) {
       await _readbackLuminance(finalImage);
     }
+    stageWatch.stop();
+    _lastStageSamples.add(
+      RenderStageSample(
+        stage: 'lighting_luminance_readback',
+        durationMs: stageWatch.elapsedMicroseconds / 1000.0,
+        ran: shouldReadback,
+        details: <String, Object>{
+          'readback_interval': luminanceReadbackInterval,
+        },
+      ),
+    );
+    totalWatch.stop();
+    _lastStageSamples.add(
+      RenderStageSample(
+        stage: 'lighting_post_process',
+        durationMs: totalWatch.elapsedMicroseconds / 1000.0,
+        ran: true,
+        details: <String, Object>{
+          'quality_profile': qualityProfile,
+          'post_process_tier': postProcessTier.name,
+        },
+      ),
+    );
 
     return finalImage;
   }
@@ -576,16 +787,14 @@ class GIPostProcess extends Component {
   /// Create a 1x1 black image tiled to the given size (used as initial
   /// "previous cascade" input).
   Future<ui.Image> _createBlackImage(int width, int height) async {
-    final pixels = Uint8List(width * height * 4); // All zeros = black transparent
+    final pixels = Uint8List(
+      width * height * 4,
+    ); // All zeros = black transparent
     return _imageFromPixels(pixels, width, height);
   }
 
   /// Decode raw RGBA pixels into a [ui.Image].
-  Future<ui.Image> _imageFromPixels(
-    Uint8List pixels,
-    int width,
-    int height,
-  ) {
+  Future<ui.Image> _imageFromPixels(Uint8List pixels, int width, int height) {
     return _decodePixels(pixels, width, height);
   }
 

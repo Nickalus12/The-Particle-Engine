@@ -8,8 +8,20 @@ import '../theme/colors.dart';
 import '../theme/particle_theme.dart';
 import '../theme/typography.dart';
 import 'element_info_card.dart';
-import 'element_palette.dart' show ElementCategory, ElementPalette;
+import 'element_palette.dart' show ElementCategory;
 import 'vector_element_icons.dart';
+
+Color _colorForId(int elId) {
+  if (elId == El.eraser) return const Color(0xFF666680);
+  if (elId >= 0 && elId < maxElements) return Color(baseColors[elId]);
+  return const Color(0xFF808080);
+}
+
+String _nameForId(int elId) {
+  if (elId == El.eraser) return 'Eraser';
+  if (elId >= 0 && elId < maxElements) return elementNames[elId];
+  return '???';
+}
 
 /// Bottom-anchored horizontal element bar with category tabs and scrollable tiles.
 ///
@@ -50,7 +62,7 @@ class ElementBottomBar extends StatefulWidget {
 class _ElementBottomBarState extends State<ElementBottomBar>
     with TickerProviderStateMixin {
   int _selectedElId = El.sand;
-  ElementCategory _activeCategory = ElementCategory.compounds;
+  ElementCategory _activeCategory = ElementCategory.solids;
   OverlayEntry? _infoOverlay;
 
   late final AnimationController _slideController;
@@ -253,7 +265,7 @@ class _ElementBottomBarState extends State<ElementBottomBar>
 
   Widget _buildSelectedPreview({required bool compact}) {
     final tile = compact ? 30.0 : 34.0;
-    final color = ElementPalette.colorForId(_selectedElId);
+    final color = _colorForId(_selectedElId);
     return AnimatedBuilder(
       animation: Listenable.merge([_glowController, _selectBounce]),
       builder: (context, _) {
@@ -336,8 +348,8 @@ class _ElementBottomBarState extends State<ElementBottomBar>
             child: _ElementTile(
               elId: elId,
               isSelected: elId == _selectedElId,
-              color: ElementPalette.colorForId(elId),
-              name: ElementPalette.nameForId(elId),
+              color: _colorForId(elId),
+              name: _nameForId(elId),
               categoryColor: _activeCategory.color,
               iconAnimController: _iconAnimController,
               glowController: _glowController,

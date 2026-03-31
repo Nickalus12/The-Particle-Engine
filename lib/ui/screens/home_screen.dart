@@ -167,6 +167,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
+  void _openWorldCreate({int initialPresetIndex = 0}) {
+    _navigateTo(WorldCreateScreen(initialPresetIndex: initialPresetIndex));
+  }
+
   void _quickStartBalancedWorld() {
     _navigateTo(
       SandboxScreen(
@@ -448,12 +452,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Launch a world',
+            'Choose your next world',
             style: AppTypography.heading.copyWith(fontSize: compact ? 24 : 28),
           ),
           const SizedBox(height: 8),
           Text(
-            'Start clean, jump back into your autosave, or inspect existing worlds without leaving the live simulation backdrop.',
+            'Resume a living sandbox, jump into a curated terrain preset, or browse your saved worlds with a clearer launch flow built for mobile.',
             style: AppTypography.body.copyWith(fontSize: 14, height: 1.55),
           ),
           const SizedBox(height: 16),
@@ -466,52 +470,91 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             onLoad: () => _navigateTo(const LoadScreen()),
           ),
           const SizedBox(height: 20),
-          _LargeMenuButton(
-            key: const ValueKey('home_create_button'),
-            title: 'Create World',
-            subtitle:
-                'Build a fresh sandbox with procedural terrain and scenario controls.',
-            accent: const Color(0xFF58B4FF),
-            icon: Icons.public,
-            onTap: () => _navigateTo(const WorldCreateScreen()),
+          _ResumeSpotlight(
+            key: const ValueKey('home_resume_spotlight'),
+            canContinue: canContinue,
+            checkingAutoSave: _checkingAutoSave,
+            onContinue: _continueGame,
+            onBrowse: () => _navigateTo(const LoadScreen()),
+            onCreate: () => _openWorldCreate(initialPresetIndex: 1),
+          ),
+          const SizedBox(height: 18),
+          _SectionEyebrow(
+            label: 'WORLD MOODS',
+            accent: const Color(0xFF79C7FF),
           ),
           const SizedBox(height: 12),
-          _LargeMenuButton(
-            key: const ValueKey('home_load_button'),
-            title: canContinue ? 'Continue Autosave' : 'Load Saved World',
-            subtitle: canContinue
-                ? 'Resume your latest saved world immediately.'
-                : 'Browse saved worlds and restore a previous simulation state.',
-            accent: const Color(0xFFFF9A62),
-            icon: canContinue ? Icons.play_arrow_rounded : Icons.folder_open,
-            enabled: !_checkingAutoSave,
-            trailing: _checkingAutoSave
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : null,
-            onTap: _checkingAutoSave
-                ? null
-                : canContinue
-                ? _continueGame
-                : () => _navigateTo(const LoadScreen()),
+          _WorldMoodGrid(
+            onSelectPreset: (presetIndex) =>
+                _openWorldCreate(initialPresetIndex: presetIndex),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 18),
           _SessionStatusStrip(
             canContinue: canContinue,
             checkingAutoSave: _checkingAutoSave,
           ),
-          const SizedBox(height: 12),
-          _LargeMenuButton(
-            key: const ValueKey('home_settings_button'),
-            title: 'Settings',
-            subtitle:
-                'Tune simulation feel, performance, audio, and accessibility options.',
-            accent: const Color(0xFFC98BFF),
-            icon: Icons.tune,
-            onTap: () => _navigateTo(const SettingsScreen()),
+          const SizedBox(height: 18),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final bool stack = constraints.maxWidth < 560;
+              final children = [
+                Expanded(
+                  child: _LaunchFeatureCard(
+                    key: const ValueKey('home_create_button'),
+                    title: 'Create World',
+                    subtitle:
+                        'Build a fresh simulation with preset terrain cards.',
+                    accent: const Color(0xFF58B4FF),
+                    icon: Icons.public,
+                    onTap: () => _openWorldCreate(initialPresetIndex: 1),
+                  ),
+                ),
+                Expanded(
+                  child: _LaunchFeatureCard(
+                    key: const ValueKey('home_load_button'),
+                    title: 'Saved Worlds',
+                    subtitle:
+                        'Browse recent runs, rename slots, and jump back in fast.',
+                    accent: const Color(0xFFFF9A62),
+                    icon: Icons.folder_open_rounded,
+                    onTap: () => _navigateTo(const LoadScreen()),
+                  ),
+                ),
+                Expanded(
+                  child: _LaunchFeatureCard(
+                    key: const ValueKey('home_settings_button'),
+                    title: 'Settings',
+                    subtitle:
+                        'Tune performance, controls, accessibility, and audio.',
+                    accent: const Color(0xFFC98BFF),
+                    icon: Icons.tune,
+                    onTap: () => _navigateTo(const SettingsScreen()),
+                  ),
+                ),
+              ];
+
+              if (stack) {
+                return Column(
+                  children: [
+                    for (int i = 0; i < children.length; i++) ...[
+                      SizedBox(width: double.infinity, child: children[i]),
+                      if (i != children.length - 1) const SizedBox(height: 10),
+                    ],
+                  ],
+                );
+              }
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  children[0],
+                  const SizedBox(width: 10),
+                  children[1],
+                  const SizedBox(width: 10),
+                  children[2],
+                ],
+              );
+            },
           ),
           const SizedBox(height: 18),
           Wrap(
@@ -524,6 +567,452 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SectionEyebrow extends StatelessWidget {
+  const _SectionEyebrow({required this.label, required this.accent});
+
+  final String label;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: accent,
+            boxShadow: ParticleTheme.glowShadow(accent),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: AppTypography.label.copyWith(
+            letterSpacing: 1.6,
+            color: AppColors.textPrimary.withValues(alpha: 0.8),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ResumeSpotlight extends StatelessWidget {
+  const _ResumeSpotlight({
+    super.key,
+    required this.canContinue,
+    required this.checkingAutoSave,
+    required this.onContinue,
+    required this.onBrowse,
+    required this.onCreate,
+  });
+
+  final bool canContinue;
+  final bool checkingAutoSave;
+  final VoidCallback onContinue;
+  final VoidCallback onBrowse;
+  final VoidCallback onCreate;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = canContinue
+        ? const Color(0xFFFFB46E)
+        : const Color(0xFF76C9FF);
+
+    return Container(
+      key: const ValueKey('home_resume_spotlight'),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          colors: [
+            accent.withValues(alpha: 0.18),
+            Colors.black.withValues(alpha: 0.12),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: accent.withValues(alpha: 0.28), width: 0.9),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: accent.withValues(alpha: 0.15),
+                ),
+                child: Icon(
+                  canContinue
+                      ? Icons.play_arrow_rounded
+                      : Icons.explore_rounded,
+                  color: accent,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      canContinue
+                          ? 'Resume the latest simulation'
+                          : 'Start a guided world quickly',
+                      style: AppTypography.subheading.copyWith(fontSize: 16),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      checkingAutoSave
+                          ? 'Checking your latest save and session context.'
+                          : canContinue
+                          ? 'Autosave is ready, and your recent run can be reopened immediately.'
+                          : 'No autosave was found, so the fastest path is creating a curated world or browsing saves.',
+                      style: AppTypography.caption.copyWith(
+                        fontSize: 11.5,
+                        height: 1.45,
+                        color: AppColors.textSecondary.withValues(alpha: 0.92),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _SpotlightAction(
+                key: const ValueKey('home_resume_primary_button'),
+                label: canContinue ? 'Continue Autosave' : 'Create Meadow',
+                icon: canContinue
+                    ? Icons.play_circle_fill_rounded
+                    : Icons.park_rounded,
+                accent: accent,
+                enabled: !checkingAutoSave,
+                onTap: canContinue ? onContinue : onCreate,
+              ),
+              _SpotlightAction(
+                key: const ValueKey('home_resume_browse_button'),
+                label: 'Browse Worlds',
+                icon: Icons.folder_open_rounded,
+                accent: const Color(0xFFFFA265),
+                onTap: onBrowse,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SpotlightAction extends StatelessWidget {
+  const _SpotlightAction({
+    super.key,
+    required this.label,
+    required this.icon,
+    required this.accent,
+    this.enabled = true,
+    this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color accent;
+  final bool enabled;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: enabled ? 1 : 0.65,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: enabled ? onTap : null,
+          child: Ink(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              color: Colors.black.withValues(alpha: 0.2),
+              border: Border.all(
+                color: accent.withValues(alpha: 0.32),
+                width: 0.8,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 15, color: accent),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: AppTypography.caption.copyWith(
+                    fontSize: 11,
+                    color: AppColors.textPrimary.withValues(alpha: 0.92),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WorldMoodGrid extends StatelessWidget {
+  const _WorldMoodGrid({required this.onSelectPreset});
+
+  final ValueChanged<int> onSelectPreset;
+
+  @override
+  Widget build(BuildContext context) {
+    const moods =
+        <
+          ({
+            String label,
+            String subtitle,
+            IconData icon,
+            Color accent,
+            int presetIndex,
+          })
+        >[
+          (
+            label: 'Meadow',
+            subtitle: 'Friendly terrain for balanced colony starts.',
+            icon: Icons.park_rounded,
+            accent: Color(0xFF86D27A),
+            presetIndex: 1,
+          ),
+          (
+            label: 'Canyon',
+            subtitle: 'Vertical routes, erosion, and dramatic pressure.',
+            icon: Icons.terrain_rounded,
+            accent: Color(0xFFE8A15A),
+            presetIndex: 2,
+          ),
+          (
+            label: 'Island',
+            subtitle: 'Tight coastlines and exposed survival space.',
+            icon: Icons.waves_rounded,
+            accent: Color(0xFF66C7FF),
+            presetIndex: 3,
+          ),
+          (
+            label: 'Underground',
+            subtitle: 'Heat pockets, caves, and constrained expansion.',
+            icon: Icons.hive_rounded,
+            accent: Color(0xFFE1C06A),
+            presetIndex: 4,
+          ),
+          (
+            label: 'Blank',
+            subtitle: 'Pure sandbox for building from nothing.',
+            icon: Icons.grid_on_rounded,
+            accent: Color(0xFFC6D2E5),
+            presetIndex: 0,
+          ),
+        ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bool stack = constraints.maxWidth < 520;
+        if (stack) {
+          return Column(
+            children: [
+              for (int i = 0; i < moods.length; i++) ...[
+                _WorldMoodCard(
+                  key: ValueKey(
+                    'home_world_mood_${moods[i].label.toLowerCase()}',
+                  ),
+                  label: moods[i].label,
+                  subtitle: moods[i].subtitle,
+                  icon: moods[i].icon,
+                  accent: moods[i].accent,
+                  onTap: () => onSelectPreset(moods[i].presetIndex),
+                ),
+                if (i != moods.length - 1) const SizedBox(height: 10),
+              ],
+            ],
+          );
+        }
+
+        return Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: moods
+              .map(
+                (mood) => SizedBox(
+                  width: constraints.maxWidth >= 740
+                      ? (constraints.maxWidth - 20) / 3
+                      : (constraints.maxWidth - 10) / 2,
+                  child: _WorldMoodCard(
+                    key: ValueKey(
+                      'home_world_mood_${mood.label.toLowerCase()}',
+                    ),
+                    label: mood.label,
+                    subtitle: mood.subtitle,
+                    icon: mood.icon,
+                    accent: mood.accent,
+                    onTap: () => onSelectPreset(mood.presetIndex),
+                  ),
+                ),
+              )
+              .toList(),
+        );
+      },
+    );
+  }
+}
+
+class _WorldMoodCard extends StatelessWidget {
+  const _WorldMoodCard({
+    super.key,
+    required this.label,
+    required this.subtitle,
+    required this.icon,
+    required this.accent,
+    required this.onTap,
+  });
+
+  final String label;
+  final String subtitle;
+  final IconData icon;
+  final Color accent;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: onTap,
+        child: Ink(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            color: Colors.black.withValues(alpha: 0.16),
+            border: Border.all(
+              color: accent.withValues(alpha: 0.24),
+              width: 0.8,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: accent.withValues(alpha: 0.16),
+                ),
+                child: Icon(icon, color: accent, size: 19),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: AppTypography.subheading.copyWith(fontSize: 14),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: AppTypography.caption.copyWith(
+                        fontSize: 10.5,
+                        height: 1.35,
+                        color: AppColors.textSecondary.withValues(alpha: 0.88),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_rounded,
+                color: accent.withValues(alpha: 0.92),
+                size: 18,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LaunchFeatureCard extends StatelessWidget {
+  const _LaunchFeatureCard({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.accent,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final Color accent;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: onTap,
+        child: Ink(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            color: Colors.black.withValues(alpha: 0.16),
+            border: Border.all(
+              color: accent.withValues(alpha: 0.24),
+              width: 0.8,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: accent, size: 18),
+              const SizedBox(height: 10),
+              Text(
+                title,
+                style: AppTypography.subheading.copyWith(fontSize: 14),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: AppTypography.caption.copyWith(
+                  fontSize: 10.5,
+                  height: 1.35,
+                  color: AppColors.textSecondary.withValues(alpha: 0.88),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -758,12 +1247,6 @@ class _SimImagePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final src = Rect.fromLTWH(
-      0,
-      0,
-      image.width.toDouble(),
-      image.height.toDouble(),
-    );
     final dst = Rect.fromLTWH(0, 0, size.width, size.height);
     paintImage(
       canvas: canvas,

@@ -4,6 +4,7 @@ import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 
 import '../../rendering/gi_post_process.dart';
+import '../../rendering/render_quality_profile.dart';
 import '../../simulation/element_registry.dart';
 import '../../simulation/pixel_renderer.dart';
 import '../../simulation/simulation_engine.dart';
@@ -43,33 +44,6 @@ class PlacementMetricsSnapshot {
   };
 }
 
-class RenderMetricsSnapshot {
-  const RenderMetricsSnapshot({
-    required this.renderPixelPasses,
-    required this.imageBuildPasses,
-    required this.postProcessPasses,
-    required this.skippedFrames,
-    required this.wrapCopiesLastFrame,
-    required this.frameBudgetSkips,
-  });
-
-  final int renderPixelPasses;
-  final int imageBuildPasses;
-  final int postProcessPasses;
-  final int skippedFrames;
-  final int wrapCopiesLastFrame;
-  final int frameBudgetSkips;
-
-  Map<String, Object> toJson() => <String, Object>{
-    'render_pixel_passes': renderPixelPasses,
-    'image_build_passes': imageBuildPasses,
-    'post_process_passes': postProcessPasses,
-    'render_skipped_frames': skippedFrames,
-    'wrap_copies_last_frame': wrapCopiesLastFrame,
-    'frame_budget_skips': frameBudgetSkips,
-  };
-}
-
 class SandboxComponent extends PositionComponent
     with TapCallbacks, DragCallbacks, HasGameReference<ParticleEngineGame> {
   SandboxComponent({required this.simulation, this.cellSize = 2.0})
@@ -106,8 +80,25 @@ class SandboxComponent extends PositionComponent
   int _postProcessPasses = 0;
   int _renderSkippedFrames = 0;
   int _wrapCopiesLastFrame = 1;
+  double _lastPixelRenderMs = 0.0;
+  double _lastImageBuildMs = 0.0;
+  double _lastPostProcessMs = 0.0;
+  double _lastWrapRenderMs = 0.0;
+  RenderDirtyRegionSummary _lastDirtyRegionSummary =
+      const RenderDirtyRegionSummary(
+        incrementalEnabled: true,
+        activeDirtyChunks: 0,
+        totalChunks: 0,
+        dirtyCoverageRatio: 0.0,
+        fullRebuilds: 0,
+        incrementalRebuilds: 0,
+        lastRebuildReason: 'initial_frame',
+        cacheInvalidations: 0,
+        atmosphereCacheRefreshes: 0,
+      );
 
   final Stopwatch _updateStopwatch = Stopwatch();
+  final Stopwatch _renderStageWatch = Stopwatch();
 
   /// Last grid position painted at, for Bresenham line interpolation.
   int? lastPaintX;
@@ -123,6 +114,8 @@ class SandboxComponent extends PositionComponent
     renderer = PixelRenderer(simulation);
     renderer.init();
     renderer.generateStars();
+    renderer.incrementalRasterization =
+        game.renderQualityProfile.incrementalRasterization;
     if (!game.isDesktop) {
       renderer.enableGlow = false;
       renderer.enableMicroParticles = false;
@@ -155,7 +148,13 @@ class SandboxComponent extends PositionComponent
       renderer.tickMicroParticles();
     }
 
+    _renderStageWatch
+      ..reset()
+      ..start();
     renderer.renderPixels();
+    _renderStageWatch.stop();
+    _lastPixelRenderMs = _renderStageWatch.elapsedMicroseconds / 1000.0;
+    _lastDirtyRegionSummary = renderer.captureDirtyRegionSummary();
     _renderPixelPasses++;
 
     if (!_decoding) {
@@ -165,7 +164,10 @@ class SandboxComponent extends PositionComponent
         _decoding = true;
         _imageBuildPasses++;
         renderer.buildImage().then((image) async {
+          final imageBuildWatch = Stopwatch()..start();
           final baseImage = image as ui.Image;
+          imageBuildWatch.stop();
+          _lastImageBuildMs = imageBuildWatch.elapsedMicroseconds / 1000.0;
           final shouldRunPostProcess = _shouldRunPostProcess();
           ui.Image processed = baseImage;
           if (shouldRunPostProcess) {
@@ -173,9 +175,17 @@ class SandboxComponent extends PositionComponent
             final GIPostProcess gi = game.sandboxWorld.giPostProcess;
             if (gi.enabled) {
               gi.dayNightT = game.dayNightTransition;
+              final postProcessWatch = Stopwatch()..start();
               processed = await gi.process(baseImage);
+              postProcessWatch.stop();
+              _lastPostProcessMs =
+                  postProcessWatch.elapsedMicroseconds / 1000.0;
               _postProcessPasses++;
+            } else {
+              _lastPostProcessMs = 0.0;
             }
+          } else {
+            _lastPostProcessMs = 0.0;
           }
           if (!identical(processed, baseImage)) {
             baseImage.dispose();
@@ -202,6 +212,7 @@ class SandboxComponent extends PositionComponent
     final image = _gridImage;
     if (image == null) return;
 
+    final wrapWatch = Stopwatch()..start();
     final worldW = simulation.gridW.toDouble();
     final worldCopies = _visibleWrapCopies();
     _wrapCopiesLastFrame = worldCopies.length;
@@ -212,6 +223,8 @@ class SandboxComponent extends PositionComponent
       canvas.drawImage(image, ui.Offset(copyOffset * worldW, 0), _imagePaint);
     }
     canvas.restore();
+    wrapWatch.stop();
+    _lastWrapRenderMs = wrapWatch.elapsedMicroseconds / 1000.0;
   }
 
   List<double> _visibleWrapCopies() {
@@ -410,7 +423,7 @@ class SandboxComponent extends PositionComponent
   /// Prevents click-and-hold from spawning dozens of colonies.
   bool colonySpawnedThisGesture = false;
 
-  static final Map<int, List<(int dx, int dy)>> _brushOffsetCache =
+  static final Map<int, List<(int, int)>> _brushOffsetCache =
       <int, List<(int dx, int dy)>>{};
   int _paintStampsTotal = 0;
   int _cellsModifiedTotal = 0;
@@ -473,7 +486,7 @@ class SandboxComponent extends PositionComponent
     var modifiedCells = 0;
     var paintedCells = 0;
     var erasedCells = 0;
-    for (final (dx: dx, dy: dy) in _offsetsForBrush(brushSize)) {
+    for (final (dx, dy) in _offsetsForBrush(brushSize)) {
       final nx = simulation.wrapX(cx + dx);
       final ny = cy + dy;
       if (!simulation.inBoundsY(ny)) continue;
@@ -516,15 +529,15 @@ class SandboxComponent extends PositionComponent
     return modified;
   }
 
-  List<(int dx, int dy)> _offsetsForBrush(int radius) {
+  List<(int, int)> _offsetsForBrush(int radius) {
     final safeRadius = radius < 1 ? 1 : radius;
     return _brushOffsetCache.putIfAbsent(safeRadius, () {
-      final offsets = <(int dx, int dy)>[];
+      final offsets = <(int, int)>[];
       final r2 = safeRadius * safeRadius;
       for (var dy = -safeRadius; dy <= safeRadius; dy++) {
         for (var dx = -safeRadius; dx <= safeRadius; dx++) {
           if (dx * dx + dy * dy <= r2) {
-            offsets.add((dx: dx, dy: dy));
+            offsets.add((dx, dy));
           }
         }
       }
@@ -570,12 +583,63 @@ class SandboxComponent extends PositionComponent
         noopStampsTotal: _noopStampsTotal,
       );
 
-  RenderMetricsSnapshot captureRenderMetrics() => RenderMetricsSnapshot(
-    renderPixelPasses: _renderPixelPasses,
-    imageBuildPasses: _imageBuildPasses,
-    postProcessPasses: _postProcessPasses,
-    skippedFrames: _renderSkippedFrames,
-    wrapCopiesLastFrame: _wrapCopiesLastFrame,
-    frameBudgetSkips: _frameBudgetSkips,
-  );
+  RenderRuntimeSnapshot captureRenderMetrics() {
+    final profile = game.renderQualityProfile;
+    final creatureRenderer = game.sandboxWorld.creatureRenderer;
+    final gi = game.sandboxWorld.giPostProcess;
+    return RenderRuntimeSnapshot(
+      qualityProfile: profile.id,
+      qualityTier: profile.qualityTier.name,
+      postProcessTier: profile.postProcessTier.name,
+      renderPixelPasses: _renderPixelPasses,
+      imageBuildPasses: _imageBuildPasses,
+      postProcessPasses: _postProcessPasses,
+      skippedFrames: _renderSkippedFrames,
+      wrapCopiesLastFrame: _wrapCopiesLastFrame,
+      frameBudgetSkips: _frameBudgetSkips,
+      creatureBatchPasses: creatureRenderer.lastBatchPasses,
+      creatureDirectPasses: creatureRenderer.lastDirectPasses,
+      stageSamples: <RenderStageSample>[
+        RenderStageSample(
+          stage: 'terrain_material',
+          durationMs: _lastPixelRenderMs,
+          ran: _renderPixelPasses > 0,
+          details: <String, Object>{
+            'incremental_enabled': profile.incrementalRasterization,
+            'wrap_copies': _wrapCopiesLastFrame,
+          },
+        ),
+        RenderStageSample(
+          stage: 'dynamic_overlay',
+          durationMs: _lastImageBuildMs,
+          ran: _imageBuildPasses > 0,
+          details: <String, Object>{
+            'frame_budget_skips': _frameBudgetSkips,
+            'render_skipped_frames': _renderSkippedFrames,
+          },
+        ),
+        RenderStageSample(
+          stage: 'creature_entity',
+          durationMs: creatureRenderer.lastRenderDurationMs,
+          ran:
+              creatureRenderer.lastDirectPasses > 0 ||
+              creatureRenderer.lastBatchPasses > 0,
+          details: <String, Object>{
+            'batched_passes': creatureRenderer.lastBatchPasses,
+            'direct_passes': creatureRenderer.lastDirectPasses,
+          },
+        ),
+        ...gi.captureStageSamples(),
+        RenderStageSample(
+          stage: 'wrap_composite',
+          durationMs: _lastWrapRenderMs,
+          ran: _gridImage != null,
+          details: <String, Object>{
+            'visible_wrap_copies': _wrapCopiesLastFrame,
+          },
+        ),
+      ],
+      dirtyRegionSummary: _lastDirtyRegionSummary,
+    );
+  }
 }

@@ -204,14 +204,28 @@ Map<String, num> _placementMetricMap(SandboxWorld world) {
 
 Map<String, num> _renderMetricMap(SandboxWorld world) {
   final snapshot = world.captureRenderMetricsSnapshot();
-  return <String, num>{
+  final metrics = <String, num>{
     'render_pixel_passes': snapshot.renderPixelPasses,
     'image_build_passes': snapshot.imageBuildPasses,
     'post_process_passes': snapshot.postProcessPasses,
     'render_skipped_frames': snapshot.skippedFrames,
     'wrap_copies_last_frame': snapshot.wrapCopiesLastFrame,
     'frame_budget_skips': snapshot.frameBudgetSkips,
+    'creature_batch_passes': snapshot.creatureBatchPasses,
+    'creature_direct_passes': snapshot.creatureDirectPasses,
+    'dirty_active_chunks': snapshot.dirtyRegionSummary.activeDirtyChunks,
+    'dirty_total_chunks': snapshot.dirtyRegionSummary.totalChunks,
+    'dirty_coverage_ratio': snapshot.dirtyRegionSummary.dirtyCoverageRatio,
+    'full_rebuilds': snapshot.dirtyRegionSummary.fullRebuilds,
+    'incremental_rebuilds': snapshot.dirtyRegionSummary.incrementalRebuilds,
+    'cache_invalidations': snapshot.dirtyRegionSummary.cacheInvalidations,
+    'atmosphere_cache_refreshes':
+        snapshot.dirtyRegionSummary.atmosphereCacheRefreshes,
   };
+  for (final sample in snapshot.stageSamples) {
+    metrics['render_stage_duration_ms_${sample.stage}'] = sample.durationMs;
+  }
+  return metrics;
 }
 
 void _expectFrameBudget(
@@ -465,9 +479,12 @@ void main() {
         suite: 'game_loop',
         scenario: 'mobile_render_telemetry',
         metrics: _renderMetricMap(game.sandboxWorld),
-        tags: const <String, Object?>{
+        tags: <String, Object?>{
           'device_class': 'mobile',
           'interaction': 'screen_space_drag',
+          'quality_profile': game.renderQualityProfile.id,
+          'quality_tier': game.renderQualityProfile.qualityTier.name,
+          'post_process_tier': game.renderQualityProfile.postProcessTier.name,
         },
       );
       expect(

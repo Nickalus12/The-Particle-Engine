@@ -7,6 +7,7 @@ import '../creatures/ant.dart';
 import '../creatures/creature_registry.dart';
 import '../models/game_state.dart';
 import '../rendering/gi_post_process.dart';
+import '../rendering/render_quality_profile.dart';
 import '../services/save_service.dart';
 import '../simulation/element_behaviors.dart';
 import '../simulation/element_registry.dart';
@@ -170,11 +171,11 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
       cellSize: cellSize,
     );
 
-    giPostProcess =
-        GIPostProcess(simulation: simulation, enabled: game.isDesktop)
-          ..giStrength = game.isDesktop ? 0.4 : 0.25
-          ..bloomStrength = game.isDesktop ? 0.15 : 0.08
-          ..waterEnabled = game.isDesktop;
+    giPostProcess = GIPostProcess(
+      simulation: simulation,
+      enabled:
+          game.renderQualityProfile.postProcessTier != PostProcessTier.none,
+    )..configureForProfile(game.renderQualityProfile);
 
     await addAll([
       backgroundComponent..priority = 0,
@@ -277,8 +278,9 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
         if (simulation.colonyX >= 0) {
           if (simulation.frameCount % 8 == 0) simulation.evaporatePheromones();
           if (simulation.frameCount % 4 == 0) simulation.diffusePheromones();
-          if (simulation.frameCount % 16 == 0)
+          if (simulation.frameCount % 16 == 0) {
             simulation.updateColonyCentroid();
+          }
         }
 
         if (timing) {
@@ -364,6 +366,6 @@ class SandboxWorld extends World with HasGameReference<ParticleEngineGame> {
   PlacementMetricsSnapshot capturePlacementMetricsSnapshot() =>
       sandboxComponent.capturePlacementMetrics();
 
-  RenderMetricsSnapshot captureRenderMetricsSnapshot() =>
+  RenderRuntimeSnapshot captureRenderMetricsSnapshot() =>
       sandboxComponent.captureRenderMetrics();
 }

@@ -62,5 +62,18 @@ void main() {
       find.byKey(const ValueKey('home_session_status_strip')),
       findsOneWidget,
     );
+    expect(find.byKey(const ValueKey('home_resume_spotlight')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('home_resume_primary_button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('home_world_mood_meadow')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('home_world_mood_underground')),
+      findsOneWidget,
+    );
   });
 }

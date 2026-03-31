@@ -5,6 +5,7 @@ import 'image_builder_stub.dart'
     if (dart.library.ui) 'image_builder_ui.dart'
     as image_builder;
 
+import '../rendering/render_quality_profile.dart';
 import 'element_registry.dart';
 import 'simulation_engine.dart';
 
@@ -68,6 +69,14 @@ class PixelRenderer {
   bool enableMicroParticles = true;
   int glowUpdateInterval = 6;
   int atmosphereCacheInterval = 8;
+  bool incrementalRasterization = true;
+  String _lastRebuildReason = 'initial_frame';
+  int _fullRebuilds = 0;
+  int _incrementalRebuilds = 0;
+  int _cacheInvalidations = 0;
+  int _atmosphereCacheRefreshes = 0;
+  int _lastActiveDirtyChunks = 0;
+  int _lastTotalChunks = 0;
 
   PixelRenderer(this.engine);
 
@@ -318,6 +327,29 @@ class PixelRenderer {
   /// ground classification do not lag behind the edited world.
   void invalidateAtmosphereCaches() {
     _groundLevelAge = 8;
+    _cacheInvalidations++;
+  }
+
+  void invalidateRenderCaches([String reason = 'manual_invalidation']) {
+    _glowBuffersValid = false;
+    _groundLevelAge = atmosphereCacheInterval;
+    _lastRebuildReason = reason;
+    _cacheInvalidations++;
+  }
+
+  RenderDirtyRegionSummary captureDirtyRegionSummary() {
+    final totalChunks = _lastTotalChunks == 0 ? 1 : _lastTotalChunks;
+    return RenderDirtyRegionSummary(
+      incrementalEnabled: incrementalRasterization,
+      activeDirtyChunks: _lastActiveDirtyChunks,
+      totalChunks: _lastTotalChunks,
+      dirtyCoverageRatio: _lastActiveDirtyChunks / totalChunks,
+      fullRebuilds: _fullRebuilds,
+      incrementalRebuilds: _incrementalRebuilds,
+      lastRebuildReason: _lastRebuildReason,
+      cacheInvalidations: _cacheInvalidations,
+      atmosphereCacheRefreshes: _atmosphereCacheRefreshes,
+    );
   }
 
   /// Update the cached ground level for each column. Scans from top down
@@ -432,6 +464,7 @@ class PixelRenderer {
       _updateGroundLevel();
       _updateCaveLightLevel();
       _groundLevelAge = 0;
+      _atmosphereCacheRefreshes++;
     }
     final temp = engine.temperature;
 
@@ -491,7 +524,12 @@ class PixelRenderer {
     final dayNightTransitioning = t256 != _prevNightT256;
     _prevNightT256 = t256;
 
-    bool forceFullRender = dayNightTransitioning;
+    bool forceFullRender = dayNightTransitioning || !incrementalRasterization;
+    if (dayNightTransitioning) {
+      _lastRebuildReason = 'day_night_transition';
+    } else if (!incrementalRasterization) {
+      _lastRebuildReason = 'incremental_disabled';
+    }
 
     Uint8List glowR8 = _glowR;
     Uint8List glowG8 = _glowG;
@@ -594,16 +632,38 @@ class PixelRenderer {
         }
       }
       _glowBuffersValid = true;
-      if (hasEmissive) forceFullRender = true;
+      if (hasEmissive) {
+        forceFullRender = true;
+        _lastRebuildReason = 'glow_rebuild';
+      }
     } else if (!_glowBuffersValid) {
       glowR8 = _glowR;
       glowG8 = _glowG;
       glowB8 = _glowB;
+      forceFullRender = true;
+      _lastRebuildReason = 'glow_cache_invalid';
     }
 
     final dc = engine.dirtyChunks;
     final chunkCols = engine.chunkCols;
     final chunkRows = engine.chunkRows;
+    _lastTotalChunks = dc.length;
+    _lastActiveDirtyChunks = 0;
+    for (final chunk in dc) {
+      if (chunk != 0) {
+        _lastActiveDirtyChunks++;
+      }
+    }
+    if (forceFullRender) {
+      _fullRebuilds++;
+    } else {
+      _incrementalRebuilds++;
+      if (_lastActiveDirtyChunks == 0) {
+        _lastRebuildReason = 'steady_state_skip';
+      } else {
+        _lastRebuildReason = 'dirty_chunks';
+      }
+    }
 
     final life = engine.life;
     final velX = engine.velX;

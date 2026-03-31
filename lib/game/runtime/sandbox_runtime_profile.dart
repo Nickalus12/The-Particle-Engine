@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 
 import '../../models/game_state.dart';
+import '../../rendering/render_quality_profile.dart';
 
 /// Runtime sizing profile for the sandbox.
 ///
@@ -16,6 +17,7 @@ class SandboxRuntimeProfile {
     required this.mobileRenderInterval,
     required this.mobilePostProcessInterval,
     required this.mobileCreatureDetail,
+    required this.renderQualityProfile,
   });
 
   final int gridWidth;
@@ -24,6 +26,7 @@ class SandboxRuntimeProfile {
   final int mobileRenderInterval;
   final int mobilePostProcessInterval;
   final bool mobileCreatureDetail;
+  final RenderQualityProfile renderQualityProfile;
 
   static const SandboxRuntimeProfile desktop = SandboxRuntimeProfile(
     gridWidth: 320,
@@ -32,6 +35,7 @@ class SandboxRuntimeProfile {
     mobileRenderInterval: 1,
     mobilePostProcessInterval: 1,
     mobileCreatureDetail: true,
+    renderQualityProfile: RenderQualityProfile.desktopUltra,
   );
 
   static const SandboxRuntimeProfile tablet = SandboxRuntimeProfile(
@@ -41,6 +45,7 @@ class SandboxRuntimeProfile {
     mobileRenderInterval: 2,
     mobilePostProcessInterval: 4,
     mobileCreatureDetail: false,
+    renderQualityProfile: RenderQualityProfile.tabletBalanced,
   );
 
   static const SandboxRuntimeProfile phone = SandboxRuntimeProfile(
@@ -50,6 +55,17 @@ class SandboxRuntimeProfile {
     mobileRenderInterval: 3,
     mobilePostProcessInterval: 6,
     mobileCreatureDetail: false,
+    renderQualityProfile: RenderQualityProfile.phoneBalanced,
+  );
+
+  static const SandboxRuntimeProfile phoneSurvival = SandboxRuntimeProfile(
+    gridWidth: 184,
+    gridHeight: 104,
+    cellSize: 4.0,
+    mobileRenderInterval: 4,
+    mobilePostProcessInterval: 8,
+    mobileCreatureDetail: false,
+    renderQualityProfile: RenderQualityProfile.phoneSurvival,
   );
 
   /// Resolve the runtime profile for the current device class.
@@ -60,11 +76,20 @@ class SandboxRuntimeProfile {
     required Size viewportSize,
     GameState? loadState,
   }) {
+    final handheldDefault = _isHandheldPlatform
+        ? (viewportSize.shortestSide >= 700
+              ? tablet
+              : (viewportSize.shortestSide < 380 ? phoneSurvival : phone))
+        : desktop;
     if (loadState != null) {
       return SandboxRuntimeProfile(
         gridWidth: loadState.gridW,
         gridHeight: loadState.gridH,
         cellSize: 4.0,
+        mobileRenderInterval: handheldDefault.mobileRenderInterval,
+        mobilePostProcessInterval: handheldDefault.mobilePostProcessInterval,
+        mobileCreatureDetail: handheldDefault.mobileCreatureDetail,
+        renderQualityProfile: handheldDefault.renderQualityProfile,
       );
     }
 
@@ -72,9 +97,11 @@ class SandboxRuntimeProfile {
       return desktop;
     }
 
-    final shortestSide = viewportSize.shortestSide;
-    if (shortestSide >= 700) {
+    if (viewportSize.shortestSide >= 700) {
       return tablet;
+    }
+    if (viewportSize.shortestSide < 380) {
+      return phoneSurvival;
     }
     return phone;
   }
