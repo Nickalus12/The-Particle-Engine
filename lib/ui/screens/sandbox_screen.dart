@@ -308,6 +308,7 @@ class _SandboxScreenState extends State<SandboxScreen> {
                         width: 120,
                         child: visible
                             ? ToolBar(
+                                key: _toolBarPanelKey,
                                 game: game,
                                 onInteraction: game.notifyHudInteraction,
                               )

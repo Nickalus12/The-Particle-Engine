@@ -42,38 +42,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 16));
     }
 
-    expect(find.text('A WORLD\nTHAT MOVES'), findsOneWidget);
+    expect(find.text('THE PARTICLE\nENGINE'), findsOneWidget);
+    expect(find.byKey(const ValueKey('home_play_button')), findsOneWidget);
     expect(find.byKey(const ValueKey('home_create_button')), findsOneWidget);
     expect(find.byKey(const ValueKey('home_load_button')), findsOneWidget);
     expect(find.byKey(const ValueKey('home_settings_button')), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('home_quick_start_button')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('home_quick_blank_button')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('home_quick_continue_button')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('home_session_status_strip')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const ValueKey('home_resume_spotlight')), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('home_resume_primary_button')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('home_world_mood_meadow')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('home_world_mood_underground')),
-      findsOneWidget,
-    );
   });
 }

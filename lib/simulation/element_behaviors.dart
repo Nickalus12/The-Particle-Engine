@@ -2232,8 +2232,9 @@ extension ElementBehaviors on SimulationEngine {
 
     // Radiant heat: lava warms nearby air cells in a radius
     // Creates visible heat zones and drives convection in adjacent liquids
-    if (frameCount % 8 == 0) {
-      emitRadiantHeat(x, y, idx, 3, 40);
+    // Reduced radius/intensity to prevent runaway stone melting
+    if (frameCount % 12 == 0) {
+      emitRadiantHeat(x, y, idx, 2, 20);
     }
 
     // Volcanic gas emission
@@ -2451,11 +2452,13 @@ extension ElementBehaviors on SimulationEngine {
           markProcessed(ni);
           queueReactionFlash(nx, ny, 255, 200, 100, 3);
         }
-        // Lava melts metal over time (metal meltPoint=240, lava baseTemp=250)
+        // Lava melts metal over time — costs energy (accelerates cooling)
         if (neighbor == El.metal && rng.nextInt(SimTuning.lavaMeltMetal) == 0) {
           grid[ni] = El.lava;
           life[ni] = 0;
           markProcessed(ni);
+          // Energy cost: melting metal drains the source lava significantly
+          life[idx] += 40;
           queueReactionFlash(nx, ny, 255, 120, 30, 5);
         }
         // Lava dries mud into dirt

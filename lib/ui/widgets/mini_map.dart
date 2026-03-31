@@ -97,7 +97,7 @@ class _MiniMapState extends State<MiniMap>
       child: Align(
         alignment: Alignment.bottomCenter,
         child: Padding(
-          padding: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.only(bottom: 150),
           child: ParticleTheme.atmosphericPanel(
             accent: accent,
             borderRadius: ParticleTheme.radiusMedium,

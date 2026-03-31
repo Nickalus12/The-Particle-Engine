@@ -114,8 +114,77 @@ class VectorElementIcon extends CustomPainter {
         _drawRust(canvas, w, h, cx, cy);
       case El.eraser:
         _drawEraser(canvas, w, h, cx, cy);
+      // Neural plants
+      case El.seaweed:
+        _drawSeaweed(canvas, w, h, cx, cy);
+      case El.moss:
+        _drawMoss(canvas, w, h, cx, cy);
+      case El.vine:
+        _drawVine(canvas, w, h, cx, cy);
+      case El.flower:
+        _drawFlower(canvas, w, h, cx, cy);
+      case El.root:
+        _drawRoot(canvas, w, h, cx, cy);
+      case El.thorn:
+        _drawThorn(canvas, w, h, cx, cy);
+      // Explosives & radioactives
+      case El.c4:
+        _drawC4(canvas, w, h, cx, cy);
+      case El.uranium:
+        _drawUranium(canvas, w, h, cx, cy);
+      case El.lead:
+        _drawLeadElement(canvas, w, h, cx, cy);
+      // Atmospherics
+      case El.vapor:
+        _drawVapor(canvas, w, h, cx, cy);
+      case El.cloud:
+        _drawCloud(canvas, w, h, cx, cy);
+      // Notable metals
+      case El.gold:
+        _drawGoldElement(canvas, w, h, cx, cy);
+      case El.silver:
+        _drawSilverElement(canvas, w, h, cx, cy);
+      case El.platinum:
+        _drawPlatinumElement(canvas, w, h, cx, cy);
+      case El.mercury:
+        _drawMercury(canvas, w, h, cx, cy);
+      case El.titanium:
+        _drawTitanium(canvas, w, h, cx, cy);
+      case El.aluminum:
+        _drawAluminum(canvas, w, h, cx, cy);
+      case El.silicon:
+        _drawSilicon(canvas, w, h, cx, cy);
+      case El.carbon:
+        _drawDiamond(canvas, w, h, cx, cy);
       default:
-        _drawGeneric(canvas, w, h, cx, cy);
+        // Family-based icons for periodic table elements
+        final family = elementFamily[elId];
+        switch (family) {
+          case ElFamily.nobleGas:
+            _drawNobleGas(canvas, w, h, cx, cy);
+          case ElFamily.alkaliMetal:
+            _drawAlkaliMetal(canvas, w, h, cx, cy);
+          case ElFamily.alkalineEarth:
+            _drawAlkalineEarth(canvas, w, h, cx, cy);
+          case ElFamily.transitionMetal:
+            _drawTransitionMetal(canvas, w, h, cx, cy);
+          case ElFamily.postTransition:
+            _drawPostTransition(canvas, w, h, cx, cy);
+          case ElFamily.metalloid:
+            _drawMetalloid(canvas, w, h, cx, cy);
+          case ElFamily.nonmetal:
+            _drawNonmetal(canvas, w, h, cx, cy);
+          case ElFamily.halogen:
+            _drawHalogen(canvas, w, h, cx, cy);
+          case ElFamily.lanthanide:
+            _drawLanthanide(canvas, w, h, cx, cy);
+          case ElFamily.actinide:
+            _drawActinide(canvas, w, h, cx, cy);
+          case ElFamily.superheavy:
+            _drawSuperheavy(canvas, w, h, cx, cy);
+          default:
+            _drawGeneric(canvas, w, h, cx, cy);
+        }
     }
   }
 
@@ -1200,6 +1269,386 @@ class VectorElementIcon extends CustomPainter {
       ..strokeCap = StrokeCap.round;
     c.drawLine(Offset(w * 0.25, h * 0.25), Offset(w * 0.75, h * 0.75), xPaint);
     c.drawLine(Offset(w * 0.75, h * 0.25), Offset(w * 0.25, h * 0.75), xPaint);
+  }
+
+  // -- NEURAL PLANTS --
+
+  void _drawSeaweed(Canvas c, double w, double h, double cx, double cy) {
+    final p = Paint()..style = PaintingStyle.stroke..strokeWidth = 2.5..strokeCap = StrokeCap.round;
+    for (int i = 0; i < 3; i++) {
+      final xOff = (i - 1) * w * 0.14;
+      final path = Path()..moveTo(cx + xOff, h * 0.85);
+      for (double t = 0.85; t > 0.2; t -= 0.05) {
+        path.lineTo(cx + xOff + math.sin(t * 8 + i) * w * 0.08, h * t);
+      }
+      p.color = Color.lerp(baseColor, _dark(0.2), i * 0.15)!;
+      c.drawPath(path, p);
+    }
+  }
+
+  void _drawMoss(Canvas c, double w, double h, double cx, double cy) {
+    final p = Paint()..style = PaintingStyle.fill;
+    // Fuzzy cluster of tiny dots on a surface
+    final base = Paint()..color = _dark(0.3)..style = PaintingStyle.fill;
+    c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(w * 0.15, h * 0.65, w * 0.7, h * 0.2), Radius.circular(w * 0.06)), base);
+    for (int i = 0; i < 12; i++) {
+      final fx = w * 0.2 + (i % 4) * w * 0.18 + (i * 7 % 5) * w * 0.02;
+      final fy = h * 0.45 + (i ~/ 4) * h * 0.1 + (i * 3 % 5) * h * 0.02;
+      p.color = Color.lerp(baseColor, _light(0.2), (i % 3) * 0.15)!;
+      c.drawCircle(Offset(fx, fy), w * 0.05 + (i % 3) * w * 0.01, p);
+    }
+  }
+
+  void _drawVine(Canvas c, double w, double h, double cx, double cy) {
+    final stem = Paint()..color = _dark(0.1)..style = PaintingStyle.stroke..strokeWidth = 2.0..strokeCap = StrokeCap.round;
+    final path = Path()..moveTo(w * 0.3, h * 0.85);
+    path.cubicTo(w * 0.25, h * 0.5, w * 0.7, h * 0.45, w * 0.65, h * 0.15);
+    c.drawPath(path, stem);
+    // Small leaves along the vine
+    final leaf = Paint()..color = baseColor..style = PaintingStyle.fill;
+    for (int i = 0; i < 3; i++) {
+      final t = 0.3 + i * 0.25;
+      final lx = w * 0.3 + (w * 0.35) * t + math.sin(t * 5) * w * 0.1;
+      final ly = h * 0.85 - h * 0.7 * t;
+      c.save();
+      c.translate(lx, ly);
+      c.rotate(0.3 + i * 0.4);
+      c.drawOval(Rect.fromCenter(center: Offset.zero, width: w * 0.12, height: w * 0.06), leaf);
+      c.restore();
+    }
+  }
+
+  void _drawFlower(Canvas c, double w, double h, double cx, double cy) {
+    // Stem
+    c.drawLine(Offset(cx, h * 0.9), Offset(cx, h * 0.45), Paint()..color = _dark(0.2)..strokeWidth = 2.0..strokeCap = StrokeCap.round);
+    // Petals
+    final petal = Paint()..color = baseColor..style = PaintingStyle.fill;
+    for (int i = 0; i < 5; i++) {
+      final angle = i * math.pi * 2 / 5 - math.pi / 2;
+      final px = cx + math.cos(angle) * w * 0.15;
+      final py = h * 0.35 + math.sin(angle) * w * 0.15;
+      c.drawOval(Rect.fromCenter(center: Offset(px, py), width: w * 0.14, height: w * 0.1), petal);
+    }
+    // Center
+    c.drawCircle(Offset(cx, h * 0.35), w * 0.06, Paint()..color = _light(0.3));
+  }
+
+  void _drawRoot(Canvas c, double w, double h, double cx, double cy) {
+    final p = Paint()..color = baseColor..style = PaintingStyle.stroke..strokeWidth = 2.2..strokeCap = StrokeCap.round;
+    // Main root going down
+    final main = Path()..moveTo(cx, h * 0.15)..lineTo(cx, h * 0.85);
+    c.drawPath(main, p);
+    // Branches
+    p.strokeWidth = 1.5;
+    p.color = _dark(0.1);
+    c.drawLine(Offset(cx, h * 0.4), Offset(w * 0.25, h * 0.6), p);
+    c.drawLine(Offset(cx, h * 0.5), Offset(w * 0.75, h * 0.72), p);
+    c.drawLine(Offset(cx, h * 0.65), Offset(w * 0.3, h * 0.82), p);
+  }
+
+  void _drawThorn(Canvas c, double w, double h, double cx, double cy) {
+    final p = Paint()..color = baseColor..style = PaintingStyle.fill;
+    // Sharp triangle
+    final path = Path()
+      ..moveTo(cx, h * 0.15)
+      ..lineTo(w * 0.65, h * 0.85)
+      ..lineTo(w * 0.35, h * 0.85)
+      ..close();
+    c.drawPath(path, p);
+    // Highlight edge
+    final edge = Paint()..color = _light(0.4)..style = PaintingStyle.stroke..strokeWidth = 1.0;
+    c.drawLine(Offset(cx, h * 0.15), Offset(w * 0.65, h * 0.85), edge);
+  }
+
+  // -- EXPLOSIVES & RADIOACTIVES --
+
+  void _drawC4(Canvas c, double w, double h, double cx, double cy) {
+    // Block of putty
+    final block = Paint()..color = baseColor..style = PaintingStyle.fill;
+    c.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: Offset(cx, cy), width: w * 0.55, height: h * 0.35), Radius.circular(w * 0.04)), block);
+    // Detonator wire
+    final wire = Paint()..color = _dark(0.3)..strokeWidth = 1.5..style = PaintingStyle.stroke;
+    c.drawLine(Offset(cx, cy - h * 0.175), Offset(cx, h * 0.15), wire);
+    c.drawCircle(Offset(cx, h * 0.15), w * 0.04, Paint()..color = const Color(0xFFFF4444));
+  }
+
+  void _drawUranium(Canvas c, double w, double h, double cx, double cy) {
+    // Radioactive trefoil
+    final p = Paint()..color = baseColor..style = PaintingStyle.fill;
+    c.drawCircle(Offset(cx, cy), w * 0.08, Paint()..color = _dark(0.2));
+    for (int i = 0; i < 3; i++) {
+      final angle = i * math.pi * 2 / 3 - math.pi / 2;
+      final path = Path();
+      path.moveTo(cx, cy);
+      path.arcTo(
+        Rect.fromCircle(center: Offset(cx, cy), radius: w * 0.32),
+        angle - 0.4, 0.8, false,
+      );
+      path.close();
+      c.drawPath(path, p);
+    }
+  }
+
+  void _drawLeadElement(Canvas c, double w, double h, double cx, double cy) {
+    // Heavy dark block
+    final p = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topLeft, end: Alignment.bottomRight,
+        colors: [_light(0.15), baseColor, _dark(0.3)],
+      ).createShader(Rect.fromCenter(center: Offset(cx, cy), width: w * 0.6, height: h * 0.5));
+    c.drawRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: Offset(cx, cy), width: w * 0.55, height: h * 0.45), Radius.circular(w * 0.06)), p);
+  }
+
+  // -- ATMOSPHERICS --
+
+  void _drawVapor(Canvas c, double w, double h, double cx, double cy) {
+    final p = Paint()..style = PaintingStyle.stroke..strokeWidth = 1.5..strokeCap = StrokeCap.round;
+    for (int i = 0; i < 3; i++) {
+      p.color = baseColor.withValues(alpha: 0.5 - i * 0.1);
+      final path = Path()..moveTo(w * (0.25 + i * 0.12), h * 0.8);
+      path.cubicTo(w * (0.2 + i * 0.12), h * 0.55, w * (0.4 + i * 0.1), h * 0.4, w * (0.35 + i * 0.12), h * 0.2);
+      c.drawPath(path, p);
+    }
+  }
+
+  void _drawCloud(Canvas c, double w, double h, double cx, double cy) {
+    final p = Paint()..color = baseColor..style = PaintingStyle.fill;
+    c.drawCircle(Offset(cx - w * 0.1, cy), w * 0.18, p);
+    c.drawCircle(Offset(cx + w * 0.12, cy - h * 0.02), w * 0.15, p);
+    c.drawCircle(Offset(cx, cy - h * 0.1), w * 0.2, p);
+    c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(w * 0.2, cy, w * 0.6, h * 0.12), Radius.circular(w * 0.06)), p);
+  }
+
+  // -- NOTABLE METALS --
+
+  void _drawGoldElement(Canvas c, double w, double h, double cx, double cy) {
+    // Gold bar / ingot shape
+    final p = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topLeft, end: Alignment.bottomRight,
+        colors: [const Color(0xFFFFF0A0), baseColor, const Color(0xFFB8860B)],
+      ).createShader(Rect.fromCenter(center: Offset(cx, cy), width: w * 0.6, height: h * 0.4));
+    final path = Path()
+      ..moveTo(w * 0.3, h * 0.65)..lineTo(w * 0.25, h * 0.4)
+      ..lineTo(w * 0.75, h * 0.4)..lineTo(w * 0.7, h * 0.65)..close();
+    c.drawPath(path, p);
+    // Top face
+    final top = Paint()..color = _light(0.3);
+    final topPath = Path()
+      ..moveTo(w * 0.25, h * 0.4)..lineTo(w * 0.32, h * 0.32)
+      ..lineTo(w * 0.78, h * 0.32)..lineTo(w * 0.75, h * 0.4)..close();
+    c.drawPath(topPath, top);
+  }
+
+  void _drawSilverElement(Canvas c, double w, double h, double cx, double cy) {
+    // Polished coin
+    final p = Paint()
+      ..shader = RadialGradient(
+        center: const Alignment(-0.2, -0.2),
+        colors: [const Color(0xFFE8E8F0), baseColor, const Color(0xFF808090)],
+      ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: w * 0.28));
+    c.drawCircle(Offset(cx, cy), w * 0.28, p);
+    c.drawCircle(Offset(cx, cy), w * 0.22, Paint()..color = Colors.white.withValues(alpha: 0.15)..style = PaintingStyle.stroke..strokeWidth = 1.0);
+  }
+
+  void _drawPlatinumElement(Canvas c, double w, double h, double cx, double cy) {
+    // Rounded bar with bright sheen
+    final r = Rect.fromCenter(center: Offset(cx, cy), width: w * 0.55, height: h * 0.3);
+    c.drawRRect(RRect.fromRectAndRadius(r, Radius.circular(w * 0.05)),
+      Paint()..shader = LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
+        colors: [_light(0.4), baseColor, _dark(0.15)]).createShader(r));
+    // Sheen line
+    c.drawLine(Offset(w * 0.3, cy - h * 0.08), Offset(w * 0.7, cy - h * 0.08),
+      Paint()..color = Colors.white.withValues(alpha: 0.3)..strokeWidth = 1.0..strokeCap = StrokeCap.round);
+  }
+
+  void _drawMercury(Canvas c, double w, double h, double cx, double cy) {
+    // Liquid metal droplets
+    final p = Paint()
+      ..shader = RadialGradient(center: const Alignment(-0.3, -0.3),
+        colors: [_light(0.5), baseColor, _dark(0.2)],
+      ).createShader(Rect.fromCircle(center: Offset(cx, cy + h * 0.05), radius: w * 0.22));
+    c.drawCircle(Offset(cx, cy + h * 0.05), w * 0.22, p);
+    c.drawCircle(Offset(cx - w * 0.2, cy + h * 0.15), w * 0.08, Paint()..color = _dark(0.1));
+    c.drawCircle(Offset(cx + w * 0.22, cy + h * 0.12), w * 0.06, Paint()..color = _dark(0.05));
+  }
+
+  void _drawTitanium(Canvas c, double w, double h, double cx, double cy) {
+    // Sleek angular plate
+    final path = Path()
+      ..moveTo(w * 0.2, h * 0.7)..lineTo(w * 0.35, h * 0.25)
+      ..lineTo(w * 0.8, h * 0.3)..lineTo(w * 0.65, h * 0.75)..close();
+    c.drawPath(path, Paint()..shader = LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
+      colors: [_light(0.3), baseColor, _dark(0.2)]).createShader(Rect.fromLTWH(w * 0.2, h * 0.25, w * 0.6, h * 0.5)));
+  }
+
+  void _drawAluminum(Canvas c, double w, double h, double cx, double cy) {
+    // Thin crinkled foil
+    final p = Paint()..color = baseColor..style = PaintingStyle.fill;
+    final path = Path()..moveTo(w * 0.2, h * 0.4);
+    path.lineTo(w * 0.35, h * 0.35);
+    path.lineTo(w * 0.5, h * 0.42);
+    path.lineTo(w * 0.65, h * 0.33);
+    path.lineTo(w * 0.8, h * 0.4);
+    path.lineTo(w * 0.75, h * 0.65);
+    path.lineTo(w * 0.25, h * 0.65);
+    path.close();
+    c.drawPath(path, p);
+    c.drawPath(path, Paint()..color = _light(0.2)..style = PaintingStyle.stroke..strokeWidth = 0.8);
+  }
+
+  void _drawSilicon(Canvas c, double w, double h, double cx, double cy) {
+    // Wafer / chip
+    final r = Rect.fromCenter(center: Offset(cx, cy), width: w * 0.52, height: h * 0.52);
+    c.drawRRect(RRect.fromRectAndRadius(r, Radius.circular(w * 0.03)),
+      Paint()..shader = LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
+        colors: [_light(0.15), baseColor, _dark(0.25)]).createShader(r));
+    // Grid lines (circuit traces)
+    final line = Paint()..color = _light(0.15)..strokeWidth = 0.6;
+    for (int i = 1; i < 4; i++) {
+      final t = i / 4;
+      c.drawLine(Offset(r.left + r.width * t, r.top), Offset(r.left + r.width * t, r.bottom), line);
+      c.drawLine(Offset(r.left, r.top + r.height * t), Offset(r.right, r.top + r.height * t), line);
+    }
+  }
+
+  void _drawDiamond(Canvas c, double w, double h, double cx, double cy) {
+    // Brilliant-cut diamond shape
+    final path = Path()
+      ..moveTo(cx, h * 0.15)
+      ..lineTo(w * 0.75, h * 0.4)..lineTo(cx, h * 0.85)..lineTo(w * 0.25, h * 0.4)..close();
+    c.drawPath(path, Paint()..shader = LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
+      colors: [_light(0.5), baseColor, _light(0.2)]).createShader(Rect.fromLTWH(w * 0.25, h * 0.15, w * 0.5, h * 0.7)));
+    // Facet lines
+    final facet = Paint()..color = _light(0.3)..strokeWidth = 0.7..style = PaintingStyle.stroke;
+    c.drawLine(Offset(cx, h * 0.15), Offset(cx, h * 0.85), facet);
+    c.drawLine(Offset(w * 0.25, h * 0.4), Offset(w * 0.75, h * 0.4), facet);
+  }
+
+  // -- FAMILY-BASED PERIODIC TABLE ICONS --
+
+  void _drawNobleGas(Canvas c, double w, double h, double cx, double cy) {
+    // Glowing concentric rings (inert/stable)
+    for (int i = 3; i > 0; i--) {
+      c.drawCircle(Offset(cx, cy), w * 0.1 * i,
+        Paint()..color = baseColor.withValues(alpha: 0.15 + (3 - i) * 0.1)..style = PaintingStyle.stroke..strokeWidth = 1.2);
+    }
+    c.drawCircle(Offset(cx, cy), w * 0.06, Paint()..color = baseColor.withValues(alpha: 0.6));
+  }
+
+  void _drawAlkaliMetal(Canvas c, double w, double h, double cx, double cy) {
+    // Soft rounded cube with reactive glow
+    final r = Rect.fromCenter(center: Offset(cx, cy), width: w * 0.48, height: h * 0.48);
+    c.drawRRect(RRect.fromRectAndRadius(r, Radius.circular(w * 0.1)),
+      Paint()..shader = RadialGradient(center: const Alignment(-0.2, -0.2),
+        colors: [_light(0.4), baseColor, _dark(0.2)]).createShader(r));
+    // Reactive spark
+    final spark = Paint()..color = _light(0.6)..strokeWidth = 1.5..strokeCap = StrokeCap.round;
+    c.drawLine(Offset(w * 0.7, h * 0.2), Offset(w * 0.78, h * 0.14), spark);
+    c.drawLine(Offset(w * 0.72, h * 0.18), Offset(w * 0.82, h * 0.2), spark);
+  }
+
+  void _drawAlkalineEarth(Canvas c, double w, double h, double cx, double cy) {
+    // Two stacked rounded bars (pair of valence electrons)
+    final p = Paint()..shader = LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
+      colors: [_light(0.2), baseColor, _dark(0.15)]).createShader(Rect.fromCenter(center: Offset(cx, cy), width: w * 0.5, height: h * 0.5));
+    c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(w * 0.25, h * 0.28, w * 0.5, h * 0.18), Radius.circular(w * 0.04)), p);
+    c.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(w * 0.25, h * 0.54, w * 0.5, h * 0.18), Radius.circular(w * 0.04)), p);
+  }
+
+  void _drawTransitionMetal(Canvas c, double w, double h, double cx, double cy) {
+    // Metallic hexagon (crystalline structure)
+    final path = Path();
+    for (int i = 0; i < 6; i++) {
+      final angle = i * math.pi / 3 - math.pi / 2;
+      final px = cx + math.cos(angle) * w * 0.3;
+      final py = cy + math.sin(angle) * w * 0.3;
+      if (i == 0) { path.moveTo(px, py); } else { path.lineTo(px, py); }
+    }
+    path.close();
+    c.drawPath(path, Paint()..shader = LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
+      colors: [_light(0.3), baseColor, _dark(0.2)]).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: w * 0.3)));
+    c.drawPath(path, Paint()..color = _light(0.15)..style = PaintingStyle.stroke..strokeWidth = 0.8);
+  }
+
+  void _drawPostTransition(Canvas c, double w, double h, double cx, double cy) {
+    // Rounded rectangle with soft edges (softer metals)
+    final r = Rect.fromCenter(center: Offset(cx, cy), width: w * 0.5, height: h * 0.42);
+    c.drawRRect(RRect.fromRectAndRadius(r, Radius.circular(w * 0.08)),
+      Paint()..shader = LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
+        colors: [_light(0.2), baseColor, _dark(0.15)]).createShader(r));
+  }
+
+  void _drawMetalloid(Canvas c, double w, double h, double cx, double cy) {
+    // Half metal, half nonmetal — split diamond
+    final left = Path()..moveTo(cx, h * 0.2)..lineTo(w * 0.25, cy)..lineTo(cx, h * 0.8)..close();
+    final right = Path()..moveTo(cx, h * 0.2)..lineTo(w * 0.75, cy)..lineTo(cx, h * 0.8)..close();
+    c.drawPath(left, Paint()..color = _light(0.2));
+    c.drawPath(right, Paint()..color = _dark(0.15));
+    c.drawPath(Path()..moveTo(cx, h * 0.2)..lineTo(w * 0.75, cy)..lineTo(cx, h * 0.8)..lineTo(w * 0.25, cy)..close(),
+      Paint()..color = baseColor.withValues(alpha: 0.3)..style = PaintingStyle.stroke..strokeWidth = 0.8);
+  }
+
+  void _drawNonmetal(Canvas c, double w, double h, double cx, double cy) {
+    // Organic cloud-like blob
+    final p = Paint()..color = baseColor.withValues(alpha: 0.7)..style = PaintingStyle.fill;
+    c.drawCircle(Offset(cx - w * 0.06, cy - h * 0.04), w * 0.18, p);
+    c.drawCircle(Offset(cx + w * 0.08, cy + h * 0.02), w * 0.15, p);
+    c.drawCircle(Offset(cx - w * 0.02, cy + h * 0.08), w * 0.13, p);
+  }
+
+  void _drawHalogen(Canvas c, double w, double h, double cx, double cy) {
+    // Diatomic pair (two bonded atoms)
+    final p = Paint()..shader = RadialGradient(center: const Alignment(-0.3, -0.3),
+      colors: [_light(0.3), baseColor, _dark(0.2)]).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: w * 0.35));
+    c.drawCircle(Offset(cx - w * 0.1, cy), w * 0.18, p);
+    c.drawCircle(Offset(cx + w * 0.1, cy), w * 0.18, p);
+    // Bond line
+    c.drawLine(Offset(cx - w * 0.05, cy), Offset(cx + w * 0.05, cy),
+      Paint()..color = _light(0.15)..strokeWidth = 1.5..strokeCap = StrokeCap.round);
+  }
+
+  void _drawLanthanide(Canvas c, double w, double h, double cx, double cy) {
+    // Layered orbital rings (f-block electrons)
+    final ring = Paint()..color = baseColor..style = PaintingStyle.stroke..strokeWidth = 1.2;
+    c.drawCircle(Offset(cx, cy), w * 0.08, Paint()..color = baseColor);
+    c.drawOval(Rect.fromCenter(center: Offset(cx, cy), width: w * 0.55, height: h * 0.25), ring);
+    c.save();
+    c.translate(cx, cy);
+    c.rotate(math.pi / 3);
+    c.drawOval(Rect.fromCenter(center: Offset.zero, width: w * 0.55, height: h * 0.25), ring);
+    c.restore();
+  }
+
+  void _drawActinide(Canvas c, double w, double h, double cx, double cy) {
+    // Radioactive orbital rings (like lanthanide but with warning dot)
+    final ring = Paint()..color = baseColor..style = PaintingStyle.stroke..strokeWidth = 1.2;
+    c.drawCircle(Offset(cx, cy), w * 0.08, Paint()..color = baseColor);
+    c.drawOval(Rect.fromCenter(center: Offset(cx, cy), width: w * 0.55, height: h * 0.25), ring);
+    c.save();
+    c.translate(cx, cy);
+    c.rotate(-math.pi / 3);
+    c.drawOval(Rect.fromCenter(center: Offset.zero, width: w * 0.55, height: h * 0.25), ring);
+    c.restore();
+    // Warning dot
+    c.drawCircle(Offset(cx, cy), w * 0.04, Paint()..color = const Color(0xFFFF6644));
+  }
+
+  void _drawSuperheavy(Canvas c, double w, double h, double cx, double cy) {
+    // Unstable atom — jittered rings with decay sparks
+    final ring = Paint()..color = baseColor.withValues(alpha: 0.6)..style = PaintingStyle.stroke..strokeWidth = 1.0;
+    c.drawCircle(Offset(cx, cy), w * 0.07, Paint()..color = baseColor);
+    c.drawCircle(Offset(cx, cy), w * 0.2, ring);
+    c.drawCircle(Offset(cx, cy), w * 0.32, Paint()..color = baseColor.withValues(alpha: 0.3)..style = PaintingStyle.stroke..strokeWidth = 0.8);
+    // Decay sparks
+    final spark = Paint()..color = _light(0.5)..strokeWidth = 1.2..strokeCap = StrokeCap.round;
+    for (int i = 0; i < 4; i++) {
+      final angle = i * math.pi / 2 + 0.3;
+      final r1 = w * 0.28;
+      final r2 = w * 0.38;
+      c.drawLine(Offset(cx + math.cos(angle) * r1, cy + math.sin(angle) * r1),
+        Offset(cx + math.cos(angle) * r2, cy + math.sin(angle) * r2), spark);
+    }
   }
 
   // -- GENERIC: Colored circle with gradient --

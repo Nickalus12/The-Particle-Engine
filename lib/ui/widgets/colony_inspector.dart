@@ -88,7 +88,7 @@ class _ColonyInspectorState extends State<ColonyInspector>
         child: Align(
           alignment: Alignment.centerLeft,
           child: Padding(
-            padding: const EdgeInsets.only(left: 10, top: 40, bottom: 40),
+            padding: const EdgeInsets.only(left: 130, top: 40, bottom: 40),
             child: ParticleTheme.atmosphericPanel(
               accent: accent,
               borderRadius: ParticleTheme.radiusLarge,

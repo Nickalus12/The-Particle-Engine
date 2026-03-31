@@ -4497,7 +4497,7 @@ class SimTuning {
   static int lavaSpatter = 100; // 1/N spatter
   static int lavaIgniteFlammable = 2; // 1/N ignite plant/oil/wood/seed
   static int lavaSandToGlass = 40; // 1/N sand->glass
-  static int lavaMeltMetal = 80; // 1/N melt metal
+  static int lavaMeltMetal = 200; // 1/N melt metal
   static int lavaDryMud = 10; // 1/N mud->dirt
   static int lavaGasEmit = 100; // 1/N gas emission (legacy)
 

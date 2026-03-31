@@ -15,11 +15,11 @@ import '../models/game_state.dart';
 import '../rendering/render_quality_profile.dart';
 import '../simulation/world_gen/world_config.dart';
 import '../ui/widgets/colony_inspector.dart';
-import '../ui/widgets/element_palette.dart';
+
 import '../ui/widgets/hud_icon_badge.dart';
 import '../ui/widgets/periodic_table_overlay.dart';
-import '../ui/widgets/mini_map.dart';
-import '../ui/widgets/tool_bar.dart';
+
+
 import 'sandbox_world.dart';
 
 /// Top-level [FlameGame] subclass that wires together the simulation world,
@@ -550,13 +550,7 @@ class ParticleEngineGame extends FlameGame
   /// to game state without needing HasGameRef or external state management.
   static Map<String, OverlayWidgetBuilder<ParticleEngineGame>>
   get overlayBuilders => {
-    overlayPalette: (context, game) =>
-        ElementPalette(game: game, onInteraction: game.notifyHudInteraction),
-    overlayToolbar: (context, game) =>
-        ToolBar(game: game, onInteraction: game.notifyHudInteraction),
-    overlayMiniMap: (context, game) =>
-        MiniMap(simulation: game.sandboxWorld.simulation, isVisible: true),
-    overlayColonyInspector: (context, game) {
+overlayColonyInspector: (context, game) {
       final colonies = game.sandboxWorld.creatures.colonies;
       if (colonies.isEmpty) return const SizedBox.shrink();
       return ColonyInspector(

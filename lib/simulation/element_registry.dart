@@ -1141,10 +1141,10 @@ void _initElementProperties() {
   // Stone (CaCO3/SiO2 — dense, stable, non-reactive)
   elementProperties[El.stone] = const ElementProperties(
     density: 255, gravity: 1, state: PhysicsState.solid,
-    heatConductivity: 0.5, meltPoint: 220, meltsInto: El.lava,
+    heatConductivity: 0.3, meltPoint: 250, meltsInto: El.lava,
     baseTemperature: 128, corrosionResistance: 60,
     hardness: 80, windResistance: 1.0,
-    heatCapacity: 2,
+    heatCapacity: 4,
     reductionPotential: 0, bondEnergy: 200, electronMobility: 0,
     dielectric: 150, reactivity: 5, baseMass: 255,
   );
